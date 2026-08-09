@@ -36,7 +36,14 @@ final class OrbitCallManager: NSObject {
         guard KeychainStore.readDeviceToken() != nil else {
             throw OrbitCallError.notPaired
         }
+        guard !session.isConnected else { return }
         guard activeCallUUID == nil else { return }
+
+        // Try the native CallKit route first. If iOS rejects the transaction
+        // (for example because CallKit is temporarily unavailable for an
+        // enterprise-signed app), Orbit must still be usable from its screen.
+        AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = false
+        try? AudioManager.shared.setEngineAvailability(.none)
 
         let callUUID = UUID()
         activeCallUUID = callUUID
@@ -50,8 +57,17 @@ final class OrbitCallManager: NSObject {
             try await callController.request(CXTransaction(action: action))
         } catch {
             activeCallUUID = nil
-            throw error
+            await startDirectSession()
+            if !session.isConnected {
+                throw error
+            }
         }
+    }
+
+    private func startDirectSession() async {
+        AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = true
+        try? AudioManager.shared.setEngineAvailability(.default)
+        await session.start()
     }
 
     func endCall() async {
