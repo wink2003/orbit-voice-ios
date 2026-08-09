@@ -9,7 +9,11 @@ struct StartOrbitIntent: AppIntent {
     static var supportedModes: IntentModes { .background }
 
     func perform() async throws -> some IntentResult {
+        #if ORBIT_CALLKIT_ONLY
+        try await OrbitNativeCallManager.shared.startCall()
+        #else
         try await OrbitRuntime.shared.callManager.startCall()
+        #endif
         return .result()
     }
 }
@@ -23,7 +27,11 @@ struct EndOrbitIntent: AppIntent {
     static var supportedModes: IntentModes { .background }
 
     func perform() async throws -> some IntentResult {
+        #if ORBIT_CALLKIT_ONLY
+        await OrbitNativeCallManager.shared.endCall()
+        #else
         await OrbitRuntime.shared.callManager.endCall()
+        #endif
         return .result()
     }
 }
