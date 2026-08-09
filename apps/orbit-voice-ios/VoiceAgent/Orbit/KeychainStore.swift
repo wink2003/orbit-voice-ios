@@ -2,10 +2,10 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    private static let service = "net.opik.orbit.voice"
-    private static let account = "device-token"
+    private nonisolated static let service = "net.opik.orbit.voice"
+    private nonisolated static let account = "device-token"
 
-    static func readDeviceToken() -> String? {
+    nonisolated static func readDeviceToken() -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -20,7 +20,7 @@ enum KeychainStore {
         return String(data: data, encoding: .utf8)
     }
 
-    static func saveDeviceToken(_ token: String) throws {
+    nonisolated static func saveDeviceToken(_ token: String) throws {
         let data = Data(token.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -42,7 +42,7 @@ enum KeychainStore {
         }
     }
 
-    static func removeDeviceToken() {
+    nonisolated static func removeDeviceToken() {
         SecItemDelete([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
