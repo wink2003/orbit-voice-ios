@@ -4,9 +4,10 @@ import SwiftUI
 struct AppView: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var localMedia: LocalMedia
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var chat: Bool = false
-    @State private var didAutoStart = false
+    @State private var isAutoStarting = false
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
 
@@ -22,9 +23,11 @@ struct AppView: View {
         }
         .environment(\.namespace, namespace)
         .task {
-            guard !didAutoStart else { return }
-            didAutoStart = true
-            await session.start()
+            await autoStartIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await autoStartIfNeeded() }
         }
         #if os(visionOS)
             .ornament(attachmentAnchor: .scene(.bottom)) {
@@ -74,6 +77,14 @@ struct AppView: View {
             .onAppear {
                 chat = false
             }
+    }
+
+    @MainActor
+    private func autoStartIfNeeded() async {
+        guard !session.isConnected, !isAutoStarting else { return }
+        isAutoStarting = true
+        defer { isAutoStarting = false }
+        await session.start()
     }
 
     @ViewBuilder
