@@ -69,7 +69,7 @@ jobs:
             DEVELOPMENT_TEAM='' \
             PRODUCT_BUNDLE_IDENTIFIER=net.opik.orbit.callkit \
             INFOPLIST_KEY_CFBundleDisplayName='Orbit CallKit' \
-            CURRENT_PROJECT_VERSION=1 \
+            CURRENT_PROJECT_VERSION=2 \
             SWIFT_ACTIVE_COMPILATION_CONDITIONS='ORBIT_CALLKIT_ONLY' \
             build
 
