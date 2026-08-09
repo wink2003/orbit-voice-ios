@@ -1,0 +1,54 @@
+name: Build Orbit Voice IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/orbit-voice-ios/**"
+      - ".github/workflows/build-orbit-voice-ios.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build unsigned iOS application
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-derived-data" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM='' \
+            build
+
+      - name: Package IPA for AltStore
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/orbit-ipa/Payload"
+          cp -R \
+            "$RUNNER_TEMP/orbit-derived-data/Build/Products/Release-iphoneos/VoiceAgent.app" \
+            "$RUNNER_TEMP/orbit-ipa/Payload/"
+          cd "$RUNNER_TEMP/orbit-ipa"
+          /usr/bin/zip -qry Orbit-Voice.ipa Payload
+
+      - name: Upload Orbit Voice
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-Voice-IPA
+          path: ${{ runner.temp }}/orbit-ipa/Orbit-Voice.ipa
+          retention-days: 7
+          if-no-files-found: error
