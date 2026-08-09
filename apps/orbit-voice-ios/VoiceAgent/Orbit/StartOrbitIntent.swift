@@ -2,11 +2,12 @@ import AppIntents
 
 struct StartOrbitIntent: AppIntent {
     static let title: LocalizedStringResource = "Start Orbit"
-    static let description = IntentDescription("Opens Orbit and starts a voice conversation.")
-    static let openAppWhenRun = true
+    static let description = IntentDescription("Starts an Orbit voice call in the background.")
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult {
-        .result()
+        try await OrbitRuntime.shared.callManager.startCall()
+        return .result()
     }
 }
 

@@ -54,7 +54,7 @@ struct StartView: View {
     @ViewBuilder
     private func connectButton() -> some View {
         AsyncButton {
-            await session.start()
+            try? await OrbitRuntime.shared.callManager.startCall()
         } label: {
             HStack {
                 Spacer()

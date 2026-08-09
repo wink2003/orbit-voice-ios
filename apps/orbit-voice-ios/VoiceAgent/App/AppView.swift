@@ -43,7 +43,7 @@ struct AppView: View {
                 session.agent.error?.localizedDescription ?? "error.title",
                 isPresented: .constant(session.agent.error != nil)
             ) {
-                Button("error.ok") { Task { await session.end() } }
+                Button("error.ok") { Task { await OrbitRuntime.shared.callManager.endCall() } }
             }
             .alert(
                 localMedia.error?.localizedDescription ?? "error.title",
@@ -84,7 +84,7 @@ struct AppView: View {
         guard !session.isConnected, !isAutoStarting else { return }
         isAutoStarting = true
         defer { isAutoStarting = false }
-        await session.start()
+        try? await OrbitRuntime.shared.callManager.startCall()
     }
 
     @ViewBuilder
@@ -116,7 +116,7 @@ struct AppView: View {
             }
 
             if let agentError = session.agent.error {
-                ErrorView(error: agentError) { Task { await session.end() }}
+                ErrorView(error: agentError) { Task { await OrbitRuntime.shared.callManager.endCall() }}
             }
 
             if let mediaError = localMedia.error {

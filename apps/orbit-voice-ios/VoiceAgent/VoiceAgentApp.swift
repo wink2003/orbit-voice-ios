@@ -9,20 +9,11 @@ struct VoiceAgentApp: App {
     private let audioOptions: AudioOptions
 
     init() {
-        _authentication = StateObject(wrappedValue: OrbitAuthentication())
-        // The audio options panel applies its selection when the microphone
-        // track is created. To guarantee that the very first captured frames
-        // already use custom processing options, set them as room defaults
-        // here instead, e.g.
-        // RoomOptions(defaultAudioCaptureOptions: AudioCaptureOptions(echoCancellationMode: .software, ...))
-        session = Session(
-            tokenSource: OrbitTokenSource(),
-            options: SessionOptions(room: Room(roomOptions: RoomOptions(
-                defaultScreenShareCaptureOptions: ScreenShareCaptureOptions(useBroadcastExtension: true)
-            )))
-        )
-        localMedia = LocalMedia(session: session)
-        audioOptions = AudioOptions(localMedia: localMedia)
+        let runtime = OrbitRuntime.shared
+        _authentication = StateObject(wrappedValue: runtime.authentication)
+        session = runtime.session
+        localMedia = runtime.localMedia
+        audioOptions = runtime.audioOptions
     }
 
     var body: some Scene {

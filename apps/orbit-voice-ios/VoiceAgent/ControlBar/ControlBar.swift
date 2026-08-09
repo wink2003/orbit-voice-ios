@@ -193,8 +193,7 @@ struct ControlBar: View {
 
     private func disconnectButton() -> some View {
         AsyncButton {
-            await session.end()
-            session.restoreMessageHistory([])
+            await OrbitRuntime.shared.callManager.endCall()
         } label: {
             Image(systemName: "phone.down.fill")
                 .frame(width: Constants.buttonWidth, height: Constants.buttonHeight)
