@@ -8,6 +8,7 @@ struct AppView: View {
 
     @State private var chat: Bool = false
     @State private var isAutoStarting = false
+    @State private var hasScheduledAutomaticStart = false
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
 
@@ -73,7 +74,7 @@ struct AppView: View {
     }
 
     private func start() -> some View {
-        StartView()
+        StartView(isConnectingAutomatically: isAutoStarting)
             .onAppear {
                 chat = false
             }
@@ -81,9 +82,21 @@ struct AppView: View {
 
     @MainActor
     private func autoStartIfNeeded() async {
-        guard !session.isConnected, !isAutoStarting else { return }
+        guard !session.isConnected,
+              !isAutoStarting,
+              !hasScheduledAutomaticStart
+        else { return }
+
+        // On an iPhone, the app needs a moment to become active before a
+        // CallKit transaction or microphone session can start reliably.
+        // Starting immediately made the automatic launch race the scene
+        // activation, while pressing the visible button later worked.
+        hasScheduledAutomaticStart = true
         isAutoStarting = true
         defer { isAutoStarting = false }
+
+        try? await Task.sleep(for: .milliseconds(750))
+        guard !Task.isCancelled, !session.isConnected else { return }
         try? await OrbitRuntime.shared.callManager.startCall()
     }
 

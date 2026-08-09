@@ -5,6 +5,8 @@ import SwiftUI
 struct StartView: View {
     @EnvironmentObject private var session: Session
 
+    let isConnectingAutomatically: Bool
+
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Namespace private var button
 
@@ -53,6 +55,14 @@ struct StartView: View {
 
     @ViewBuilder
     private func connectButton() -> some View {
+        if isConnectingAutomatically {
+            HStack(spacing: 4 * .grid) {
+                Spinner()
+                Text("Connecting to Orbit...")
+            }
+            .frame(width: 58 * .grid, height: 11 * .grid)
+            .foregroundStyle(.fgModerate)
+        } else {
         AsyncButton {
             try? await OrbitRuntime.shared.callManager.startCall()
         } label: {
@@ -80,6 +90,7 @@ struct StartView: View {
         #else
         .buttonStyle(ProminentButtonStyle())
         #endif
+        }
     }
 
     private func audioOptionsButton() -> some View {
@@ -102,5 +113,5 @@ struct StartView: View {
 }
 
 #Preview {
-    StartView()
+    StartView(isConnectingAutomatically: false)
 }
