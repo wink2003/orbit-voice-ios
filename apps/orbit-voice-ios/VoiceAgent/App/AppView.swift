@@ -6,6 +6,7 @@ struct AppView: View {
     @EnvironmentObject private var localMedia: LocalMedia
 
     @State private var chat: Bool = false
+    @State private var didAutoStart = false
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
 
@@ -20,6 +21,11 @@ struct AppView: View {
             errors()
         }
         .environment(\.namespace, namespace)
+        .task {
+            guard !didAutoStart else { return }
+            didAutoStart = true
+            await session.start()
+        }
         #if os(visionOS)
             .ornament(attachmentAnchor: .scene(.bottom)) {
                 if session.isConnected {
@@ -61,9 +67,6 @@ struct AppView: View {
                 .animation(.default, value: localMedia.isCameraEnabled)
                 .animation(.default, value: localMedia.isScreenShareEnabled)
                 .animation(.default, value: localMedia.error?.localizedDescription)
-        #if os(iOS)
-            .sensoryFeedback(.impact, trigger: session.isConnected)
-        #endif
     }
 
     private func start() -> some View {

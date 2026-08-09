@@ -9,7 +9,6 @@ struct StartView: View {
     @Namespace private var button
 
     @State private var audioOptionsPresented = false
-    @State private var didAutoStart = false
 
     var body: some View {
         VStack(spacing: 8 * .grid) {
@@ -20,11 +19,6 @@ struct StartView: View {
         .padding(.horizontal, horizontalSizeClass == .regular ? 32 * .grid : 16 * .grid)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .safeAreaInset(edge: .bottom, content: tip)
-        .task {
-            guard !didAutoStart else { return }
-            didAutoStart = true
-            await session.start()
-        }
         #if os(visionOS)
             .glassBackgroundEffect()
             .frame(maxWidth: 175 * .grid)
