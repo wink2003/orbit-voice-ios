@@ -96,27 +96,31 @@ final class OrbitCallManager: NSObject {
     }
 }
 
-extension OrbitCallManager: @preconcurrency CXProviderDelegate {
+extension OrbitCallManager: CXProviderDelegate {
     nonisolated func providerDidReset(_: CXProvider) {
-        Task { @MainActor [weak self] in
+        MainActor.assumeIsolated { [weak self] in
             guard let self else { return }
             connectionTask?.cancel()
             connectionTask = nil
             activeCallUUID = nil
             isEndingLocally = false
-            await session.end()
-            session.restoreMessageHistory([])
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await session.end()
+                session.restoreMessageHistory([])
+            }
         }
     }
 
     nonisolated func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
-        Task { @MainActor [weak self] in
+        MainActor.assumeIsolated { [weak self] in
             guard let self else {
                 action.fail()
                 return
             }
 
-            provider.reportOutgoingCall(with: action.callUUID, startedConnectingAt: Date())
+            let callUUID = action.callUUID
+            provider.reportOutgoingCall(with: callUUID, startedConnectingAt: Date())
 
             // Fulfilling the CallKit action activates AVAudioSession. LiveKit's
             // engine remains disabled until provider(_:didActivate:) below.
@@ -124,13 +128,13 @@ extension OrbitCallManager: @preconcurrency CXProviderDelegate {
 
             connectionTask?.cancel()
             connectionTask = Task { @MainActor [weak self] in
-                await self?.connect(callUUID: action.callUUID)
+                await self?.connect(callUUID: callUUID)
             }
         }
     }
 
     nonisolated func provider(_: CXProvider, perform action: CXEndCallAction) {
-        Task { @MainActor [weak self] in
+        MainActor.assumeIsolated { [weak self] in
             guard let self else {
                 action.fulfill()
                 return
@@ -138,26 +142,30 @@ extension OrbitCallManager: @preconcurrency CXProviderDelegate {
 
             connectionTask?.cancel()
             connectionTask = nil
-            await session.end()
-            session.restoreMessageHistory([])
-            activeCallUUID = nil
-            isEndingLocally = false
+            isEndingLocally = true
             action.fulfill()
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await session.end()
+                session.restoreMessageHistory([])
+                activeCallUUID = nil
+                isEndingLocally = false
+            }
         }
     }
 
     nonisolated func provider(_: CXProvider, perform action: CXSetMutedCallAction) {
-        Task { @MainActor [weak self] in
+        MainActor.assumeIsolated { [weak self] in
             guard let self else {
                 action.fail()
                 return
             }
 
-            do {
-                try await session.room.localParticipant.setMicrophone(enabled: !action.isMuted)
-                action.fulfill()
-            } catch {
-                action.fail()
+            let microphoneEnabled = !action.isMuted
+            action.fulfill()
+            Task { @MainActor [weak self] in
+                try? await self?.session.room.localParticipant.setMicrophone(enabled: microphoneEnabled)
             }
         }
     }
@@ -180,7 +188,7 @@ extension OrbitCallManager: @preconcurrency CXProviderDelegate {
     }
 }
 
-extension OrbitCallManager: @preconcurrency RoomDelegate {
+extension OrbitCallManager: RoomDelegate {
     nonisolated func room(
         _: Room,
         didUpdateConnectionState connectionState: ConnectionState,
