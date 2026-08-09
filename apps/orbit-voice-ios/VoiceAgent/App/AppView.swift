@@ -24,11 +24,15 @@ struct AppView: View {
         }
         .environment(\.namespace, namespace)
         .task {
+            #if !ORBIT_CALLKIT_ONLY
             await autoStartIfNeeded()
+            #endif
         }
         .onChange(of: scenePhase) { _, phase in
+            #if !ORBIT_CALLKIT_ONLY
             guard phase == .active else { return }
             Task { await autoStartIfNeeded() }
+            #endif
         }
         #if os(visionOS)
             .ornament(attachmentAnchor: .scene(.bottom)) {

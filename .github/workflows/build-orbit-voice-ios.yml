@@ -52,3 +52,42 @@ jobs:
           path: ${{ runner.temp }}/orbit-ipa/Orbit-Voice.ipa
           retention-days: 7
           if-no-files-found: error
+
+      - name: Build strict CallKit iOS application
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-callkit-derived-data" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM='' \
+            PRODUCT_BUNDLE_IDENTIFIER=net.opik.orbit.callkit \
+            INFOPLIST_KEY_CFBundleDisplayName='Orbit CallKit' \
+            CURRENT_PROJECT_VERSION=1 \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS='ORBIT_CALLKIT_ONLY' \
+            build
+
+      - name: Package strict CallKit IPA for AltStore
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/orbit-callkit-ipa/Payload"
+          cp -R \
+            "$RUNNER_TEMP/orbit-callkit-derived-data/Build/Products/Release-iphoneos/VoiceAgent.app" \
+            "$RUNNER_TEMP/orbit-callkit-ipa/Payload/"
+          rm -rf "$RUNNER_TEMP/orbit-callkit-ipa/Payload/VoiceAgent.app/PlugIns"
+          cd "$RUNNER_TEMP/orbit-callkit-ipa"
+          /usr/bin/zip -qry Orbit-CallKit.ipa Payload
+
+      - name: Upload Orbit CallKit
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-CallKit-IPA
+          path: ${{ runner.temp }}/orbit-callkit-ipa/Orbit-CallKit.ipa
+          retention-days: 7
+          if-no-files-found: error

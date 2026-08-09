@@ -16,11 +16,12 @@ final class OrbitCallManager: NSObject {
     init(session: Session) {
         self.session = session
 
-        let configuration = CXProviderConfiguration()
+        let configuration = CXProviderConfiguration(localizedName: "Orbit")
         configuration.supportedHandleTypes = [.generic]
         configuration.maximumCallsPerCallGroup = 1
         configuration.maximumCallGroups = 1
         configuration.supportsVideo = false
+        configuration.includesCallsInRecents = false
         provider = CXProvider(configuration: configuration)
 
         super.init()
@@ -57,10 +58,14 @@ final class OrbitCallManager: NSObject {
             try await callController.request(CXTransaction(action: action))
         } catch {
             activeCallUUID = nil
+            #if ORBIT_CALLKIT_ONLY
+            throw OrbitCallError.callKitUnavailable(error.localizedDescription)
+            #else
             await startDirectSession()
             if !session.isConnected {
                 throw error
             }
+            #endif
         }
     }
 
@@ -195,11 +200,14 @@ extension OrbitCallManager: RoomDelegate {
 
 private enum OrbitCallError: LocalizedError {
     case notPaired
+    case callKitUnavailable(String)
 
     var errorDescription: String? {
         switch self {
         case .notPaired:
             "Open Orbit once and pair this iPhone first."
+        case let .callKitUnavailable(details):
+            "iPhone did not start the Orbit system call: \(details)"
         }
     }
 }
