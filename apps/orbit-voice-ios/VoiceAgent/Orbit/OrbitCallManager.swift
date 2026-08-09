@@ -94,17 +94,19 @@ final class OrbitCallManager: NSObject {
         }
     }
 
-    private func connect(callUUID: UUID) async {
+    private func connect(callUUID: UUID, action: CXStartCallAction) async {
         await session.start()
 
         guard activeCallUUID == callUUID else { return }
         guard session.isConnected else {
+            action.fail()
             provider.reportCall(with: callUUID, endedAt: Date(), reason: .failed)
             activeCallUUID = nil
             return
         }
 
         provider.reportOutgoingCall(with: callUUID, connectedAt: Date())
+        action.fulfill()
     }
 
     private func finishRemoteCallIfNeeded() {
@@ -134,13 +136,13 @@ extension OrbitCallManager: CXProviderDelegate {
         let callUUID = action.callUUID
         provider.reportOutgoingCall(with: callUUID, startedConnectingAt: Date())
 
-        // Fulfilling the CallKit action activates AVAudioSession. LiveKit's
-        // engine remains disabled until provider(_:didActivate:) below.
-        action.fulfill()
-
+        // Connect LiveKit before fulfilling the action, following the
+        // CallKit lifecycle used by LiveKit's official example. Fulfilling
+        // before the room is ready caused iOS to immediately tear down the
+        // system call on this device.
         connectionTask?.cancel()
         connectionTask = Task { @MainActor [weak self] in
-            await self?.connect(callUUID: callUUID)
+            await self?.connect(callUUID: callUUID, action: action)
         }
     }
 
