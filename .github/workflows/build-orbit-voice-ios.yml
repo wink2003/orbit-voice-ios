@@ -68,7 +68,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM='' \
             PRODUCT_BUNDLE_IDENTIFIER=net.opik.orbit.callkit \
-            INFOPLIST_KEY_CFBundleDisplayName='Orbit CallKit' \
+            INFOPLIST_KEY_CFBundleDisplayName='Orbit' \
             CURRENT_PROJECT_VERSION=6 \
             SWIFT_ACTIVE_COMPILATION_CONDITIONS='ORBIT_CALLKIT_ONLY' \
             build
