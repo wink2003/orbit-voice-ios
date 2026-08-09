@@ -1,6 +1,6 @@
 import AppIntents
 
-struct StartOrbitIntent: AppIntent {
+struct StartOrbitIntent: AudioRecordingIntent, AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Start Orbit"
     static let description = IntentDescription("Starts an Orbit voice call in the background.")
     static let openAppWhenRun = false
@@ -18,7 +18,7 @@ struct StartOrbitIntent: AppIntent {
     }
 }
 
-struct EndOrbitIntent: AppIntent {
+struct EndOrbitIntent: AudioRecordingIntent, AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Stop Orbit"
     static let description = IntentDescription("Ends the active Orbit voice call in the background.")
     static let openAppWhenRun = false
