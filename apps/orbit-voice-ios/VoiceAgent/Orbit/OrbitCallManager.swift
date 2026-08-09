@@ -97,80 +97,56 @@ final class OrbitCallManager: NSObject {
 }
 
 extension OrbitCallManager: CXProviderDelegate {
-    nonisolated func providerDidReset(_: CXProvider) {
-        MainActor.assumeIsolated { [weak self] in
+    func providerDidReset(_: CXProvider) {
+        connectionTask?.cancel()
+        connectionTask = nil
+        activeCallUUID = nil
+        isEndingLocally = false
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            connectionTask?.cancel()
-            connectionTask = nil
+            await session.end()
+            session.restoreMessageHistory([])
+        }
+    }
+
+    func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
+        let callUUID = action.callUUID
+        provider.reportOutgoingCall(with: callUUID, startedConnectingAt: Date())
+
+        // Fulfilling the CallKit action activates AVAudioSession. LiveKit's
+        // engine remains disabled until provider(_:didActivate:) below.
+        action.fulfill()
+
+        connectionTask?.cancel()
+        connectionTask = Task { @MainActor [weak self] in
+            await self?.connect(callUUID: callUUID)
+        }
+    }
+
+    func provider(_: CXProvider, perform action: CXEndCallAction) {
+        connectionTask?.cancel()
+        connectionTask = nil
+        isEndingLocally = true
+        action.fulfill()
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await session.end()
+            session.restoreMessageHistory([])
             activeCallUUID = nil
             isEndingLocally = false
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await session.end()
-                session.restoreMessageHistory([])
-            }
         }
     }
 
-    nonisolated func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
-        MainActor.assumeIsolated { [weak self] in
-            guard let self else {
-                action.fail()
-                return
-            }
-
-            let callUUID = action.callUUID
-            provider.reportOutgoingCall(with: callUUID, startedConnectingAt: Date())
-
-            // Fulfilling the CallKit action activates AVAudioSession. LiveKit's
-            // engine remains disabled until provider(_:didActivate:) below.
-            action.fulfill()
-
-            connectionTask?.cancel()
-            connectionTask = Task { @MainActor [weak self] in
-                await self?.connect(callUUID: callUUID)
-            }
+    func provider(_: CXProvider, perform action: CXSetMutedCallAction) {
+        let microphoneEnabled = !action.isMuted
+        action.fulfill()
+        Task { @MainActor [weak self] in
+            try? await self?.session.room.localParticipant.setMicrophone(enabled: microphoneEnabled)
         }
     }
 
-    nonisolated func provider(_: CXProvider, perform action: CXEndCallAction) {
-        MainActor.assumeIsolated { [weak self] in
-            guard let self else {
-                action.fulfill()
-                return
-            }
-
-            connectionTask?.cancel()
-            connectionTask = nil
-            isEndingLocally = true
-            action.fulfill()
-
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await session.end()
-                session.restoreMessageHistory([])
-                activeCallUUID = nil
-                isEndingLocally = false
-            }
-        }
-    }
-
-    nonisolated func provider(_: CXProvider, perform action: CXSetMutedCallAction) {
-        MainActor.assumeIsolated { [weak self] in
-            guard let self else {
-                action.fail()
-                return
-            }
-
-            let microphoneEnabled = !action.isMuted
-            action.fulfill()
-            Task { @MainActor [weak self] in
-                try? await self?.session.room.localParticipant.setMicrophone(enabled: microphoneEnabled)
-            }
-        }
-    }
-
-    nonisolated func provider(_: CXProvider, didActivate audioSession: AVAudioSession) {
+    func provider(_: CXProvider, didActivate audioSession: AVAudioSession) {
         do {
             try audioSession.setCategory(
                 .playAndRecord,
@@ -183,7 +159,7 @@ extension OrbitCallManager: CXProviderDelegate {
         }
     }
 
-    nonisolated func provider(_: CXProvider, didDeactivate _: AVAudioSession) {
+    func provider(_: CXProvider, didDeactivate _: AVAudioSession) {
         try? AudioManager.shared.setEngineAvailability(.none)
     }
 }
