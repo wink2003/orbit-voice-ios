@@ -8,7 +8,7 @@ on:
       - ".github/workflows/build-orbit-voice-phase1.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -47,6 +47,15 @@ jobs:
           cd "$RUNNER_TEMP/orbit-voice-phase1-ipa"
           zip -qry Orbit-Voice-Phase1.ipa Payload
           unzip -tq Orbit-Voice-Phase1.ipa
+      - name: Publish IPA release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: orbit-voice-phase1
+          name: Orbit Voice Phase 1
+          prerelease: true
+          make_latest: false
+          body: Install Orbit Voice through SideStore using the source JSON in altstore/orbit-voice-phase1.json.
+          files: ${{ runner.temp }}/orbit-voice-phase1-ipa/Orbit-Voice-Phase1.ipa
       - uses: actions/upload-artifact@v4
         with:
           name: Orbit-Voice-Phase1-IPA

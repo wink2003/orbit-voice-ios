@@ -1,0 +1,27 @@
+{
+  "name": "Orbit Voice",
+  "subtitle": "Окремий голосовий клієнт Orbit",
+  "description": "Легкий окремий застосунок для багатокрокових голосових розмов з існуючим Orbit backend.",
+  "website": "https://voice.orbit.opik.net",
+  "identifier": "net.opik.orbit.voice.phase1.source",
+  "apps": [
+    {
+      "name": "Orbit Voice",
+      "bundleIdentifier": "net.opik.orbit.voice.phase1",
+      "developerName": "Orbit Family",
+      "iconURL": "https://voice.orbit.opik.net/altstore/orbit-icon.png",
+      "subtitle": "Hands-free multi-turn voice client",
+      "localizedDescription": "Окремий Orbit Voice без CallKit. Використовує існуючий backend Orbit та один session_id для всієї розмови.",
+      "versions": [
+        {
+          "version": "1.0",
+          "buildVersion": "1",
+          "date": "2026-08-10",
+          "downloadURL": "https://github.com/wink2003/orbit-voice-ios/releases/download/orbit-voice-phase1/Orbit-Voice-Phase1.ipa",
+          "minOSVersion": "18.0"
+        }
+      ]
+    }
+  ],
+  "news": []
+}
