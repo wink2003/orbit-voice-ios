@@ -41,7 +41,11 @@ final class BackgroundProbeRecorder: ObservableObject {
         do {
             let attributes = ProbeAttributes(startedAt: Date())
             let content = ActivityContent(
-                state: .init(phase: "Starting", buffers: 0, detail: "Requesting microphone"),
+                state: ProbeAttributes.ContentState(
+                    phase: "Starting",
+                    buffers: 0,
+                    detail: "Requesting microphone"
+                ),
                 staleDate: nil
             )
             activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
