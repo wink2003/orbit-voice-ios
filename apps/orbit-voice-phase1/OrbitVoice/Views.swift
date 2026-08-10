@@ -20,7 +20,7 @@ struct PairingView: View {
     }
     private func pair() async {
         busy = true; error = nil; defer { busy = false }
-        do { try await session.pair(code: code) } catch { error = error.localizedDescription }
+        do { try await session.pair(code: code) } catch let caught { error = caught.localizedDescription }
     }
 }
 
