@@ -22,13 +22,20 @@ jobs:
           xcodebuild -project apps/orbit-voice-phase1/OrbitVoice.xcodeproj -list 2>&1 | tee "$RUNNER_TEMP/orbit-voice-phase1-list.log"
       - name: Build unsigned Orbit Voice Phase 1
         run: |
-          set -o pipefail
+          set +e
           xcodebuild -project apps/orbit-voice-phase1/OrbitVoice.xcodeproj \
             -scheme OrbitVoice -configuration Release -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/orbit-voice-phase1-derived" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
-            build 2>&1 | tee "$RUNNER_TEMP/orbit-voice-phase1-build.log"
+            build > "$RUNNER_TEMP/orbit-voice-phase1-build.log" 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo '--- Orbit Voice Phase 1 xcodebuild diagnostics ---'
+            tail -n 160 "$RUNNER_TEMP/orbit-voice-phase1-build.log"
+            while IFS= read -r line; do echo "::error title=Xcode::$line"; done < <(grep -E 'error:|xcodebuild: error:' "$RUNNER_TEMP/orbit-voice-phase1-build.log" | tail -n 20)
+            exit "$status"
+          fi
       - name: Package IPA
         run: |
           set -euo pipefail
