@@ -1,7 +1,7 @@
 import AppIntents
 
 @available(iOS 26.0, *)
-struct StartBackgroundMicrophoneTestIntent: AudioRecordingIntent {
+struct StartBackgroundMicrophoneTestIntent: AudioRecordingIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Start Background Microphone Test"
     static let description = IntentDescription("Attempts a background microphone capture without opening Orbit Voice Probe.")
     static var supportedModes: IntentModes { [.background] }
