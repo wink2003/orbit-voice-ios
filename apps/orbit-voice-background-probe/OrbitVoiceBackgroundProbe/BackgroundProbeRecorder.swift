@@ -13,6 +13,7 @@ final class BackgroundProbeRecorder: ObservableObject {
     @Published private(set) var backgroundBuffers = 0
     @Published private(set) var audioSessionActive = false
     @Published private(set) var detail = "No test has run."
+    @Published private(set) var diagnostics: [String] = []
     @Published private(set) var updatedAt = "—"
 
     private let engine = AVAudioEngine()
@@ -45,6 +46,11 @@ final class BackgroundProbeRecorder: ObservableObject {
         publish(phase: "Error", buffers: buffers, detail: message)
     }
 
+    func noteIntent(_ message: String) {
+        appendDiagnostic(message)
+        persistCurrentStatus()
+    }
+
     func requestMicrophonePermission() async {
         let granted = await AVAudioApplication.requestRecordPermission()
         publish(
@@ -68,7 +74,9 @@ final class BackgroundProbeRecorder: ObservableObject {
             return
         }
 
-        publish(phase: "Starting", buffers: 0, detail: "Intent entered; origin=\(origin); appState=\(UIApplication.shared.applicationState.rawValue)")
+        diagnostics = []
+        appendDiagnostic("Recorder begin; origin=\(origin); appState=\(UIApplication.shared.applicationState.rawValue)")
+        publish(phase: "Starting", buffers: 0, detail: "Starting recorder; origin=\(origin)")
         foregroundBuffers = 0
         backgroundBuffers = 0
         isInBackground = UIApplication.shared.applicationState != .active
@@ -84,6 +92,7 @@ final class BackgroundProbeRecorder: ObservableObject {
                 staleDate: nil
             )
             activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
+            appendDiagnostic("Live Activity started")
             publish(phase: "Live Activity active", buffers: 0, detail: "Live Activity requested successfully.")
         } catch {
             publish(phase: "Live Activity failed", buffers: 0, detail: "\(error.localizedDescription)")
@@ -95,6 +104,7 @@ final class BackgroundProbeRecorder: ObservableObject {
             try session.setCategory(.record, mode: .measurement, options: [.allowBluetooth])
             try session.setActive(true)
             audioSessionActive = true
+            appendDiagnostic("AVAudioSession activated")
             publish(phase: "Audio session active", buffers: 0, detail: "category=record mode=measurement")
 
             let input = engine.inputNode
@@ -105,6 +115,7 @@ final class BackgroundProbeRecorder: ObservableObject {
             engine.prepare()
             try engine.start()
             isRecording = true
+            appendDiagnostic("AVAudioEngine started")
             publish(phase: "Recording", buffers: 0, detail: "AVAudioEngine started; waiting for input buffers.")
             updateActivity()
 
@@ -129,6 +140,7 @@ final class BackgroundProbeRecorder: ObservableObject {
         isRecording = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         audioSessionActive = false
+        appendDiagnostic("Recorder stopped; reason=\(reason)")
         await activity?.end(ActivityContent(state: .init(phase: "Stopped", buffers: buffers, detail: reason), staleDate: nil), dismissalPolicy: .immediate)
         activity = nil
         publish(phase: "Stopped", buffers: buffers, detail: reason)
@@ -139,7 +151,7 @@ final class BackgroundProbeRecorder: ObservableObject {
         buffers += 1
         if buffers == 1 || buffers % 25 == 0 {
             if isInBackground { backgroundBuffers += 1 } else { foregroundBuffers += 1 }
-            publish(phase: "Recording", buffers: buffers, detail: "Received actual microphone input buffers.")
+            publish(phase: "Recording", buffers: buffers, detail: "Received microphone buffers; foreground=\(foregroundBuffers), background=\(backgroundBuffers)")
             updateActivity()
         }
         if buffers > 1 && buffers % 25 != 0 {
@@ -158,16 +170,35 @@ final class BackgroundProbeRecorder: ObservableObject {
         self.buffers = buffers
         self.detail = detail
         updatedAt = ISO8601DateFormatter().string(from: Date())
-        ProbeStatusStore.write(phase: phase, buffers: buffers, detail: detail, foregroundBuffers: foregroundBuffers, backgroundBuffers: backgroundBuffers)
+        persistCurrentStatus()
+    }
+
+    private func appendDiagnostic(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        diagnostics.append("\(timestamp)  \(message)")
+        if diagnostics.count > 20 { diagnostics.removeFirst(diagnostics.count - 20) }
+    }
+
+    private func persistCurrentStatus() {
+        ProbeStatusStore.write(
+            phase: phase,
+            buffers: buffers,
+            detail: detail,
+            foregroundBuffers: foregroundBuffers,
+            backgroundBuffers: backgroundBuffers,
+            diagnostics: diagnostics
+        )
     }
 
     private func enteredBackground() {
         isInBackground = true
+        appendDiagnostic("Scene entered background")
         if isRecording { publish(phase: "Recording", buffers: buffers, detail: "Probe entered background; counting input buffers.") }
     }
 
     private func enteredForeground() {
         isInBackground = false
+        appendDiagnostic("Scene entered foreground")
         if isRecording { publish(phase: "Recording", buffers: buffers, detail: "Probe returned to foreground; recording continues.") }
     }
 
@@ -178,6 +209,7 @@ final class BackgroundProbeRecorder: ObservableObject {
         foregroundBuffers = value.foregroundBuffers
         backgroundBuffers = value.backgroundBuffers
         detail = value.detail
+        diagnostics = value.diagnostics
         updatedAt = value.updatedAt
     }
 }
@@ -185,11 +217,13 @@ final class BackgroundProbeRecorder: ObservableObject {
 enum ProbeError: LocalizedError {
     case liveActivity(String)
     case audio(String)
+    case foregroundUnavailable
 
     var errorDescription: String? {
         switch self {
         case let .liveActivity(message): return "Live Activity failed: \(message)"
         case let .audio(message): return "Audio failed: \(message)"
+        case .foregroundUnavailable: return "Foreground transition is unavailable in this App Intent context."
         }
     }
 }

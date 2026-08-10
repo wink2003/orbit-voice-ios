@@ -13,6 +13,34 @@ struct StartBackgroundMicrophoneTestIntent: AudioRecordingIntent, LiveActivityIn
 }
 
 @available(iOS 26.0, *)
+struct StartForegroundBootstrapMicrophoneTestIntent: AudioRecordingIntent, LiveActivityIntent {
+    static let title: LocalizedStringResource = "Start Foreground Bootstrap Microphone Test"
+    static let description = IntentDescription("Temporarily moves Orbit Voice Probe to the foreground to start microphone capture, then completes while recording continues.")
+    static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
+
+    func perform() async throws -> some IntentResult {
+        let initialMode = systemContext.currentMode
+        await BackgroundProbeRecorder.shared.noteIntent("Intent entered; initialMode=\(initialMode)")
+
+        if initialMode == .background {
+            guard initialMode.canContinueInForeground else {
+                await BackgroundProbeRecorder.shared.noteIntent("Foreground transition unavailable")
+                throw ProbeError.foregroundUnavailable
+            }
+            await BackgroundProbeRecorder.shared.noteIntent("Requesting dynamic foreground transition")
+            try await continueInForeground()
+            await BackgroundProbeRecorder.shared.noteIntent("Foreground transition returned; currentMode=\(systemContext.currentMode)")
+        } else {
+            await BackgroundProbeRecorder.shared.noteIntent("Already executing in foreground")
+        }
+
+        try await BackgroundProbeRecorder.shared.startForegroundBackgroundTest()
+        await BackgroundProbeRecorder.shared.noteIntent("Microphone capture confirmed; intent completing")
+        return .result()
+    }
+}
+
+@available(iOS 26.0, *)
 struct StopBackgroundMicrophoneTestIntent: AudioRecordingIntent {
     static let title: LocalizedStringResource = "Stop Background Microphone Test"
     static let description = IntentDescription("Stops the Orbit Voice Probe microphone test.")
@@ -32,6 +60,12 @@ struct ProbeShortcuts: AppShortcutsProvider {
             phrases: ["Start background microphone test in \(.applicationName)"],
             shortTitle: "Start background test",
             systemImageName: "mic.fill"
+        )
+        AppShortcut(
+            intent: StartForegroundBootstrapMicrophoneTestIntent(),
+            phrases: ["Start foreground bootstrap test in \(.applicationName)"],
+            shortTitle: "Start foreground bootstrap",
+            systemImageName: "mic.and.signal.meter"
         )
         AppShortcut(
             intent: StopBackgroundMicrophoneTestIntent(),

@@ -24,6 +24,15 @@ struct ProbeView: View {
                 .foregroundStyle(recorder.audioSessionActive ? .green : .secondary)
             Text(recorder.detail).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Text("Updated: \(recorder.updatedAt)").font(.caption).foregroundStyle(.secondary)
+            if !recorder.diagnostics.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Diagnostics").font(.headline)
+                    ForEach(recorder.diagnostics.suffix(6), id: \.self) { entry in
+                        Text(entry).font(.caption2.monospaced()).textSelection(.enabled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Button("Grant microphone permission") { Task { await recorder.requestMicrophonePermission() } }
                 .buttonStyle(.borderedProminent)
             Button("Start Foreground → Background Test") {
