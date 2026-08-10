@@ -64,7 +64,7 @@ struct StartView: View {
             .foregroundStyle(.fgModerate)
         } else {
         AsyncButton {
-            try? await OrbitRuntime.shared.callManager.startCall()
+            await session.start()
         } label: {
             HStack {
                 Spacer()

@@ -8,7 +8,6 @@ final class OrbitRuntime {
     let session: Session
     let localMedia: LocalMedia
     let audioOptions: AudioOptions
-    let callManager: OrbitCallManager
 
     private init() {
         authentication = OrbitAuthentication()
@@ -24,6 +23,11 @@ final class OrbitRuntime {
         let localMedia = LocalMedia(session: session)
         self.localMedia = localMedia
         audioOptions = AudioOptions(localMedia: localMedia)
-        callManager = OrbitCallManager(session: session)
+
+        // Orbit is an in-app LiveKit voice experience.  We deliberately keep
+        // it outside CallKit: the app is lightweight, works as a normal app
+        // and does not create a fake phone call in iOS.
+        AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = true
+        try? AudioManager.shared.setEngineAvailability(.default)
     }
 }
