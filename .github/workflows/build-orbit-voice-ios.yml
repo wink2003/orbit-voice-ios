@@ -21,7 +21,7 @@ jobs:
 
       - name: Build unsigned iOS application
         run: |
-          set -euo pipefail
+          set -uo pipefail
           xcodebuild \
             -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
             -scheme VoiceAgent \
@@ -33,7 +33,17 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM='' \
-            build
+            build 2>&1 | tee "$RUNNER_TEMP/orbit-build.log"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            {
+              echo '## Swift build errors'
+              echo '```text'
+              grep -E 'error:|warning:' "$RUNNER_TEMP/orbit-build.log" || tail -n 120 "$RUNNER_TEMP/orbit-build.log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$status"
+          fi
 
       - name: Package IPA for AltStore
         run: |
