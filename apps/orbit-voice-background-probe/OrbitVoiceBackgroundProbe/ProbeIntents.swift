@@ -29,13 +29,13 @@ struct ProbeShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: StartBackgroundMicrophoneTestIntent(),
-            phrases: ["Start background microphone test in \\(.applicationName)"],
+            phrases: ["Start background microphone test in \(.applicationName)"],
             shortTitle: "Start background test",
             systemImageName: "mic.fill"
         )
         AppShortcut(
             intent: StopBackgroundMicrophoneTestIntent(),
-            phrases: ["Stop background microphone test in \\(.applicationName)"],
+            phrases: ["Stop background microphone test in \(.applicationName)"],
             shortTitle: "Stop background test",
             systemImageName: "stop.fill"
         )
