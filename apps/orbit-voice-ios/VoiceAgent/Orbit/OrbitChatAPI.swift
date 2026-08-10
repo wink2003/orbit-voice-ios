@@ -7,7 +7,7 @@ struct OrbitProfile: Decodable {
     let isMinor: Bool
 }
 
-struct OrbitConversation: Decodable, Identifiable {
+struct OrbitConversation: Decodable, Identifiable, Hashable {
     let id: String
     let kind: String
     let title: String
@@ -34,7 +34,7 @@ private struct MessagesResponse: Decodable {
     let messages: [OrbitChatMessage]
 }
 
-private struct SendMessageResponse: Decodable {
+struct SendMessageResponse: Decodable {
     let userMessage: OrbitChatMessage
     let assistantMessage: OrbitChatMessage
 }
