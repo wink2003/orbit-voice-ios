@@ -1,11 +1,13 @@
 import SwiftUI
 
 struct OrbitChatsView: View {
+    @EnvironmentObject private var authentication: OrbitAuthentication
     @State private var profile: OrbitProfile?
     @State private var chats: [OrbitConversation] = []
     @State private var selectedChat: OrbitConversation?
     @State private var isLoading = true
     @State private var error: Error?
+    @State private var showsChangeUserConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -39,7 +41,19 @@ struct OrbitChatsView: View {
             .toolbar {
                 if let profile {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Text(profile.displayName).font(.footnote).foregroundStyle(.secondary)
+                        Menu {
+                            Button(role: .destructive) {
+                                showsChangeUserConfirmation = true
+                            } label: {
+                                Label("Змінити користувача на цьому iPhone", systemImage: "person.crop.circle.badge.xmark")
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(profile.displayName).font(.footnote)
+                                Image(systemName: "chevron.down").font(.caption2)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -52,6 +66,17 @@ struct OrbitChatsView: View {
                 Button("Гаразд") { error = nil }
             } message: {
                 Text(error?.localizedDescription ?? "Спробуй ще раз.")
+            }
+            .confirmationDialog(
+                "Змінити користувача?",
+                isPresented: $showsChangeUserConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Змінити користувача", role: .destructive) {
+                    authentication.forgetDevice()
+                }
+            } message: {
+                Text("Orbit попросить новий одноразовий код. Історія чатів на сервері не видаляється.")
             }
         }
     }
