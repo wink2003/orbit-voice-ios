@@ -1,0 +1,62 @@
+name: Build Orbit Voice Background Probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/orbit-voice-background-probe/**"
+      - ".github/workflows/build-orbit-voice-background-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build unsigned probe
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project apps/orbit-voice-background-probe/OrbitVoiceBackgroundProbe.xcodeproj \
+            -scheme OrbitVoiceBackgroundProbe \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-voice-background-probe-derived" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            build 2>&1 | tee "$RUNNER_TEMP/orbit-voice-background-probe-build.log"
+
+      - name: Package and validate SideStore IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/orbit-voice-background-probe-derived/Build/Products/Release-iphoneos/OrbitVoiceBackgroundProbe.app"
+          EXT="$APP/PlugIns/OrbitVoiceBackgroundProbeWidget.appex"
+          MAIN_INFO="$APP/Info.plist"
+          EXT_INFO="$EXT/Info.plist"
+          test -f "$MAIN_INFO"
+          test -x "$APP/OrbitVoiceBackgroundProbe"
+          test -f "$EXT_INFO"
+          test -x "$EXT/OrbitVoiceBackgroundProbeWidget"
+          plutil -lint "$MAIN_INFO"
+          plutil -lint "$EXT_INFO"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$MAIN_INFO")" = "net.opik.orbit.voice.backgroundprobe"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$MAIN_INFO")" = "OrbitVoiceBackgroundProbe"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$MAIN_INFO")" = "OrbitVoiceBackgroundProbe"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleInfoDictionaryVersion' "$MAIN_INFO")" = "6.0"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSRequiresIPhoneOS' "$MAIN_INFO")" = "true"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$EXT_INFO")" = "net.opik.orbit.voice.backgroundprobe.widget"
+          mkdir -p "$RUNNER_TEMP/orbit-voice-background-probe-ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/orbit-voice-background-probe-ipa/Payload/"
+          cd "$RUNNER_TEMP/orbit-voice-background-probe-ipa"
+          zip -qry Orbit-Voice-Background-Probe.ipa Payload
+          unzip -tq Orbit-Voice-Background-Probe.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-Voice-Background-Probe-IPA
+          path: ${{ runner.temp }}/orbit-voice-background-probe-ipa/Orbit-Voice-Background-Probe.ipa
+          retention-days: 7
