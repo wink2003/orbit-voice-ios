@@ -21,6 +21,10 @@ final class BackgroundProbeRecorder: ObservableObject {
     private var stopTask: Task<Void, Never>?
     private var isRecording = false
     private var isInBackground = false
+    private var destroySceneAfterFirstBuffer = false
+    private var sceneDestructionRequested = false
+    private var loggedBackgroundBufferAfterSceneDestruction = false
+    private var sceneSessionPendingDestruction: UISceneSession?
     private var lifecycleObservers: [NSObjectProtocol] = []
 
     private init() {
@@ -32,6 +36,13 @@ final class BackgroundProbeRecorder: ObservableObject {
             },
             center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.enteredForeground() }
+            },
+            center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.noteLifecycle("Application became active") }
+            },
+            center.addObserver(forName: UIScene.didDisconnectNotification, object: nil, queue: .main) { [weak self] notification in
+                let scene = notification.object as? UIScene
+                Task { @MainActor in self?.sceneDidDisconnect(scene) }
             },
         ]
     }
@@ -68,7 +79,19 @@ final class BackgroundProbeRecorder: ObservableObject {
         try await begin(origin: "Foreground UI", automaticStopAfter: nil)
     }
 
-    private func begin(origin: String, automaticStopAfter: Duration?) async throws {
+    func startForegroundBootstrapSceneDestructionTest() async throws {
+        try await begin(
+            origin: "AppIntent.foregroundBootstrapSceneDestruction",
+            automaticStopAfter: nil,
+            requestSceneDestructionAfterFirstBuffer: true
+        )
+    }
+
+    private func begin(
+        origin: String,
+        automaticStopAfter: Duration?,
+        requestSceneDestructionAfterFirstBuffer: Bool = false
+    ) async throws {
         guard !isRecording else {
             publish(phase: "Recording", buffers: buffers, detail: "Already recording; origin=\(origin)")
             return
@@ -80,6 +103,13 @@ final class BackgroundProbeRecorder: ObservableObject {
         foregroundBuffers = 0
         backgroundBuffers = 0
         isInBackground = UIApplication.shared.applicationState != .active
+        destroySceneAfterFirstBuffer = requestSceneDestructionAfterFirstBuffer
+        sceneDestructionRequested = false
+        loggedBackgroundBufferAfterSceneDestruction = false
+        sceneSessionPendingDestruction = nil
+        if requestSceneDestructionAfterFirstBuffer {
+            appendDiagnostic("Scene destruction armed; session will be resolved after first microphone buffer")
+        }
 
         do {
             let attributes = ProbeAttributes(startedAt: Date())
@@ -138,6 +168,8 @@ final class BackgroundProbeRecorder: ObservableObject {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         isRecording = false
+        destroySceneAfterFirstBuffer = false
+        sceneSessionPendingDestruction = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         audioSessionActive = false
         appendDiagnostic("Recorder stopped; reason=\(reason)")
@@ -156,6 +188,34 @@ final class BackgroundProbeRecorder: ObservableObject {
         }
         if buffers > 1 && buffers % 25 != 0 {
             if isInBackground { backgroundBuffers += 1 } else { foregroundBuffers += 1 }
+        }
+
+        if buffers == 1, destroySceneAfterFirstBuffer {
+            destroySceneAfterFirstBuffer = false
+            requestSceneDestructionAfterFirstBuffer()
+        }
+        if sceneDestructionRequested, isInBackground, !loggedBackgroundBufferAfterSceneDestruction {
+            loggedBackgroundBufferAfterSceneDestruction = true
+            appendDiagnostic("First background buffer after scene destruction; buffers=\(buffers); background=\(backgroundBuffers)")
+            persistCurrentStatus()
+        }
+    }
+
+    private func requestSceneDestructionAfterFirstBuffer() {
+        guard let session = sceneSessionPendingDestruction ?? foregroundWindowScene()?.session else {
+            appendDiagnostic("Scene destruction skipped: no foreground UIWindowScene session")
+            persistCurrentStatus()
+            return
+        }
+        sceneSessionPendingDestruction = session
+        sceneDestructionRequested = true
+        appendDiagnostic("Requesting scene destruction; session=\(session.persistentIdentifier); buffersBefore=\(buffers)")
+        persistCurrentStatus()
+        UIApplication.shared.requestSceneSessionDestruction(session, options: nil) { [weak self] error in
+            Task { @MainActor in
+                self?.appendDiagnostic("Scene destruction error: \(error.localizedDescription)")
+                self?.persistCurrentStatus()
+            }
         }
     }
 
@@ -200,6 +260,24 @@ final class BackgroundProbeRecorder: ObservableObject {
         isInBackground = false
         appendDiagnostic("Scene entered foreground")
         if isRecording { publish(phase: "Recording", buffers: buffers, detail: "Probe returned to foreground; recording continues.") }
+    }
+
+    private func noteLifecycle(_ message: String) {
+        appendDiagnostic(message)
+        persistCurrentStatus()
+    }
+
+    private func sceneDidDisconnect(_ scene: UIScene?) {
+        let identifier = scene?.session.persistentIdentifier ?? "unknown"
+        appendDiagnostic("sceneDidDisconnect; session=\(identifier); recording=\(isRecording); buffers=\(buffers)")
+        // The recorder is a process-level singleton. Scene loss must not stop an active audio test.
+        persistCurrentStatus()
+    }
+
+    private func foregroundWindowScene() -> UIWindowScene? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive }
     }
 
     private func loadPersistedStatus() {

@@ -34,8 +34,8 @@ struct StartForegroundBootstrapMicrophoneTestIntent: AudioRecordingIntent, LiveA
             await BackgroundProbeRecorder.shared.noteIntent("Already executing in foreground")
         }
 
-        try await BackgroundProbeRecorder.shared.startForegroundBackgroundTest()
-        await BackgroundProbeRecorder.shared.noteIntent("Microphone capture confirmed; intent completing")
+        try await BackgroundProbeRecorder.shared.startForegroundBootstrapSceneDestructionTest()
+        await BackgroundProbeRecorder.shared.noteIntent("Microphone capture started; intent completing after scene-destruction request")
         return .result()
     }
 }
