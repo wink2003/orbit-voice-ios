@@ -14,8 +14,8 @@ struct ProbeAttributes: ActivityAttributes {
 enum ProbeStatusStore {
     private static let key = "orbit.voice.backgroundProbe.status"
 
-    static func write(phase: String, buffers: Int, detail: String, foregroundBuffers: Int = 0, backgroundBuffers: Int = 0, diagnostics: [String] = []) {
-        UserDefaults.standard.set([
+    static func write(phase: String, buffers: Int, detail: String, foregroundBuffers: Int = 0, backgroundBuffers: Int = 0, diagnostics: [String] = [], destructionErrorDetails: String? = nil) {
+        var value: [String: Any] = [
             "phase": phase,
             "buffers": buffers,
             "foregroundBuffers": foregroundBuffers,
@@ -23,10 +23,12 @@ enum ProbeStatusStore {
             "detail": detail,
             "diagnostics": diagnostics,
             "updatedAt": ISO8601DateFormatter().string(from: Date()),
-        ], forKey: key)
+        ]
+        if let destructionErrorDetails { value["destructionErrorDetails"] = destructionErrorDetails }
+        UserDefaults.standard.set(value, forKey: key)
     }
 
-    static func read() -> (phase: String, buffers: Int, foregroundBuffers: Int, backgroundBuffers: Int, detail: String, diagnostics: [String], updatedAt: String) {
+    static func read() -> (phase: String, buffers: Int, foregroundBuffers: Int, backgroundBuffers: Int, detail: String, diagnostics: [String], destructionErrorDetails: String?, updatedAt: String) {
         let value = UserDefaults.standard.dictionary(forKey: key) ?? [:]
         return (
             value["phase"] as? String ?? "Never run",
@@ -35,6 +37,7 @@ enum ProbeStatusStore {
             value["backgroundBuffers"] as? Int ?? 0,
             value["detail"] as? String ?? "Open the app once, grant microphone access, then run the Shortcut from another app.",
             value["diagnostics"] as? [String] ?? [],
+            value["destructionErrorDetails"] as? String,
             value["updatedAt"] as? String ?? "—"
         )
     }

@@ -5,8 +5,8 @@
 <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
 <key>CFBundleName</key><string>OrbitVoiceBackgroundProbeWidget</string>
 <key>CFBundlePackageType</key><string>XPC!</string>
-<key>CFBundleShortVersionString</key><string>1.4</string>
-<key>CFBundleVersion</key><string>5</string>
+<key>CFBundleShortVersionString</key><string>1.5</string>
+<key>CFBundleVersion</key><string>6</string>
 <key>NSExtension</key><dict>
   <key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string>
   <key>NSExtensionPrincipalClass</key><string>$(PRODUCT_MODULE_NAME).OrbitVoiceBackgroundProbeWidgetBundle</string>

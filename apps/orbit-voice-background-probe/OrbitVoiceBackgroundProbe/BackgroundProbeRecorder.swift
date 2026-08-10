@@ -14,6 +14,7 @@ final class BackgroundProbeRecorder: ObservableObject {
     @Published private(set) var audioSessionActive = false
     @Published private(set) var detail = "No test has run."
     @Published private(set) var diagnostics: [String] = []
+    @Published private(set) var destructionErrorDetails: String?
     @Published private(set) var updatedAt = "—"
 
     private let engine = AVAudioEngine()
@@ -25,6 +26,7 @@ final class BackgroundProbeRecorder: ObservableObject {
     private var sceneDestructionRequested = false
     private var loggedBackgroundBufferAfterSceneDestruction = false
     private var sceneSessionPendingDestruction: UISceneSession?
+    private weak var visibleProbeWindow: UIWindow?
     private var lifecycleObservers: [NSObjectProtocol] = []
 
     private init() {
@@ -38,7 +40,7 @@ final class BackgroundProbeRecorder: ObservableObject {
                 Task { @MainActor in self?.enteredForeground() }
             },
             center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.noteLifecycle("Application became active") }
+                Task { @MainActor in self?.becameActive() }
             },
             center.addObserver(forName: UIScene.didDisconnectNotification, object: nil, queue: .main) { [weak self] notification in
                 let scene = notification.object as? UIScene
@@ -59,6 +61,21 @@ final class BackgroundProbeRecorder: ObservableObject {
 
     func noteIntent(_ message: String) {
         appendDiagnostic(message)
+        persistCurrentStatus()
+    }
+
+    func captureVisibleProbeWindow(_ window: UIWindow?) {
+        guard let window else { return }
+        visibleProbeWindow = window
+        isInBackground = false
+        appendDiagnostic("Visible Probe window captured; key=\(window.isKeyWindow); session=\(window.windowScene?.session.persistentIdentifier ?? "none"); state=\(window.windowScene?.activationState.rawValue ?? -1)")
+        persistCurrentStatus()
+        if destroySceneAfterFirstBuffer, buffers > 0 { requestSceneDestructionAfterFirstBuffer() }
+    }
+
+    func discardedSceneSessions(_ sessions: Set<UISceneSession>) {
+        let identifiers = sessions.map(\.persistentIdentifier).joined(separator: ",")
+        appendDiagnostic("application didDiscardSceneSessions; sessions=\(identifiers)")
         persistCurrentStatus()
     }
 
@@ -98,11 +115,14 @@ final class BackgroundProbeRecorder: ObservableObject {
         }
 
         diagnostics = []
+        destructionErrorDetails = nil
         appendDiagnostic("Recorder begin; origin=\(origin); appState=\(UIApplication.shared.applicationState.rawValue)")
         publish(phase: "Starting", buffers: 0, detail: "Starting recorder; origin=\(origin)")
         foregroundBuffers = 0
         backgroundBuffers = 0
-        isInBackground = UIApplication.shared.applicationState != .active
+        // UIKit commonly reports .inactive while Shortcuts is handing off a visible app.
+        // Only the actual background state counts as a background microphone buffer.
+        isInBackground = UIApplication.shared.applicationState == .background
         destroySceneAfterFirstBuffer = requestSceneDestructionAfterFirstBuffer
         sceneDestructionRequested = false
         loggedBackgroundBufferAfterSceneDestruction = false
@@ -191,7 +211,6 @@ final class BackgroundProbeRecorder: ObservableObject {
         }
 
         if buffers == 1, destroySceneAfterFirstBuffer {
-            destroySceneAfterFirstBuffer = false
             requestSceneDestructionAfterFirstBuffer()
         }
         if sceneDestructionRequested, isInBackground, !loggedBackgroundBufferAfterSceneDestruction {
@@ -202,18 +221,32 @@ final class BackgroundProbeRecorder: ObservableObject {
     }
 
     private func requestSceneDestructionAfterFirstBuffer() {
-        guard let session = sceneSessionPendingDestruction ?? foregroundWindowScene()?.session else {
-            appendDiagnostic("Scene destruction skipped: no foreground UIWindowScene session")
+        guard let window = visibleProbeWindow, let scene = window.windowScene else {
+            appendDiagnostic("Scene destruction pending: visible Probe window has not been captured")
             persistCurrentStatus()
             return
         }
+        guard scene.activationState == .foregroundActive else {
+            appendDiagnostic("Scene destruction pending: target scene state=\(scene.activationState.rawValue), requires foregroundActive")
+            persistCurrentStatus()
+            return
+        }
+        let session = scene.session
+        // Keep the request armed until the real, active UIWindowScene is available.
+        // This avoids losing the one-shot request if the first audio buffer arrives
+        // during the Shortcuts handoff before UIKit has attached the visible window.
+        destroySceneAfterFirstBuffer = false
         sceneSessionPendingDestruction = session
         sceneDestructionRequested = true
+        appendDiagnostic(sceneInventory(targetWindow: window, targetScene: scene))
         appendDiagnostic("Requesting scene destruction; session=\(session.persistentIdentifier); buffersBefore=\(buffers)")
         persistCurrentStatus()
         UIApplication.shared.requestSceneSessionDestruction(session, options: nil) { [weak self] error in
             Task { @MainActor in
-                self?.appendDiagnostic("Scene destruction error: \(error.localizedDescription)")
+                let nsError = error as NSError
+                let fullError = "domain=\(nsError.domain); code=\(nsError.code); description=\(nsError.localizedDescription); userInfo=\(nsError.userInfo)"
+                self?.destructionErrorDetails = fullError
+                self?.appendDiagnostic("Scene destruction error: \(fullError)")
                 self?.persistCurrentStatus()
             }
         }
@@ -246,7 +279,8 @@ final class BackgroundProbeRecorder: ObservableObject {
             detail: detail,
             foregroundBuffers: foregroundBuffers,
             backgroundBuffers: backgroundBuffers,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            destructionErrorDetails: destructionErrorDetails
         )
     }
 
@@ -262,9 +296,11 @@ final class BackgroundProbeRecorder: ObservableObject {
         if isRecording { publish(phase: "Recording", buffers: buffers, detail: "Probe returned to foreground; recording continues.") }
     }
 
-    private func noteLifecycle(_ message: String) {
-        appendDiagnostic(message)
+    private func becameActive() {
+        isInBackground = false
+        appendDiagnostic("Application became active")
         persistCurrentStatus()
+        if destroySceneAfterFirstBuffer, buffers > 0 { requestSceneDestructionAfterFirstBuffer() }
     }
 
     private func sceneDidDisconnect(_ scene: UIScene?) {
@@ -274,10 +310,13 @@ final class BackgroundProbeRecorder: ObservableObject {
         persistCurrentStatus()
     }
 
-    private func foregroundWindowScene() -> UIWindowScene? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive || $0.activationState == .foregroundInactive }
+    private func sceneInventory(targetWindow: UIWindow, targetScene: UIWindowScene) -> String {
+        let connected = UIApplication.shared.connectedScenes.map { scene in
+            "id=\(scene.session.persistentIdentifier),state=\(scene.activationState.rawValue)"
+        }.sorted().joined(separator: " | ")
+        let open = UIApplication.shared.openSessions.map(\.persistentIdentifier).sorted().joined(separator: ",")
+        let ownsKeyWindow = targetWindow.isKeyWindow || targetScene.windows.contains(where: \.isKeyWindow)
+        return "Destruction target; appState=\(UIApplication.shared.applicationState.rawValue); targetState=\(targetScene.activationState.rawValue); targetSession=\(targetScene.session.persistentIdentifier); ownsVisibleKeyWindow=\(ownsKeyWindow); connected=[\(connected)]; open=[\(open)]"
     }
 
     private func loadPersistedStatus() {
@@ -288,6 +327,7 @@ final class BackgroundProbeRecorder: ObservableObject {
         backgroundBuffers = value.backgroundBuffers
         detail = value.detail
         diagnostics = value.diagnostics
+        destructionErrorDetails = value.destructionErrorDetails
         updatedAt = value.updatedAt
     }
 }
