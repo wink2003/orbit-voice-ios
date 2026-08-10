@@ -14,20 +14,24 @@ struct ProbeAttributes: ActivityAttributes {
 enum ProbeStatusStore {
     private static let key = "orbit.voice.backgroundProbe.status"
 
-    static func write(phase: String, buffers: Int, detail: String) {
+    static func write(phase: String, buffers: Int, detail: String, foregroundBuffers: Int = 0, backgroundBuffers: Int = 0) {
         UserDefaults.standard.set([
             "phase": phase,
             "buffers": buffers,
+            "foregroundBuffers": foregroundBuffers,
+            "backgroundBuffers": backgroundBuffers,
             "detail": detail,
             "updatedAt": ISO8601DateFormatter().string(from: Date()),
         ], forKey: key)
     }
 
-    static func read() -> (phase: String, buffers: Int, detail: String, updatedAt: String) {
+    static func read() -> (phase: String, buffers: Int, foregroundBuffers: Int, backgroundBuffers: Int, detail: String, updatedAt: String) {
         let value = UserDefaults.standard.dictionary(forKey: key) ?? [:]
         return (
             value["phase"] as? String ?? "Never run",
             value["buffers"] as? Int ?? 0,
+            value["foregroundBuffers"] as? Int ?? 0,
+            value["backgroundBuffers"] as? Int ?? 0,
             value["detail"] as? String ?? "Open the app once, grant microphone access, then run the Shortcut from another app.",
             value["updatedAt"] as? String ?? "—"
         )

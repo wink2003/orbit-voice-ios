@@ -18,12 +18,26 @@ struct ProbeView: View {
             Text("Orbit Voice Probe").font(.title.bold())
             Text(recorder.phase).font(.headline)
             Text("Buffers: \(recorder.buffers)").font(.system(.title2, design: .monospaced))
+            Text("Foreground: \(recorder.foregroundBuffers)   Background: \(recorder.backgroundBuffers)")
+                .font(.system(.body, design: .monospaced))
+            Text("Audio session: \(recorder.audioSessionActive ? \"active\" : \"inactive\")")
+                .foregroundStyle(recorder.audioSessionActive ? .green : .secondary)
             Text(recorder.detail).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Text("Updated: \(recorder.updatedAt)").font(.caption).foregroundStyle(.secondary)
             Button("Grant microphone permission") { Task { await recorder.requestMicrophonePermission() } }
                 .buttonStyle(.borderedProminent)
+            Button("Start Foreground → Background Test") {
+                Task {
+                    do { try await recorder.startForegroundBackgroundTest() }
+                    catch { recorder.showError(error.localizedDescription) }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(recorder.audioSessionActive)
+            Button("Stop Recording") { Task { await recorder.stop(reason: "Stopped from foreground UI") } }
+                .buttonStyle(.bordered)
             Button("Refresh status") { recorder.refresh() }.buttonStyle(.bordered)
-            Text("Grant microphone permission here once. Then leave this app, open Maps or Safari, and run the Start Background Microphone Test action through Shortcuts/Siri.")
+            Text("Start while this screen is visible, then manually open Safari or Maps. Return here and compare the foreground/background counters.")
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.top, 10)
         }
         .padding(28)
