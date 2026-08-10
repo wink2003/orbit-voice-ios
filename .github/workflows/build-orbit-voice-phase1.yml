@@ -40,9 +40,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/orbit-voice-phase1-ipa/Payload"
-          cp -R "$RUNNER_TEMP/orbit-voice-phase1-derived/Build/Products/Release-iphoneos/Orbit Voice.app" "$RUNNER_TEMP/orbit-voice-phase1-ipa/Payload/"
+          APP="$RUNNER_TEMP/orbit-voice-phase1-derived/Build/Products/Release-iphoneos/OrbitVoice.app"
+          test -f "$APP/Info.plist"
+          test -x "$APP/OrbitVoice"
+          cp -R "$APP" "$RUNNER_TEMP/orbit-voice-phase1-ipa/Payload/"
           cd "$RUNNER_TEMP/orbit-voice-phase1-ipa"
           zip -qry Orbit-Voice-Phase1.ipa Payload
+          unzip -tq Orbit-Voice-Phase1.ipa
       - uses: actions/upload-artifact@v4
         with:
           name: Orbit-Voice-Phase1-IPA
