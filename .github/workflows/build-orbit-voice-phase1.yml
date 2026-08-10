@@ -24,7 +24,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project apps/orbit-voice-phase1/OrbitVoice.xcodeproj \
-            -target OrbitVoice -configuration Release -sdk iphoneos \
+            -scheme OrbitVoice -configuration Release -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/orbit-voice-phase1-derived" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
