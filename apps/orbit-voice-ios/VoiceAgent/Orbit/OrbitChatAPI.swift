@@ -53,7 +53,8 @@ enum OrbitChatAPIError: LocalizedError {
     }
 }
 
-actor OrbitChatAPI {
+@MainActor
+final class OrbitChatAPI {
     static let shared = OrbitChatAPI()
     private let baseURL = URL(string: "https://voice.orbit.opik.net")!
     private let decoder: JSONDecoder = {

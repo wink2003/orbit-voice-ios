@@ -1,37 +1,26 @@
 import AppIntents
 
-struct StartOrbitIntent: AudioRecordingIntent, AudioPlaybackIntent {
+struct StartOrbitIntent: AppIntent {
     static let title: LocalizedStringResource = "Start Orbit"
-    static let description = IntentDescription("Starts an Orbit voice call in the background.")
-    static let openAppWhenRun = false
+    static let description = IntentDescription("Opens Orbit and starts its voice session.")
+    static let openAppWhenRun = true
 
-    @available(iOS 26.0, *)
-    static var supportedModes: IntentModes { .background }
-
+    @MainActor
     func perform() async throws -> some IntentResult {
-        #if ORBIT_CALLKIT_ONLY
-        try await OrbitNativeCallManager.shared.startCall()
-        #else
-        try await OrbitRuntime.shared.callManager.startCall()
-        #endif
+        await OrbitRuntime.shared.session.start()
         return .result()
     }
 }
 
-struct EndOrbitIntent: AudioRecordingIntent, AudioPlaybackIntent {
+struct EndOrbitIntent: AppIntent {
     static let title: LocalizedStringResource = "Stop Orbit"
-    static let description = IntentDescription("Ends the active Orbit voice call in the background.")
-    static let openAppWhenRun = false
+    static let description = IntentDescription("Ends the active Orbit voice session.")
+    static let openAppWhenRun = true
 
-    @available(iOS 26.0, *)
-    static var supportedModes: IntentModes { .background }
-
+    @MainActor
     func perform() async throws -> some IntentResult {
-        #if ORBIT_CALLKIT_ONLY
-        await OrbitNativeCallManager.shared.endCall()
-        #else
-        await OrbitRuntime.shared.callManager.endCall()
-        #endif
+        await OrbitRuntime.shared.session.end()
+        OrbitRuntime.shared.session.restoreMessageHistory([])
         return .result()
     }
 }
