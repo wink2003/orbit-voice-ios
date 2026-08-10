@@ -20,7 +20,7 @@ struct ProbeView: View {
             Text("Buffers: \(recorder.buffers)").font(.system(.title2, design: .monospaced))
             Text("Foreground: \(recorder.foregroundBuffers)   Background: \(recorder.backgroundBuffers)")
                 .font(.system(.body, design: .monospaced))
-            Text("Audio session: \(recorder.audioSessionActive ? \"active\" : \"inactive\")")
+            Text("Audio session: \(recorder.audioSessionActive ? "active" : "inactive")")
                 .foregroundStyle(recorder.audioSessionActive ? .green : .secondary)
             Text(recorder.detail).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Text("Updated: \(recorder.updatedAt)").font(.caption).foregroundStyle(.secondary)
