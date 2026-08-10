@@ -41,7 +41,7 @@ final class OrbitVoiceSession: NSObject, ObservableObject {
         ])
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let message = (try? JSONDecoder().decode([String: String].self, from: data))["error"]
+            let message = (try? JSONDecoder().decode([String: String].self, from: data))?["error"]
             throw VoiceError.message(message ?? "Не вдалося активувати Orbit Voice.")
         }
         let result = try JSONDecoder().decode(PairingResponse.self, from: data)
@@ -110,7 +110,7 @@ final class OrbitVoiceSession: NSObject, ObservableObject {
         if let text { body["text"] = text }
         let (data, response) = try await URLSession.shared.upload(for: request, from: JSONEncoder().encode(body))
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let message = (try? JSONDecoder().decode([String: String].self, from: data))["error"]
+            let message = (try? JSONDecoder().decode([String: String].self, from: data))?["error"]
             throw VoiceError.message(message ?? "Orbit не відповів.")
         }
         return data
