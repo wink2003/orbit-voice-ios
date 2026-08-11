@@ -47,19 +47,14 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         isStarting = true
         lastError = nil
         await liveActivity.reconcileOrphans()
-        logger.notice("voice start requested app=\(UIApplication.shared.applicationState.rawValue, privacy: .public) scene=\(self.sceneStateDescription, privacy: .public)")
-        guard await waitForForegroundReadiness() else {
-            isStarting = false
-            lastError = "Orbit Mini не став активною програмою для мікрофона."
-            return
-        }
-        logger.notice("voice start foreground/audio gate passed category=\(AVAudioSession.sharedInstance().category.rawValue, privacy: .public) mode=\(AVAudioSession.sharedInstance().mode.rawValue, privacy: .public)")
+        await foregroundBootstrap()
+        logAudioReadiness()
         await runtime.session.start()
 
         // Siri can retain the audio route briefly after it has foregrounded
-        // Mini. Retry only the known transient engine failure, using actual
-        // foreground/interruption state plus a small bounded window. Manual
-        // Shortcuts never enter this loop when their first start succeeds.
+        // Mini. Retry only the known transient engine failure.  Scene and app
+        // lifecycle state are deliberately diagnostic-only: they do not prove
+        // microphone readiness and must never reject a manual Shortcut start.
         if !runtime.session.isConnected, isTransientAudioStartFailure {
             await retryTransientAudioStart()
         }
@@ -145,31 +140,32 @@ private extension OrbitMiniVoiceCoordinator {
             .joined(separator: ",")
     }
 
-    var isForegroundActive: Bool {
-        UIApplication.shared.applicationState == .active
-            && UIApplication.shared.connectedScenes.contains {
-                ($0 as? UIWindowScene)?.activationState == .foregroundActive
-            }
+    /// `openAppWhenRun` / supportedModes have already asked the system to
+    /// foreground Mini. Yield once so that transition work can progress, but
+    /// never infer the result from a transient connected-scene snapshot.
+    func foregroundBootstrap() async {
+        logger.notice("voice foreground bootstrap requested app=\(UIApplication.shared.applicationState.rawValue, privacy: .public) scene=\(self.sceneStateDescription, privacy: .public)")
+        await Task.yield()
     }
 
-    func waitForForegroundReadiness() async -> Bool {
-        let deadline = Date().addingTimeInterval(1.2)
-        while !Task.isCancelled {
-            if isForegroundActive, !audioInterrupted { return true }
-            guard Date() < deadline else { break }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        logger.error("foreground/audio gate timed out app=\(UIApplication.shared.applicationState.rawValue, privacy: .public) scene=\(self.sceneStateDescription, privacy: .public) interrupted=\(self.audioInterrupted, privacy: .public)")
-        return false
+    /// LiveKit owns the audio-session configuration. This independent check is
+    /// intentionally observational; the actual readiness signal is whether its
+    /// audio engine can start, not an App/UIScene lifecycle state.
+    func logAudioReadiness() {
+        let audioSession = AVAudioSession.sharedInstance()
+        logger.notice("voice audio start requested category=\(audioSession.category.rawValue, privacy: .public) mode=\(audioSession.mode.rawValue, privacy: .public) interrupted=\(self.audioInterrupted, privacy: .public)")
     }
 
     func retryTransientAudioStart() async {
         let deadline = Date().addingTimeInterval(2.0)
         let delays: [Duration] = [.milliseconds(100), .milliseconds(180), .milliseconds(300), .milliseconds(450), .milliseconds(600)]
         for (index, delay) in delays.enumerated() {
-            guard Date() < deadline, await waitForForegroundReadiness(), !Task.isCancelled else { break }
+            guard Date() < deadline, !Task.isCancelled else { break }
             try? await Task.sleep(for: delay)
-            guard isForegroundActive, !audioInterrupted else { continue }
+            guard !audioInterrupted else {
+                logger.notice("transient audio retry waiting for interruption to end")
+                continue
+            }
             logger.notice("transient audio retry \(index + 1, privacy: .public) elapsed=\(2.0 - max(0, deadline.timeIntervalSinceNow), privacy: .public)s")
             runtime.session.dismissError()
             runtime.localMedia.dismissError()
