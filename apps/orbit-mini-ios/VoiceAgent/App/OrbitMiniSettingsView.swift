@@ -43,7 +43,7 @@ struct OrbitMiniSettingsView: View {
                         Text("Вимкнено").tag("off")
                     }
                 }
-                Section("Фрази завершення") {
+                Section {
                     ForEach(endPhrases, id: \.self) { phrase in
                         Text(phrase)
                     }
@@ -60,6 +60,8 @@ struct OrbitMiniSettingsView: View {
                         OrbitMiniEndPhrases.restoreDefaults()
                         endPhrases = OrbitMiniEndPhrases.phrases
                     }
+                } header: {
+                    Text("Фрази завершення")
                 } footer: {
                     Text("Orbit завершує розмову лише якщо розпізнаний вислів точно збігається з однією з цих коротких фраз.")
                 }
