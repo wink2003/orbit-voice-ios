@@ -28,8 +28,9 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] notification in
+            let interruptionType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt ?? 0
             Task { @MainActor [weak self] in
-                self?.handleAudioInterruption(notification)
+                self?.handleAudioInterruption(interruptionType)
             }
         }
     }
@@ -182,8 +183,7 @@ private extension OrbitMiniVoiceCoordinator {
         logger.error("transient audio startup retries exhausted")
     }
 
-    func handleAudioInterruption(_ notification: Notification) {
-        let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt ?? 0
+    func handleAudioInterruption(_ raw: UInt) {
         guard let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         switch type {
         case .began:
