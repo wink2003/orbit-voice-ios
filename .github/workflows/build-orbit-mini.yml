@@ -1,0 +1,63 @@
+name: Build Orbit Mini IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/orbit-mini-ios/**"
+      - ".github/workflows/build-orbit-mini.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Orbit Mini and WidgetKit extension
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/orbit-mini-ios/OrbitMini.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-mini-derived-data" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            build
+
+      - name: Validate production WidgetKit packaging
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/orbit-mini-derived-data/Build/Products/Release-iphoneos/Orbit Mini.app"
+          widget="$app/PlugIns/OrbitMiniWidget.appex"
+          test -d "$app"
+          test -d "$widget"
+          test -f "$app/Orbit Mini"
+          test -f "$widget/OrbitMiniWidget"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist" | grep -Fx 'net.opik.orbit.mini'
+          /usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$app/Info.plist" | grep -Fx true
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$widget/Info.plist" | grep -Fx 'net.opik.orbit.mini.widget'
+          /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$widget/Info.plist" | grep -Fx 'com.apple.widgetkit-extension'
+          if /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPrincipalClass' "$widget/Info.plist" 2>/dev/null; then exit 1; fi
+          if /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionMainStoryboard' "$widget/Info.plist" 2>/dev/null; then exit 1; fi
+
+      - name: Package IPA for SideStore
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/orbit-mini-ipa/Payload"
+          cp -R "$RUNNER_TEMP/orbit-mini-derived-data/Build/Products/Release-iphoneos/Orbit Mini.app" "$RUNNER_TEMP/orbit-mini-ipa/Payload/"
+          cd "$RUNNER_TEMP/orbit-mini-ipa"
+          /usr/bin/zip -qry Orbit-Mini.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-Mini-IPA
+          path: ${{ runner.temp }}/orbit-mini-ipa/Orbit-Mini.ipa
+          retention-days: 7
+          if-no-files-found: error

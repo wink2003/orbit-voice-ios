@@ -1,0 +1,44 @@
+import AppIntents
+
+struct StartOrbitMiniIntent: AppIntent {
+    static let title: LocalizedStringResource = "Start Orbit Mini"
+    static let description = IntentDescription("Opens Orbit Mini and starts a hands-free voice session.")
+    // This is the same public foreground invocation used by the working main
+    // Orbit app. iOS must foreground an app once before microphone capture.
+    static let openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        await OrbitMiniVoiceCoordinator.shared.start()
+        return .result()
+    }
+}
+
+struct StopOrbitMiniIntent: AppIntent {
+    static let title: LocalizedStringResource = "Stop Orbit Mini"
+    static let description = IntentDescription("Ends the active Orbit Mini voice session.")
+    static let openAppWhenRun = false
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        await OrbitMiniVoiceCoordinator.shared.stop(reason: "app-intent")
+        return .result()
+    }
+}
+
+struct OrbitMiniShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: StartOrbitMiniIntent(),
+            phrases: ["Start \(.applicationName)", "Talk to \(.applicationName)", "Open \(.applicationName)"],
+            shortTitle: "Start Orbit Mini",
+            systemImageName: "waveform.circle.fill"
+        )
+        AppShortcut(
+            intent: StopOrbitMiniIntent(),
+            phrases: ["Stop \(.applicationName)", "End \(.applicationName)"],
+            shortTitle: "Stop Orbit Mini",
+            systemImageName: "stop.circle.fill"
+        )
+    }
+}
