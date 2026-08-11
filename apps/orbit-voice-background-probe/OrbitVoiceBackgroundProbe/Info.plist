@@ -6,8 +6,8 @@
 <key>CFBundleName</key><string>OrbitVoiceBackgroundProbe</string>
 <key>CFBundleDisplayName</key><string>Orbit Voice Probe</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>2.0</string>
-<key>CFBundleVersion</key><string>11</string>
+<key>CFBundleShortVersionString</key><string>2.1</string>
+<key>CFBundleVersion</key><string>12</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>ITSAppUsesNonExemptEncryption</key><false/>

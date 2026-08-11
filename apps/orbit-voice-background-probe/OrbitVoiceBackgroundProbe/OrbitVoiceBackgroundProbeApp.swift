@@ -20,6 +20,7 @@ final class ProbeApplicationDelegate: NSObject, UIApplicationDelegate {
 
 struct ProbeView: View {
     @StateObject private var recorder = BackgroundProbeRecorder.shared
+    @State private var installedExtensionAudit = InstalledExtensionAudit.capture()
 
     var body: some View {
         ScrollView {
@@ -47,6 +48,26 @@ struct ProbeView: View {
                     statusRow("Listening update", recorder.lastListeningUpdateResult)
                     statusRow("Alert update", recorder.lastAlertUpdateResult)
                     statusRow("ActivityKit error", recorder.lastActivityKitError ?? "none")
+                }
+            }
+            GroupBox("INSTALLED EXTENSIONS") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Runtime package audit").font(.caption.bold())
+                        Spacer()
+                        Button("Refresh", systemImage: "arrow.clockwise") {
+                            installedExtensionAudit = InstalledExtensionAudit.capture()
+                        }
+                    }
+                    Button("Copy Installed Extension Diagnostics", systemImage: "doc.on.doc") {
+                        UIPasteboard.general.string = installedExtensionAudit.report
+                    }
+                    .buttonStyle(.bordered)
+                    Text(installedExtensionAudit.report)
+                        .font(.system(.footnote, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
             }
             if recorder.destructionErrorDetails != nil {
@@ -94,6 +115,9 @@ struct ProbeView: View {
         .background(ProbeWindowCapture { window in
             recorder.captureVisibleProbeWindow(window)
         })
+        .onAppear {
+            installedExtensionAudit = InstalledExtensionAudit.capture()
+        }
     }
 
     private func statusRow(_ label: String, _ value: String) -> some View {

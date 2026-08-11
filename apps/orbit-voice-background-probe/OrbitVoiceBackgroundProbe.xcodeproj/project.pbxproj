@@ -13,6 +13,7 @@
 		A10000000000000000000005 /* OrbitVoiceBackgroundProbeWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* OrbitVoiceBackgroundProbeWidget.swift */; };
 		A10000000000000000000006 /* ProbeShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* ProbeShared.swift */; };
 		A10000000000000000000007 /* OrbitVoiceBackgroundProbeWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* OrbitVoiceBackgroundProbeWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A10000000000000000000008 /* InstalledExtensionAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* InstalledExtensionAudit.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +34,7 @@
 		A20000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000008 /* OrbitVoiceBackgroundProbeWidget.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = OrbitVoiceBackgroundProbeWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000009 /* OrbitVoiceBackgroundProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OrbitVoiceBackgroundProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000010 /* InstalledExtensionAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledExtensionAudit.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -42,7 +44,7 @@
 
 /* Begin PBXGroup section */
 		A70000000000000000000001 = {isa = PBXGroup; children = (A70000000000000000000002 /* OrbitVoiceBackgroundProbe */, A70000000000000000000003 /* OrbitVoiceBackgroundProbeWidget */, A70000000000000000000004 /* Products */, ); sourceTree = "<group>"; };
-		A70000000000000000000002 /* OrbitVoiceBackgroundProbe */ = {isa = PBXGroup; children = (A20000000000000000000001, A20000000000000000000002, A20000000000000000000003, A20000000000000000000004, A20000000000000000000005, ); path = OrbitVoiceBackgroundProbe; sourceTree = "<group>"; };
+		A70000000000000000000002 /* OrbitVoiceBackgroundProbe */ = {isa = PBXGroup; children = (A20000000000000000000001, A20000000000000000000002, A20000000000000000000003, A20000000000000000000004, A20000000000000000000010, A20000000000000000000005, ); path = OrbitVoiceBackgroundProbe; sourceTree = "<group>"; };
 		A70000000000000000000003 /* OrbitVoiceBackgroundProbeWidget */ = {isa = PBXGroup; children = (A20000000000000000000006, A20000000000000000000007, ); path = OrbitVoiceBackgroundProbeWidget; sourceTree = "<group>"; };
 		A70000000000000000000004 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000009, A20000000000000000000008, ); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
@@ -57,7 +59,7 @@
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A30000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, ); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000008, ); runOnlyForDeploymentPostprocessing = 0; };
 		A30000000000000000000006 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000005, A10000000000000000000006, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
