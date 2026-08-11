@@ -216,7 +216,10 @@ final class BackgroundProbeRecorder: ObservableObject {
             liveActivityPhase = "listening"
             appendDiagnostic("AVAudioEngine started")
             publish(phase: "Recording", buffers: 0, detail: "AVAudioEngine started; waiting for input buffers.")
-            updateActivity()
+            // One state-transition update is sufficient. Repeating an ActivityKit
+            // update for every diagnostic buffer batch does not improve rendering
+            // and can obscure the actual presentation diagnostics.
+            updateActivity(reason: "recording-started")
 
             if let automaticStopAfter {
                 stopTask?.cancel()
@@ -258,7 +261,6 @@ final class BackgroundProbeRecorder: ObservableObject {
         if buffers == 1 || buffers % 25 == 0 {
             if isInBackground { backgroundBuffers += 1 } else { foregroundBuffers += 1 }
             publish(phase: "Recording", buffers: buffers, detail: "Received microphone buffers; foreground=\(foregroundBuffers), background=\(backgroundBuffers)")
-            updateActivity()
         }
         if buffers > 1 && buffers % 25 != 0 {
             if isInBackground { backgroundBuffers += 1 } else { foregroundBuffers += 1 }
@@ -303,10 +305,10 @@ final class BackgroundProbeRecorder: ObservableObject {
         }
     }
 
-    private func updateActivity() {
+    private func updateActivity(reason: String) {
         guard let activity else { return }
         let state = ProbeAttributes.ContentState(phase: liveActivityPhase, buffers: buffers, detail: detail)
-        appendDiagnostic("Listening Activity update starting")
+        appendDiagnostic("Listening Activity update starting; reason=\(reason)")
         lastListeningUpdateResult = "pending"
         Task { [weak self, activity] in
             do {
