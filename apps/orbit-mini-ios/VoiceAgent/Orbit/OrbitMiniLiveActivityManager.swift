@@ -25,7 +25,7 @@ final class OrbitMiniLiveActivityManager: ObservableObject {
             activity = try Activity.request(
                 attributes: OrbitMiniActivityAttributes(startedAt: .now),
                 content: ActivityContent(
-                    state: .init(state: .listening, userName: userName),
+                    state: OrbitMiniActivityAttributes.ContentState(state: .listening, userName: userName),
                     staleDate: nil
                 ),
                 pushType: nil
@@ -42,14 +42,14 @@ final class OrbitMiniLiveActivityManager: ObservableObject {
     func transition(to state: OrbitMiniVoiceState, userName: String) async {
         guard let activity, lastState != state else { return }
         let content = ActivityContent(
-            state: .init(state: state, userName: userName),
+            state: OrbitMiniActivityAttributes.ContentState(state: state, userName: userName),
             staleDate: nil
         )
         do {
             let shouldAlert = (state == .listening || state == .speaking)
                 && (UserDefaults.standard.object(forKey: "mini.liveActivityBanners") as? Bool ?? true)
             if shouldAlert {
-                let alert = AlertConfiguration(title: "ORBIT", body: state.title, sound: nil)
+                let alert = AlertConfiguration(title: "ORBIT", body: LocalizedStringResource(stringLiteral: state.title), sound: .default)
                 try await activity.update(content, alertConfiguration: alert)
             } else {
                 try await activity.update(content)
@@ -62,7 +62,7 @@ final class OrbitMiniLiveActivityManager: ObservableObject {
         let activities = activity.map { [$0] } ?? Activity<OrbitMiniActivityAttributes>.activities
         for current in activities {
             await current.end(
-                ActivityContent(state: .init(state: .ended, userName: ""), staleDate: nil),
+                ActivityContent(state: OrbitMiniActivityAttributes.ContentState(state: .ended, userName: ""), staleDate: nil),
                 dismissalPolicy: .immediate
             )
         }
