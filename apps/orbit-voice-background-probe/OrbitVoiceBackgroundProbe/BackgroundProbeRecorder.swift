@@ -39,6 +39,7 @@ final class BackgroundProbeRecorder: ObservableObject {
     private var lifecycleObservers: [NSObjectProtocol] = []
     private var liveActivityPhase = "starting"
     private var listeningAlertRequested = false
+    private var lastVisibleWindowDiagnostic: (sessionID: String, isKeyWindow: Bool, activationState: UIScene.ActivationState)?
 
     private init() {
         loadPersistedStatus()
@@ -98,9 +99,15 @@ final class BackgroundProbeRecorder: ObservableObject {
         guard let window else { return }
         visibleProbeWindow = window
         isInBackground = false
-        appendDiagnostic("Visible Probe window captured; key=\(window.isKeyWindow); session=\(window.windowScene?.session.persistentIdentifier ?? "none"); state=\(window.windowScene?.activationState.rawValue ?? -1)")
-        persistCurrentStatus()
-        if destroySceneAfterFirstBuffer, buffers > 0 { requestSceneDestructionAfterFirstBuffer() }
+        let sessionID = window.windowScene?.session.persistentIdentifier ?? "none"
+        let isKeyWindow = window.isKeyWindow
+        let activationState = window.windowScene?.activationState ?? .unattached
+        let current = (sessionID, isKeyWindow, activationState)
+        if lastVisibleWindowDiagnostic == nil || lastVisibleWindowDiagnostic!.sessionID != current.0 || lastVisibleWindowDiagnostic!.isKeyWindow != current.1 || lastVisibleWindowDiagnostic!.activationState != current.2 {
+            lastVisibleWindowDiagnostic = current
+            appendDiagnostic("Visible Probe window captured; key=\(isKeyWindow); session=\(sessionID); state=\(activationState.rawValue)")
+            persistCurrentStatus()
+        }
     }
 
     func discardedSceneSessions(_ sessions: Set<UISceneSession>) {
@@ -128,9 +135,8 @@ final class BackgroundProbeRecorder: ObservableObject {
 
     func startForegroundBootstrapSceneDestructionTest() async throws {
         try await begin(
-            origin: "AppIntent.foregroundBootstrapSceneDestruction",
-            automaticStopAfter: nil,
-            requestSceneDestructionAfterFirstBuffer: true
+            origin: "AppIntent.foregroundBootstrap",
+            automaticStopAfter: nil
         )
     }
 
@@ -258,9 +264,6 @@ final class BackgroundProbeRecorder: ObservableObject {
             if isInBackground { backgroundBuffers += 1 } else { foregroundBuffers += 1 }
         }
 
-        if buffers == 1, destroySceneAfterFirstBuffer {
-            requestSceneDestructionAfterFirstBuffer()
-        }
         if sceneDestructionRequested, isInBackground, !loggedBackgroundBufferAfterSceneDestruction {
             loggedBackgroundBufferAfterSceneDestruction = true
             appendDiagnostic("First background buffer after scene destruction; buffers=\(buffers); background=\(backgroundBuffers)")
@@ -303,7 +306,26 @@ final class BackgroundProbeRecorder: ObservableObject {
     private func updateActivity() {
         guard let activity else { return }
         let state = ProbeAttributes.ContentState(phase: liveActivityPhase, buffers: buffers, detail: detail)
-        Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+        appendDiagnostic("Listening Activity update starting")
+        lastListeningUpdateResult = "pending"
+        Task { [weak self, activity] in
+            do {
+                try await activity.update(ActivityContent(state: state, staleDate: nil))
+                guard let self else { return }
+                self.lastListeningUpdateResult = "succeeded"
+                self.appendDiagnostic("Listening Activity update succeeded")
+                self.refreshLiveActivityStatus()
+                self.persistCurrentStatus()
+            } catch {
+                guard let self else { return }
+                let nsError = error as NSError
+                let full = "domain=\(nsError.domain); code=\(nsError.code); description=\(nsError.localizedDescription); userInfo=\(nsError.userInfo)"
+                self.lastListeningUpdateResult = "failed: \(full)"
+                self.lastActivityKitError = full
+                self.appendDiagnostic("Listening Activity update failed: \(full)")
+                self.persistCurrentStatus()
+            }
+        }
     }
 
     private func observeActivityState() {
@@ -343,13 +365,26 @@ final class BackgroundProbeRecorder: ObservableObject {
         persistCurrentStatus()
 
         Task { [weak self, activity] in
-            await activity.update(content, alertConfiguration: alert)
             guard let self else { return }
-            self.lastListeningUpdateResult = "completed; id=\(activity.id)"
-            self.lastAlertUpdateResult = "completed; default sound"
-            self.appendDiagnostic("Listening alert update completed; id=\(activity.id); state=\(String(describing: activity.activityState))")
-            self.refreshLiveActivityStatus()
-            self.persistCurrentStatus()
+            self.appendDiagnostic("AlertConfiguration update starting")
+            do {
+                try await activity.update(content, alertConfiguration: alert)
+                self.lastListeningUpdateResult = "succeeded; id=\(activity.id)"
+                self.lastAlertUpdateResult = "succeeded; default sound"
+                self.appendDiagnostic("Listening Activity update succeeded")
+                self.appendDiagnostic("AlertConfiguration update succeeded")
+                self.refreshLiveActivityStatus()
+                self.persistCurrentStatus()
+            } catch {
+                let nsError = error as NSError
+                let full = "domain=\(nsError.domain); code=\(nsError.code); description=\(nsError.localizedDescription); userInfo=\(nsError.userInfo)"
+                self.lastListeningUpdateResult = "failed: \(full)"
+                self.lastAlertUpdateResult = "failed: \(full)"
+                self.lastActivityKitError = full
+                self.appendDiagnostic("Listening Activity update failed: \(full)")
+                self.appendDiagnostic("AlertConfiguration update failed: \(full)")
+                self.persistCurrentStatus()
+            }
         }
     }
 
@@ -415,7 +450,6 @@ final class BackgroundProbeRecorder: ObservableObject {
         isInBackground = false
         appendDiagnostic("Application became active")
         persistCurrentStatus()
-        if destroySceneAfterFirstBuffer, buffers > 0 { requestSceneDestructionAfterFirstBuffer() }
     }
 
     private func sceneDidDisconnect(_ scene: UIScene?) {
