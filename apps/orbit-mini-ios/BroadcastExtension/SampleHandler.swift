@@ -75,7 +75,7 @@ private struct OrbitMiniSphere: View {
            let uiImage = UIImage(data: data) {
             // This is deliberately a decoded UIImage from the WidgetKit
             // extension bundle, not an asset-catalog lookup from the host.
-            return Image(decorative: uiImage, scale: 1, orientation: uiImage.imageOrientation)
+            return Image(uiImage: uiImage)
         }
         // A deliberately obvious fallback: a missing widget resource must not
         // masquerade as Orbit's supplied sphere during physical testing.
