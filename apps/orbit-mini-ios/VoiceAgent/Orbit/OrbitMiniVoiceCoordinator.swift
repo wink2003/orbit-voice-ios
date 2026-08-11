@@ -158,7 +158,7 @@ private extension OrbitMiniVoiceCoordinator {
             guard Date() < deadline else { break }
             try? await Task.sleep(for: .milliseconds(50))
         }
-        logger.error("foreground/audio gate timed out app=\(UIApplication.shared.applicationState.rawValue, privacy: .public) scene=\(sceneStateDescription, privacy: .public) interrupted=\(audioInterrupted, privacy: .public)")
+        logger.error("foreground/audio gate timed out app=\(UIApplication.shared.applicationState.rawValue, privacy: .public) scene=\(self.sceneStateDescription, privacy: .public) interrupted=\(self.audioInterrupted, privacy: .public)")
         return false
     }
 
