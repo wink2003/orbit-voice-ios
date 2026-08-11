@@ -21,6 +21,9 @@ struct OrbitMiniActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var state: OrbitMiniVoiceState
         var userName: String
+        /// Changes only for a real voice-state transition, giving WidgetKit a
+        /// distinct identity for its short, update-driven transition.
+        var transitionID: Int
     }
 
     var startedAt: Date

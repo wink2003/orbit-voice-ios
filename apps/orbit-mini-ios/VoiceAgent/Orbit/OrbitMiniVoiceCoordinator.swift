@@ -2,6 +2,7 @@ import Foundation
 import LiveKit
 import OSLog
 import UIKit
+import AVFAudio
 
 /// A deliberately thin owner around the already-proven full Orbit `Session`.
 /// Mini does not implement STT, VAD, TTS, or a second transport: LiveKit's
@@ -17,10 +18,20 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     private let runtime = OrbitRuntime.shared
     private let liveActivity = OrbitMiniLiveActivityManager.shared
     private let logger = Logger(subsystem: "net.opik.orbit.mini", category: "voice-session")
+    private var audioInterrupted = false
 
     private override init() {
         super.init()
         runtime.session.room.add(delegate: self)
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                self?.handleAudioInterruption(notification)
+            }
+        }
     }
 
     var session: Session { runtime.session }
@@ -35,22 +46,21 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         isStarting = true
         lastError = nil
         await liveActivity.reconcileOrphans()
-        logger.notice("voice start requested")
+        logger.notice("voice start requested app=\(UIApplication.shared.applicationState.rawValue, privacy: .public) scene=\(self.sceneStateDescription, privacy: .public)")
+        guard await waitForForegroundReadiness() else {
+            isStarting = false
+            lastError = "Orbit Mini не став активною програмою для мікрофона."
+            return
+        }
+        logger.notice("voice start foreground/audio gate passed category=\(AVAudioSession.sharedInstance().category.rawValue, privacy: .public) mode=\(AVAudioSession.sharedInstance().mode.rawValue, privacy: .public)")
         await runtime.session.start()
 
-        // Siri can still own the audio route for a moment after it has opened
-        // Mini.  The normal Shortcuts path does not hit this case.  Retry only
-        // the known transient audio-engine failure, and only while foreground.
+        // Siri can retain the audio route briefly after it has foregrounded
+        // Mini. Retry only the known transient engine failure, using actual
+        // foreground/interruption state plus a small bounded window. Manual
+        // Shortcuts never enter this loop when their first start succeeds.
         if !runtime.session.isConnected, isTransientAudioStartFailure {
-            logger.notice("transient audio start failure; retrying once after foreground audio handoff")
-            try? await Task.sleep(for: .milliseconds(350))
-            guard UIApplication.shared.applicationState == .active, !Task.isCancelled else {
-                isStarting = false
-                return
-            }
-            runtime.session.dismissError()
-            runtime.localMedia.dismissError()
-            await runtime.session.start()
+            await retryTransientAudioStart()
         }
         isStarting = false
         if runtime.session.isConnected {
@@ -127,6 +137,66 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
 }
 
 private extension OrbitMiniVoiceCoordinator {
+    var sceneStateDescription: String {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .map { "\($0.session.persistentIdentifier):\($0.activationState.rawValue)" }
+            .joined(separator: ",")
+    }
+
+    var isForegroundActive: Bool {
+        UIApplication.shared.applicationState == .active
+            && UIApplication.shared.connectedScenes.contains {
+                ($0 as? UIWindowScene)?.activationState == .foregroundActive
+            }
+    }
+
+    func waitForForegroundReadiness() async -> Bool {
+        let deadline = Date().addingTimeInterval(1.2)
+        while !Task.isCancelled {
+            if isForegroundActive, !audioInterrupted { return true }
+            guard Date() < deadline else { break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        logger.error("foreground/audio gate timed out app=\(UIApplication.shared.applicationState.rawValue, privacy: .public) scene=\(sceneStateDescription, privacy: .public) interrupted=\(audioInterrupted, privacy: .public)")
+        return false
+    }
+
+    func retryTransientAudioStart() async {
+        let deadline = Date().addingTimeInterval(2.0)
+        let delays: [Duration] = [.milliseconds(100), .milliseconds(180), .milliseconds(300), .milliseconds(450), .milliseconds(600)]
+        for (index, delay) in delays.enumerated() {
+            guard Date() < deadline, await waitForForegroundReadiness(), !Task.isCancelled else { break }
+            try? await Task.sleep(for: delay)
+            guard isForegroundActive, !audioInterrupted else { continue }
+            logger.notice("transient audio retry \(index + 1, privacy: .public) elapsed=\(2.0 - max(0, deadline.timeIntervalSinceNow), privacy: .public)s")
+            runtime.session.dismissError()
+            runtime.localMedia.dismissError()
+            await runtime.session.start()
+            if runtime.session.isConnected {
+                logger.notice("transient audio retry succeeded")
+                return
+            }
+            guard isTransientAudioStartFailure else { return }
+        }
+        logger.error("transient audio startup retries exhausted")
+    }
+
+    func handleAudioInterruption(_ notification: Notification) {
+        let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt ?? 0
+        guard let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        switch type {
+        case .began:
+            audioInterrupted = true
+            logger.notice("AVAudioSession interruption began")
+        case .ended:
+            audioInterrupted = false
+            logger.notice("AVAudioSession interruption ended")
+        @unknown default:
+            break
+        }
+    }
+
     var isTransientAudioStartFailure: Bool {
         let descriptions = [
             runtime.session.error?.localizedDescription,

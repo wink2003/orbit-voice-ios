@@ -7,7 +7,7 @@ struct OrbitMiniSettingsView: View {
     @AppStorage("mini.startListeningImmediately") private var startListeningImmediately = true
     @AppStorage("mini.inactivityTimeout") private var inactivityTimeout = "60"
     @AppStorage("mini.liveActivityEnabled") private var liveActivityEnabled = true
-    @AppStorage("mini.liveActivityBanners") private var liveActivityBanners = true
+    @AppStorage(OrbitMiniLiveActivityBannerMode.storageKey) private var liveActivityBannerMode = OrbitMiniLiveActivityBannerMode.onlyOrbit.rawValue
     @AppStorage("mini.readyHaptic") private var readyHaptic = true
     @State private var endPhrases = OrbitMiniEndPhrases.phrases
     @State private var newEndPhrase = ""
@@ -68,7 +68,11 @@ struct OrbitMiniSettingsView: View {
                 Section("Зворотний зв’язок") {
                     Toggle("Вібрація, коли готовий", isOn: $readyHaptic)
                     Toggle("Live Activity", isOn: $liveActivityEnabled)
-                    Toggle("Банер при зміні співрозмовника", isOn: $liveActivityBanners)
+                    Picker("Банер під час розмови", selection: $liveActivityBannerMode) {
+                        ForEach(OrbitMiniLiveActivityBannerMode.allCases) { mode in
+                            Text(mode.title).tag(mode.rawValue)
+                        }
+                    }
                 }
                 Section("Hands-free") {
                     Text("У «Швидких командах»: Отримати поточну програму → Start Orbit Mini → Відкрити отриману програму. Це повертає вас до Maps, Safari або іншої відкритої програми після готовності Orbit.")

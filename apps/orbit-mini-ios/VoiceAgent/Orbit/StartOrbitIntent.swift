@@ -7,6 +7,12 @@ struct StartOrbitMiniIntent: AppIntent {
     // Orbit app. iOS must foreground an app once before microphone capture.
     static let openAppWhenRun = true
 
+    // On iOS 26 this explicitly asks App Intents to run Mini in the foreground
+    // before its privacy-protected microphone startup. Earlier systems retain
+    // the long-standing openAppWhenRun behaviour above.
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes { .foreground(.immediate) }
+
     @MainActor
     func perform() async throws -> some IntentResult {
         await OrbitMiniVoiceCoordinator.shared.start()
