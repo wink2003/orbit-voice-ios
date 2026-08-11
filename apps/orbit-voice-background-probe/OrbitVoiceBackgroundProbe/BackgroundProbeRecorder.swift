@@ -178,7 +178,7 @@ final class BackgroundProbeRecorder: ObservableObject {
                 staleDate: nil
             )
             activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
-            lastActivityRequestResult = "success; id=\(activity?.id ?? \"unknown\")"
+            lastActivityRequestResult = "success; id=\(activity?.id ?? "unknown")"
             appendDiagnostic("Live Activity created; id=\(activity?.id ?? "unknown")")
             refreshLiveActivityStatus()
             observeActivityState()
