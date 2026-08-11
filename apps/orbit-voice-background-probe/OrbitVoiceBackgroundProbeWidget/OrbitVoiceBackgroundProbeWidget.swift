@@ -2,6 +2,60 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
+struct ProbeCanaryEntry: TimelineEntry {
+    let date: Date
+}
+
+struct ProbeCanaryProvider: TimelineProvider {
+    func placeholder(in context: Context) -> ProbeCanaryEntry {
+        ProbeCanaryEntry(date: .now)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (ProbeCanaryEntry) -> Void) {
+        completion(ProbeCanaryEntry(date: .now))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<ProbeCanaryEntry>) -> Void) {
+        completion(Timeline(entries: [ProbeCanaryEntry(date: .now)], policy: .never))
+    }
+}
+
+struct ProbeCanaryWidget: Widget {
+    static let kind = "OrbitProbeCanary"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: Self.kind, provider: ProbeCanaryProvider()) { _ in
+            ProbeCanaryView()
+        }
+        .configurationDisplayName("Orbit Probe Canary")
+        .description("Verifies that the Orbit Voice Probe WidgetKit extension can render.")
+        .supportedFamilies([.systemSmall])
+    }
+}
+
+private struct ProbeCanaryView: View {
+    var body: some View {
+        ZStack {
+            Color(red: 0.01, green: 0.025, blue: 0.08)
+            VStack(spacing: 9) {
+                Image(systemName: "circle.inset.filled")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(.cyan)
+                    .symbolRenderingMode(.hierarchical)
+                Text("ORBIT")
+                    .font(.caption.bold())
+                    .tracking(2.5)
+                    .foregroundStyle(.cyan)
+                Text("Widget OK")
+                    .font(.headline.bold())
+                    .foregroundStyle(.white)
+            }
+            .padding(12)
+        }
+        .containerBackground(for: .widget) { Color(red: 0.01, green: 0.025, blue: 0.08) }
+    }
+}
+
 struct OrbitVoiceBackgroundProbeLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ProbeAttributes.self) { context in
@@ -82,6 +136,7 @@ private struct OrbitListeningActivityView: View {
 @main
 struct OrbitVoiceBackgroundProbeWidgetBundle: WidgetBundle {
     var body: some Widget {
+        ProbeCanaryWidget()
         OrbitVoiceBackgroundProbeLiveActivity()
     }
 }
