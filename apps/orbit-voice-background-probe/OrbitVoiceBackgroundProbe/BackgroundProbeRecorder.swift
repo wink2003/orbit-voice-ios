@@ -147,7 +147,7 @@ final class BackgroundProbeRecorder: ObservableObject {
                 staleDate: nil
             )
             activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
-            appendDiagnostic("Live Activity created; id=\(activity?.id ?? \"unknown\")")
+            appendDiagnostic("Live Activity created; id=\(activity?.id ?? "unknown")")
             observeActivityState()
             publish(phase: "Live Activity active", buffers: 0, detail: "Live Activity requested successfully.")
         } catch {
@@ -203,7 +203,7 @@ final class BackgroundProbeRecorder: ObservableObject {
         audioSessionActive = false
         appendDiagnostic("Recorder stopped; reason=\(reason)")
         liveActivityPhase = "ended"
-        appendDiagnostic("Live Activity ending; id=\(activity?.id ?? \"unknown\")")
+        appendDiagnostic("Live Activity ending; id=\(activity?.id ?? "unknown")")
         await activity?.end(ActivityContent(state: .init(phase: liveActivityPhase, buffers: buffers, detail: reason), staleDate: nil), dismissalPolicy: .immediate)
         activity = nil
         publish(phase: "Stopped", buffers: buffers, detail: reason)
