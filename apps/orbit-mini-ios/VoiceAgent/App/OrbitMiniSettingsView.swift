@@ -13,17 +13,21 @@ struct OrbitMiniSettingsView: View {
     @State private var newEndPhrase = ""
     @State private var addingEndPhrase = false
 
+    private var profileSelection: Binding<String> {
+        Binding(
+            get: { authentication.personId ?? "" },
+            set: { selected in
+                guard let profile = authentication.familyProfiles.first(where: { $0.personId == selected }) else { return }
+                Task { try? await authentication.selectProfile(profile) }
+            }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section("Користувач") {
-                    Picker("Користувач за замовчуванням", selection: Binding(
-                        get: { authentication.personId ?? "" },
-                        set: { selected in
-                            guard let profile = authentication.familyProfiles.first(where: { $0.personId == selected }) else { return }
-                            Task { try? await authentication.selectProfile(profile) }
-                        }
-                    )) {
+                    Picker("Користувач за замовчуванням", selection: profileSelection) {
                         ForEach(authentication.familyProfiles) { profile in
                             Text(profile.displayName).tag(profile.personId)
                         }

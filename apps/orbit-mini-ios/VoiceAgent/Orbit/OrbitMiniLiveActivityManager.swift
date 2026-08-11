@@ -24,7 +24,7 @@ final class OrbitMiniLiveActivityManager: ObservableObject {
         guard UserDefaults.standard.object(forKey: "mini.liveActivityEnabled") as? Bool ?? true else { return }
         await reconcileOrphans()
         do {
-            activity = try Activity.request(
+            let created = try Activity.request(
                 attributes: OrbitMiniActivityAttributes(startedAt: .now),
                 content: ActivityContent(
                     state: OrbitMiniActivityAttributes.ContentState(state: .listening, userName: userName),
@@ -32,12 +32,13 @@ final class OrbitMiniLiveActivityManager: ObservableObject {
                 ),
                 pushType: nil
             )
+            activity = created
             lastState = .listening
             logger.notice("Live Activity created")
             // A request alone is not a guaranteed unlocked-screen banner. Ask
             // once for the first real listening state; subsequent alerts are
             // emitted only on meaningful speaker changes.
-            await update(activity, to: .listening, userName: userName, shouldAlert: true)
+            await update(created, to: .listening, userName: userName, shouldAlert: true)
         } catch {
             // Voice must keep working even if the user disabled Live Activities
             // globally or SideStore has a temporary extension issue.

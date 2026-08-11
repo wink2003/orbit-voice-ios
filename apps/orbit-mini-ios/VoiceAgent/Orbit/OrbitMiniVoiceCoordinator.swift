@@ -49,7 +49,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
                 return
             }
             runtime.session.dismissError()
-            runtime.session.agent.dismissError()
             runtime.localMedia.dismissError()
             await runtime.session.start()
         }
