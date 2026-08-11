@@ -14,7 +14,23 @@ struct ProbeAttributes: ActivityAttributes {
 enum ProbeStatusStore {
     private static let key = "orbit.voice.backgroundProbe.status"
 
-    static func write(phase: String, buffers: Int, detail: String, foregroundBuffers: Int = 0, backgroundBuffers: Int = 0, diagnostics: [String] = [], destructionErrorDetails: String? = nil) {
+    static func write(
+        phase: String,
+        buffers: Int,
+        detail: String,
+        foregroundBuffers: Int = 0,
+        backgroundBuffers: Int = 0,
+        diagnostics: [String] = [],
+        destructionErrorDetails: String? = nil,
+        liveActivitiesEnabled: Bool = false,
+        liveActivityCount: Int = 0,
+        currentActivityID: String? = nil,
+        currentActivityState: String = "unknown",
+        lastActivityRequestResult: String = "unknown",
+        lastListeningUpdateResult: String = "unknown",
+        lastAlertUpdateResult: String = "unknown",
+        lastActivityKitError: String? = nil
+    ) {
         var value: [String: Any] = [
             "phase": phase,
             "buffers": buffers,
@@ -23,12 +39,37 @@ enum ProbeStatusStore {
             "detail": detail,
             "diagnostics": diagnostics,
             "updatedAt": ISO8601DateFormatter().string(from: Date()),
+            "liveActivitiesEnabled": liveActivitiesEnabled,
+            "liveActivityCount": liveActivityCount,
+            "currentActivityState": currentActivityState,
+            "lastActivityRequestResult": lastActivityRequestResult,
+            "lastListeningUpdateResult": lastListeningUpdateResult,
+            "lastAlertUpdateResult": lastAlertUpdateResult,
         ]
+        if let currentActivityID { value["currentActivityID"] = currentActivityID }
         if let destructionErrorDetails { value["destructionErrorDetails"] = destructionErrorDetails }
+        if let lastActivityKitError { value["lastActivityKitError"] = lastActivityKitError }
         UserDefaults.standard.set(value, forKey: key)
     }
 
-    static func read() -> (phase: String, buffers: Int, foregroundBuffers: Int, backgroundBuffers: Int, detail: String, diagnostics: [String], destructionErrorDetails: String?, updatedAt: String) {
+    static func read() -> (
+        phase: String,
+        buffers: Int,
+        foregroundBuffers: Int,
+        backgroundBuffers: Int,
+        detail: String,
+        diagnostics: [String],
+        destructionErrorDetails: String?,
+        updatedAt: String,
+        liveActivitiesEnabled: Bool,
+        liveActivityCount: Int,
+        currentActivityID: String?,
+        currentActivityState: String,
+        lastActivityRequestResult: String,
+        lastListeningUpdateResult: String,
+        lastAlertUpdateResult: String,
+        lastActivityKitError: String?
+    ) {
         let value = UserDefaults.standard.dictionary(forKey: key) ?? [:]
         return (
             value["phase"] as? String ?? "Never run",
@@ -38,7 +79,15 @@ enum ProbeStatusStore {
             value["detail"] as? String ?? "Open the app once, grant microphone access, then run the Shortcut from another app.",
             value["diagnostics"] as? [String] ?? [],
             value["destructionErrorDetails"] as? String,
-            value["updatedAt"] as? String ?? "—"
+            value["updatedAt"] as? String ?? "—",
+            value["liveActivitiesEnabled"] as? Bool ?? false,
+            value["liveActivityCount"] as? Int ?? 0,
+            value["currentActivityID"] as? String,
+            value["currentActivityState"] as? String ?? "unknown",
+            value["lastActivityRequestResult"] as? String ?? "unknown",
+            value["lastListeningUpdateResult"] as? String ?? "unknown",
+            value["lastAlertUpdateResult"] as? String ?? "unknown",
+            value["lastActivityKitError"] as? String
         )
     }
 }

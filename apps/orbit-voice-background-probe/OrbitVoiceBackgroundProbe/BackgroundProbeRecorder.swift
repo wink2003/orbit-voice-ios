@@ -15,6 +15,14 @@ final class BackgroundProbeRecorder: ObservableObject {
     @Published private(set) var detail = "No test has run."
     @Published private(set) var diagnostics: [String] = []
     @Published private(set) var destructionErrorDetails: String?
+    @Published private(set) var liveActivitiesEnabled = false
+    @Published private(set) var liveActivityCount = 0
+    @Published private(set) var currentActivityID: String?
+    @Published private(set) var currentActivityState = "unknown"
+    @Published private(set) var lastActivityRequestResult = "unknown"
+    @Published private(set) var lastListeningUpdateResult = "unknown"
+    @Published private(set) var lastAlertUpdateResult = "unknown"
+    @Published private(set) var lastActivityKitError: String?
     @Published private(set) var updatedAt = "—"
 
     private let engine = AVAudioEngine()
@@ -34,6 +42,7 @@ final class BackgroundProbeRecorder: ObservableObject {
 
     private init() {
         loadPersistedStatus()
+        refreshLiveActivityStatus()
         let center = NotificationCenter.default
         lifecycleObservers = [
             center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
@@ -56,7 +65,25 @@ final class BackgroundProbeRecorder: ObservableObject {
         lifecycleObservers.forEach(NotificationCenter.default.removeObserver)
     }
 
-    func refresh() { loadPersistedStatus() }
+    func refresh() {
+        loadPersistedStatus()
+        refreshLiveActivityStatus()
+    }
+
+    var diagnosticsText: String {
+        var lines = diagnostics
+        if let error = destructionErrorDetails, !lines.contains(where: { $0.contains(error) }) {
+            lines.append("Historical scene-destruction error: \(error)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    func clearDiagnostics() {
+        diagnostics = []
+        destructionErrorDetails = nil
+        lastActivityKitError = nil
+        persistCurrentStatus()
+    }
 
     func showError(_ message: String) {
         publish(phase: "Error", buffers: buffers, detail: message)
@@ -119,6 +146,10 @@ final class BackgroundProbeRecorder: ObservableObject {
 
         diagnostics = []
         destructionErrorDetails = nil
+        lastActivityKitError = nil
+        lastActivityRequestResult = "pending"
+        lastListeningUpdateResult = "not requested"
+        lastAlertUpdateResult = "not requested"
         liveActivityPhase = "starting"
         listeningAlertRequested = false
         appendDiagnostic("Recorder begin; origin=\(origin); appState=\(UIApplication.shared.applicationState.rawValue)")
@@ -147,10 +178,15 @@ final class BackgroundProbeRecorder: ObservableObject {
                 staleDate: nil
             )
             activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
+            lastActivityRequestResult = "success; id=\(activity?.id ?? \"unknown\")"
             appendDiagnostic("Live Activity created; id=\(activity?.id ?? "unknown")")
+            refreshLiveActivityStatus()
             observeActivityState()
             publish(phase: "Live Activity active", buffers: 0, detail: "Live Activity requested successfully.")
         } catch {
+            lastActivityRequestResult = "failed"
+            lastActivityKitError = error.localizedDescription
+            persistCurrentStatus()
             publish(phase: "Live Activity failed", buffers: 0, detail: "\(error.localizedDescription)")
             throw ProbeError.liveActivity(error.localizedDescription)
         }
@@ -206,6 +242,7 @@ final class BackgroundProbeRecorder: ObservableObject {
         appendDiagnostic("Live Activity ending; id=\(activity?.id ?? "unknown")")
         await activity?.end(ActivityContent(state: .init(phase: liveActivityPhase, buffers: buffers, detail: reason), staleDate: nil), dismissalPolicy: .immediate)
         activity = nil
+        refreshLiveActivityStatus()
         publish(phase: "Stopped", buffers: buffers, detail: reason)
     }
 
@@ -301,14 +338,30 @@ final class BackgroundProbeRecorder: ObservableObject {
         )
         let alert = AlertConfiguration(title: "ORBIT", body: "Слухаю…", sound: .default)
         appendDiagnostic("Listening alert update requested; id=\(activity.id); buffers=\(buffers)")
+        lastListeningUpdateResult = "pending"
+        lastAlertUpdateResult = "pending"
         persistCurrentStatus()
 
         Task { [weak self, activity] in
             await activity.update(content, alertConfiguration: alert)
             guard let self else { return }
+            self.lastListeningUpdateResult = "completed; id=\(activity.id)"
+            self.lastAlertUpdateResult = "completed; default sound"
             self.appendDiagnostic("Listening alert update completed; id=\(activity.id); state=\(String(describing: activity.activityState))")
+            self.refreshLiveActivityStatus()
             self.persistCurrentStatus()
         }
+    }
+
+    func refreshLiveActivityStatus() {
+        let authorization = ActivityAuthorizationInfo()
+        let activities = Activity<ProbeAttributes>.activities
+        liveActivitiesEnabled = authorization.areActivitiesEnabled
+        liveActivityCount = activities.count
+        let current = activity ?? activities.first
+        currentActivityID = current?.id
+        currentActivityState = current.map { String(describing: $0.activityState) } ?? "none"
+        persistCurrentStatus()
     }
 
     private func publish(phase: String, buffers: Int, detail: String) {
@@ -333,7 +386,15 @@ final class BackgroundProbeRecorder: ObservableObject {
             foregroundBuffers: foregroundBuffers,
             backgroundBuffers: backgroundBuffers,
             diagnostics: diagnostics,
-            destructionErrorDetails: destructionErrorDetails
+            destructionErrorDetails: destructionErrorDetails,
+            liveActivitiesEnabled: liveActivitiesEnabled,
+            liveActivityCount: liveActivityCount,
+            currentActivityID: currentActivityID,
+            currentActivityState: currentActivityState,
+            lastActivityRequestResult: lastActivityRequestResult,
+            lastListeningUpdateResult: lastListeningUpdateResult,
+            lastAlertUpdateResult: lastAlertUpdateResult,
+            lastActivityKitError: lastActivityKitError
         )
     }
 
@@ -383,6 +444,14 @@ final class BackgroundProbeRecorder: ObservableObject {
         diagnostics = value.diagnostics
         destructionErrorDetails = value.destructionErrorDetails
         updatedAt = value.updatedAt
+        liveActivitiesEnabled = value.liveActivitiesEnabled
+        liveActivityCount = value.liveActivityCount
+        currentActivityID = value.currentActivityID
+        currentActivityState = value.currentActivityState
+        lastActivityRequestResult = value.lastActivityRequestResult
+        lastListeningUpdateResult = value.lastListeningUpdateResult
+        lastAlertUpdateResult = value.lastAlertUpdateResult
+        lastActivityKitError = value.lastActivityKitError
     }
 }
 
