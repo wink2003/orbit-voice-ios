@@ -49,6 +49,17 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleInfoDictionaryVersion' "$MAIN_INFO")" = "6.0"
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSRequiresIPhoneOS' "$MAIN_INFO")" = "true"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$EXT_INFO")" = "net.opik.orbit.voice.backgroundprobe.widget"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$EXT_INFO")" = "com.apple.widgetkit-extension"
+          if /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPrincipalClass' "$EXT_INFO" >/dev/null 2>&1; then
+            echo "WidgetKit extension must not contain NSExtensionPrincipalClass" >&2
+            exit 1
+          fi
+          if /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionMainStoryboard' "$EXT_INFO" >/dev/null 2>&1; then
+            echo "WidgetKit extension must not contain NSExtensionMainStoryboard" >&2
+            exit 1
+          fi
+          echo "Final NSExtension dictionary:"
+          /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$EXT_INFO"
           mkdir -p "$RUNNER_TEMP/orbit-voice-background-probe-ipa/Payload"
           cp -R "$APP" "$RUNNER_TEMP/orbit-voice-background-probe-ipa/Payload/"
           cd "$RUNNER_TEMP/orbit-voice-background-probe-ipa"
