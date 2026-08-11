@@ -19,7 +19,7 @@ jobs:
 
       - name: Build Orbit Mini and WidgetKit extension
         run: |
-          set -euo pipefail
+          set -uo pipefail
           xcodebuild \
             -project apps/orbit-mini-ios/OrbitMini.xcodeproj \
             -scheme VoiceAgent \
@@ -29,7 +29,20 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/orbit-mini-derived-data" \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
-            build
+            build 2>&1 | tee "$RUNNER_TEMP/orbit-mini-build.log"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E 'error:|warning:|BUILD FAILED' "$RUNNER_TEMP/orbit-mini-build.log" || tail -n 160 "$RUNNER_TEMP/orbit-mini-build.log"
+            exit "$status"
+          fi
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-Mini-build-log
+          path: ${{ runner.temp }}/orbit-mini-build.log
+          retention-days: 7
 
       - name: Validate production WidgetKit packaging
         run: |
