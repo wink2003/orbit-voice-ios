@@ -43,7 +43,7 @@
 		ACAEBA582DE6EE970072E93E /* OrbitMiniWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OrbitMiniWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D10200000000000000000001 /* OrbitMiniActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BroadcastExtension/OrbitMiniActivityAttributes.swift; sourceTree = "<group>"; };
 		ACAEBA5A2DE6EE970072E93E /* ReplayKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ReplayKit.framework; path = System/Library/Frameworks/ReplayKit.framework; sourceTree = SDKROOT; };
-		B5B5E3B22D124AE00099C9BE /* VoiceAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B5B5E3B22D124AE00099C9BE /* Orbit Mini.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Orbit Mini.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -124,7 +124,7 @@
 		B5B5E3B32D124AE00099C9BE /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				B5B5E3B22D124AE00099C9BE /* VoiceAgent.app */,
+				B5B5E3B22D124AE00099C9BE /* Orbit Mini.app */,
 				ACAEBA582DE6EE970072E93E /* OrbitMiniWidget.appex */,
 			);
 			name = Products;
@@ -177,7 +177,7 @@
 				B5E1B9112D14E9F500A38CB6 /* LiveKit */,
 			);
 			productName = VoiceAgent;
-			productReference = B5B5E3B22D124AE00099C9BE /* VoiceAgent.app */;
+			productReference = B5B5E3B22D124AE00099C9BE /* Orbit Mini.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
