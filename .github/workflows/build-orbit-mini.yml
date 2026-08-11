@@ -53,6 +53,11 @@ jobs:
           test -d "$widget"
           test -f "$app/Orbit Mini"
           test -f "$widget/OrbitMiniWidget"
+          # The Live Activity runs from the widget extension, so its real
+          # Orbit sphere must be a resource in the .appex rather than only in
+          # the host app asset catalog.
+          test -f "$app/OrbitSphere.jpg"
+          test -f "$widget/OrbitSphere.jpg"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist" | grep -Fx 'net.opik.orbit.mini'
           /usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$app/Info.plist" | grep -Fx true
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$widget/Info.plist" | grep -Fx 'net.opik.orbit.mini.widget'

@@ -9,6 +9,9 @@ struct OrbitMiniSettingsView: View {
     @AppStorage("mini.liveActivityEnabled") private var liveActivityEnabled = true
     @AppStorage("mini.liveActivityBanners") private var liveActivityBanners = true
     @AppStorage("mini.readyHaptic") private var readyHaptic = true
+    @State private var endPhrases = OrbitMiniEndPhrases.phrases
+    @State private var newEndPhrase = ""
+    @State private var addingEndPhrase = false
 
     var body: some View {
         NavigationStack {
@@ -36,6 +39,26 @@ struct OrbitMiniSettingsView: View {
                         Text("Вимкнено").tag("off")
                     }
                 }
+                Section("Фрази завершення") {
+                    ForEach(endPhrases, id: \.self) { phrase in
+                        Text(phrase)
+                    }
+                    .onDelete { offsets in
+                        endPhrases.remove(atOffsets: offsets)
+                        OrbitMiniEndPhrases.save(endPhrases)
+                        endPhrases = OrbitMiniEndPhrases.phrases
+                    }
+                    Button("Додати фразу", systemImage: "plus") {
+                        newEndPhrase = ""
+                        addingEndPhrase = true
+                    }
+                    Button("Відновити типові", role: .destructive) {
+                        OrbitMiniEndPhrases.restoreDefaults()
+                        endPhrases = OrbitMiniEndPhrases.phrases
+                    }
+                } footer: {
+                    Text("Orbit завершує розмову лише якщо розпізнаний вислів точно збігається з однією з цих коротких фраз.")
+                }
                 Section("Зворотний зв’язок") {
                     Toggle("Вібрація, коли готовий", isOn: $readyHaptic)
                     Toggle("Live Activity", isOn: $liveActivityEnabled)
@@ -48,6 +71,19 @@ struct OrbitMiniSettingsView: View {
             }
             .navigationTitle("Налаштування")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+            .alert("Нова фраза завершення", isPresented: $addingEndPhrase) {
+                TextField("Наприклад, стоп", text: $newEndPhrase)
+                Button("Скасувати", role: .cancel) {}
+                Button("Додати") {
+                    let candidate = OrbitMiniEndPhrases.normalize(newEndPhrase)
+                    guard !candidate.isEmpty else { return }
+                    endPhrases.append(candidate)
+                    OrbitMiniEndPhrases.save(endPhrases)
+                    endPhrases = OrbitMiniEndPhrases.phrases
+                }
+            } message: {
+                Text("Коротка команда, наприклад «досить». Порожні та повторні фрази не зберігаються.")
+            }
         }
     }
 }

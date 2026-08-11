@@ -1,9 +1,11 @@
 import LiveKit
 import SwiftUI
+import UIKit
 
 struct AppView: View {
     @EnvironmentObject private var authentication: OrbitAuthentication
     @ObservedObject private var coordinator = OrbitMiniVoiceCoordinator.shared
+    @ObservedObject private var session = OrbitMiniVoiceCoordinator.shared.session
     @Environment(\.scenePhase) private var scenePhase
     @State private var settingsShown = false
 
@@ -32,11 +34,14 @@ struct AppView: View {
             await authentication.loadFamilyProfiles()
             await coordinator.cleanOrphansAtLaunch()
         }
-        .onChange(of: coordinator.session.isConnected) { _, connected in
+        .onChange(of: session.isConnected) { _, connected in
             if !connected { Task { await coordinator.cleanOrphansAtLaunch() } }
         }
-        .onChange(of: String(describing: coordinator.session.agent.agentState)) { _, value in
+        .onChange(of: String(describing: session.agent.agentState)) { _, value in
             Task { await coordinator.updateAgentState(value) }
+        }
+        .onChange(of: session.messages.count) { _, _ in
+            Task { await coordinator.handleLatestUserMessage() }
         }
         .sheet(isPresented: $settingsShown) { OrbitMiniSettingsView() }
     }
@@ -65,22 +70,31 @@ struct AppView: View {
     }
 
     private var voiceState: OrbitMiniVoiceState? {
-        guard coordinator.session.isConnected else { return nil }
-        let value = String(describing: coordinator.session.agent.agentState).lowercased()
+        guard coordinator.isVoiceActive else { return nil }
+        let value = String(describing: session.agent.agentState).lowercased()
         if value.contains("speak") { return .speaking }
         if value.contains("think") { return .thinking }
         return .listening
     }
 
     private var sphere: some View {
-        Image("OrbitSphere")
+        orbitSphereImage
             .resizable()
             .scaledToFit()
             .frame(maxWidth: 310)
+            .clipShape(RoundedRectangle(cornerRadius: 58, style: .continuous))
             .shadow(color: glowColor.opacity(0.5), radius: 30)
             .scaleEffect(voiceState == .speaking ? 1.04 : 1)
             .animation(.easeInOut(duration: 0.35), value: voiceState)
             .accessibilityHidden(true)
+    }
+
+    private var orbitSphereImage: Image {
+        if let url = Bundle.main.url(forResource: "OrbitSphere", withExtension: "jpg"),
+           let image = UIImage(contentsOfFile: url.path) {
+            return Image(uiImage: image)
+        }
+        return Image("OrbitSphere")
     }
 
     private var glowColor: Color {
@@ -107,22 +121,22 @@ struct AppView: View {
     private var startStopButton: some View {
         Button {
             Task {
-                if coordinator.session.isConnected { await coordinator.stop(reason: "button") }
+                if coordinator.isVoiceActive { await coordinator.stop(reason: "button") }
                 else { await coordinator.start() }
             }
         } label: {
             Label(
-                coordinator.session.isConnected ? "Завершити" : "Почати розмову",
-                systemImage: coordinator.session.isConnected ? "stop.fill" : "waveform.circle.fill"
+                coordinator.isVoiceActive ? "Завершити" : "Почати розмову",
+                systemImage: coordinator.isVoiceActive ? "stop.fill" : "waveform.circle.fill"
             )
             .font(.headline)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
-            .background(coordinator.session.isConnected ? Color.red.opacity(0.84) : Color.cyan.opacity(0.82), in: Capsule())
+            .background(coordinator.isVoiceActive ? Color.red.opacity(0.84) : Color.cyan.opacity(0.82), in: Capsule())
         }
         .disabled(coordinator.isStarting)
         .foregroundStyle(.black)
-        .accessibilityHint(coordinator.session.isConnected ? "Зупиняє голосову сесію" : "Запускає голосову сесію")
+        .accessibilityHint(coordinator.isVoiceActive ? "Зупиняє голосову сесію" : "Запускає голосову сесію")
     }
 
     private var activeUser: some View {

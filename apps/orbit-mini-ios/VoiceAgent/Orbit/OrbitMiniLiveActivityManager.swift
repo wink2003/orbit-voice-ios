@@ -1,5 +1,6 @@
 @preconcurrency import ActivityKit
 import Foundation
+import OSLog
 
 @MainActor
 final class OrbitMiniLiveActivityManager: ObservableObject {
@@ -7,6 +8,7 @@ final class OrbitMiniLiveActivityManager: ObservableObject {
 
     private var activity: Activity<OrbitMiniActivityAttributes>?
     private var lastState: OrbitMiniVoiceState?
+    private let logger = Logger(subsystem: "net.opik.orbit.mini", category: "live-activity")
 
     private init() {}
 
@@ -31,6 +33,11 @@ final class OrbitMiniLiveActivityManager: ObservableObject {
                 pushType: nil
             )
             lastState = .listening
+            logger.notice("Live Activity created")
+            // A request alone is not a guaranteed unlocked-screen banner. Ask
+            // once for the first real listening state; subsequent alerts are
+            // emitted only on meaningful speaker changes.
+            await update(activity, to: .listening, userName: userName, shouldAlert: true)
         } catch {
             // Voice must keep working even if the user disabled Live Activities
             // globally or SideStore has a temporary extension issue.
@@ -41,21 +48,9 @@ final class OrbitMiniLiveActivityManager: ObservableObject {
 
     func transition(to state: OrbitMiniVoiceState, userName: String) async {
         guard let activity, lastState != state else { return }
-        let content = ActivityContent(
-            state: OrbitMiniActivityAttributes.ContentState(state: state, userName: userName),
-            staleDate: nil
-        )
-        do {
-            let shouldAlert = (state == .listening || state == .speaking)
-                && (UserDefaults.standard.object(forKey: "mini.liveActivityBanners") as? Bool ?? true)
-            if shouldAlert {
-                let alert = AlertConfiguration(title: "ORBIT", body: LocalizedStringResource(stringLiteral: state.title), sound: .default)
-                try await activity.update(content, alertConfiguration: alert)
-            } else {
-                try await activity.update(content)
-            }
-            lastState = state
-        } catch { }
+        let shouldAlert = (state == .listening || state == .speaking)
+            && (UserDefaults.standard.object(forKey: "mini.liveActivityBanners") as? Bool ?? true)
+        await update(activity, to: state, userName: userName, shouldAlert: shouldAlert)
     }
 
     func end() async {
@@ -68,5 +63,34 @@ final class OrbitMiniLiveActivityManager: ObservableObject {
         }
         activity = nil
         lastState = nil
+    }
+
+    private func update(
+        _ activity: Activity<OrbitMiniActivityAttributes>,
+        to state: OrbitMiniVoiceState,
+        userName: String,
+        shouldAlert: Bool
+    ) async {
+        let content = ActivityContent(
+            state: OrbitMiniActivityAttributes.ContentState(state: state, userName: userName),
+            staleDate: nil
+        )
+        do {
+            if shouldAlert {
+                logger.notice("Live Activity \(state.rawValue, privacy: .public): alert requested")
+                let alert = AlertConfiguration(
+                    title: "ORBIT",
+                    body: LocalizedStringResource(stringLiteral: state.title),
+                    sound: .default
+                )
+                try await activity.update(content, alertConfiguration: alert)
+            } else {
+                logger.notice("Live Activity \(state.rawValue, privacy: .public): silent update")
+                try await activity.update(content)
+            }
+            lastState = state
+        } catch {
+            logger.error("Live Activity update failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }
