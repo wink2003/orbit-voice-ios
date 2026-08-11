@@ -19,6 +19,7 @@ final class BackgroundProbeRecorder: ObservableObject {
 
     private let engine = AVAudioEngine()
     private var activity: Activity<ProbeAttributes>?
+    private var activityStateTask: Task<Void, Never>?
     private var stopTask: Task<Void, Never>?
     private var isRecording = false
     private var isInBackground = false
@@ -28,6 +29,8 @@ final class BackgroundProbeRecorder: ObservableObject {
     private var sceneSessionPendingDestruction: UISceneSession?
     private weak var visibleProbeWindow: UIWindow?
     private var lifecycleObservers: [NSObjectProtocol] = []
+    private var liveActivityPhase = "starting"
+    private var listeningAlertRequested = false
 
     private init() {
         loadPersistedStatus()
@@ -116,6 +119,8 @@ final class BackgroundProbeRecorder: ObservableObject {
 
         diagnostics = []
         destructionErrorDetails = nil
+        liveActivityPhase = "starting"
+        listeningAlertRequested = false
         appendDiagnostic("Recorder begin; origin=\(origin); appState=\(UIApplication.shared.applicationState.rawValue)")
         publish(phase: "Starting", buffers: 0, detail: "Starting recorder; origin=\(origin)")
         foregroundBuffers = 0
@@ -135,14 +140,15 @@ final class BackgroundProbeRecorder: ObservableObject {
             let attributes = ProbeAttributes(startedAt: Date())
             let content = ActivityContent(
                 state: ProbeAttributes.ContentState(
-                    phase: "Starting",
+                    phase: liveActivityPhase,
                     buffers: 0,
                     detail: "Requesting microphone"
                 ),
                 staleDate: nil
             )
             activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
-            appendDiagnostic("Live Activity started")
+            appendDiagnostic("Live Activity created; id=\(activity?.id ?? \"unknown\")")
+            observeActivityState()
             publish(phase: "Live Activity active", buffers: 0, detail: "Live Activity requested successfully.")
         } catch {
             publish(phase: "Live Activity failed", buffers: 0, detail: "\(error.localizedDescription)")
@@ -165,6 +171,7 @@ final class BackgroundProbeRecorder: ObservableObject {
             engine.prepare()
             try engine.start()
             isRecording = true
+            liveActivityPhase = "listening"
             appendDiagnostic("AVAudioEngine started")
             publish(phase: "Recording", buffers: 0, detail: "AVAudioEngine started; waiting for input buffers.")
             updateActivity()
@@ -185,6 +192,8 @@ final class BackgroundProbeRecorder: ObservableObject {
     func stop(reason: String = "Stopped by intent") async {
         stopTask?.cancel()
         stopTask = nil
+        activityStateTask?.cancel()
+        activityStateTask = nil
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         isRecording = false
@@ -193,7 +202,9 @@ final class BackgroundProbeRecorder: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         audioSessionActive = false
         appendDiagnostic("Recorder stopped; reason=\(reason)")
-        await activity?.end(ActivityContent(state: .init(phase: "Stopped", buffers: buffers, detail: reason), staleDate: nil), dismissalPolicy: .immediate)
+        liveActivityPhase = "ended"
+        appendDiagnostic("Live Activity ending; id=\(activity?.id ?? \"unknown\")")
+        await activity?.end(ActivityContent(state: .init(phase: liveActivityPhase, buffers: buffers, detail: reason), staleDate: nil), dismissalPolicy: .immediate)
         activity = nil
         publish(phase: "Stopped", buffers: buffers, detail: reason)
     }
@@ -254,8 +265,50 @@ final class BackgroundProbeRecorder: ObservableObject {
 
     private func updateActivity() {
         guard let activity else { return }
-        let state = ProbeAttributes.ContentState(phase: phase, buffers: buffers, detail: detail)
+        let state = ProbeAttributes.ContentState(phase: liveActivityPhase, buffers: buffers, detail: detail)
         Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+    }
+
+    private func observeActivityState() {
+        activityStateTask?.cancel()
+        guard let activity else { return }
+        activityStateTask = Task { [weak self, activity] in
+            for await state in activity.activityStateUpdates {
+                guard let self else { return }
+                self.appendDiagnostic("Live Activity state=\(String(describing: state)); id=\(activity.id)")
+                self.persistCurrentStatus()
+            }
+        }
+    }
+
+    private func requestListeningAlertAfterBackgroundTransition() {
+        guard isRecording, buffers > 0 else {
+            appendDiagnostic("Listening alert deferred: recording=\(isRecording); buffers=\(buffers)")
+            persistCurrentStatus()
+            return
+        }
+        guard !listeningAlertRequested, let activity else { return }
+
+        listeningAlertRequested = true
+        liveActivityPhase = "listening"
+        let content = ActivityContent(
+            state: ProbeAttributes.ContentState(
+                phase: liveActivityPhase,
+                buffers: buffers,
+                detail: "Microphone recording is active"
+            ),
+            staleDate: nil
+        )
+        let alert = AlertConfiguration(title: "ORBIT", body: "Слухаю…", sound: .default)
+        appendDiagnostic("Listening alert update requested; id=\(activity.id); buffers=\(buffers)")
+        persistCurrentStatus()
+
+        Task { [weak self, activity] in
+            await activity.update(content, alertConfiguration: alert)
+            guard let self else { return }
+            self.appendDiagnostic("Listening alert update completed; id=\(activity.id); state=\(String(describing: activity.activityState))")
+            self.persistCurrentStatus()
+        }
     }
 
     private func publish(phase: String, buffers: Int, detail: String) {
@@ -288,6 +341,7 @@ final class BackgroundProbeRecorder: ObservableObject {
         isInBackground = true
         appendDiagnostic("Scene entered background")
         if isRecording { publish(phase: "Recording", buffers: buffers, detail: "Probe entered background; counting input buffers.") }
+        requestListeningAlertAfterBackgroundTransition()
     }
 
     private func enteredForeground() {
