@@ -25,7 +25,7 @@ private final class OrbitMiniAudioReleaseWaiter: @unchecked Sendable {
 
 /// Diagnostics-only observer prepended to LiveKit's unchanged default chain.
 /// It neither configures nor retains the engine and always forwards its result.
-private final class OrbitMiniAudioEngineDiagnostics: AudioEngineObserver, @unchecked Sendable {
+final class OrbitMiniAudioEngineDiagnostics: AudioEngineObserver, @unchecked Sendable {
     private let lock = NSLock()
     private var storedNext: (any AudioEngineObserver)?
     private let logger = Logger(subsystem: "net.opik.orbit.mini", category: "siri-audio")
