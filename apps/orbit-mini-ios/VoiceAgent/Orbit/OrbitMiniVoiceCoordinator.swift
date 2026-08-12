@@ -19,6 +19,8 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     private let liveActivity = OrbitMiniLiveActivityManager.shared
     private let logger = Logger(subsystem: "net.opik.orbit.mini", category: "voice-session")
     private var audioInterrupted = false
+    private var intentStartTask: Task<Void, Never>?
+    private var audioReleaseWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
 
     private override init() {
         super.init()
@@ -29,8 +31,9 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
             queue: .main
         ) { [weak self] notification in
             let interruptionType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt ?? 0
+            let interruptionOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             Task { @MainActor [weak self] in
-                self?.handleAudioInterruption(interruptionType)
+                self?.handleAudioInterruption(interruptionType, options: interruptionOptions)
             }
         }
     }
@@ -39,24 +42,70 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     var isVoiceActive: Bool { runtime.session.isConnected && !isTerminating }
 
     func start() async {
+        guard prepareStart(source: "button") else { return }
+        await beginPreparedStart(source: "button")
+    }
+
+    /// An App Intent must return before it competes with Siri for microphone
+    /// ownership. `Task.yield()` schedules the attempt after `perform()` has
+    /// completed; it is not a timed delay and does not inspect scene state.
+    func requestStartFromAppIntent() {
+        guard prepareStart(source: "app-intent") else { return }
+        logger.notice("app-intent start queued; perform may now complete")
+        intentStartTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self else { return }
+            self.intentStartTask = nil
+            guard !self.isTerminating else {
+                self.isStarting = false
+                self.logger.notice("app-intent start cancelled during termination")
+                return
+            }
+            await self.beginPreparedStart(source: "app-intent")
+        }
+    }
+
+    private func prepareStart(source: String) -> Bool {
         guard runtime.authentication.isPaired else {
             lastError = "Спершу активуйте цей iPhone."
-            return
+            return false
         }
-        guard !runtime.session.isConnected, !isStarting, !isTerminating else { return }
+        guard !runtime.session.isConnected, !isStarting, !isTerminating else {
+            logger.notice("voice start ignored source=\(source, privacy: .public) connected=\(self.runtime.session.isConnected, privacy: .public) starting=\(self.isStarting, privacy: .public) terminating=\(self.isTerminating, privacy: .public)")
+            return false
+        }
         isStarting = true
         lastError = nil
+        logger.notice("coordinator start requested source=\(source, privacy: .public)")
+        return true
+    }
+
+    private func beginPreparedStart(source: String) async {
         await liveActivity.reconcileOrphans()
         await foregroundBootstrap()
         logAudioReadiness()
-        await runtime.session.start()
 
-        // Siri can retain the audio route briefly after it has foregrounded
-        // Mini. Retry only the known transient engine failure.  Scene and app
-        // lifecycle state are deliberately diagnostic-only: they do not prove
-        // microphone readiness and must never reject a manual Shortcut start.
+        // If Mini has observed Siri's interruption, do not ask LiveKit to
+        // activate the microphone until the corresponding public end event.
+        if audioInterrupted {
+            logger.notice("LiveKit start deferred: AVAudioSession interruption is active")
+            let released = await waitForAudioReleaseOrTimeout(reason: "pre-start interruption")
+            logger.notice("audio release wait completed released=\(released, privacy: .public)")
+            if released { await Task.yield() }
+        }
+        guard !Task.isCancelled, !isTerminating else {
+            isStarting = false
+            logger.notice("LiveKit start cancelled before audio activation")
+            return
+        }
+
+        await attemptLiveKitStart(number: 1, source: source)
+
+        // A -3001 after `perform()` has returned is the only fallback case.
+        // Wait for an observed interruption end, or one bounded timeout if
+        // that notification raced before registration; never spin retries.
         if !runtime.session.isConnected, isTransientAudioStartFailure {
-            await retryTransientAudioStart()
+            await retryTransientAudioStart(source: source)
         }
         isStarting = false
         if runtime.session.isConnected {
@@ -99,8 +148,13 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     /// transport disconnects, and fatal local failures.  Visible shutdown is
     /// deliberately independent from a potentially slow LiveKit handshake.
     func terminateSession(reason: String) async {
+        intentStartTask?.cancel()
+        intentStartTask = nil
         guard !isTerminating else { return }
         isTerminating = true
+        let waiters = audioReleaseWaiters
+        audioReleaseWaiters.removeAll()
+        waiters.values.forEach { $0.resume(returning: false) }
         let started = ContinuousClock.now
         logger.notice("termination requested reason=\(reason, privacy: .public)")
 
@@ -153,33 +207,64 @@ private extension OrbitMiniVoiceCoordinator {
     /// audio engine can start, not an App/UIScene lifecycle state.
     func logAudioReadiness() {
         let audioSession = AVAudioSession.sharedInstance()
-        logger.notice("voice audio start requested category=\(audioSession.category.rawValue, privacy: .public) mode=\(audioSession.mode.rawValue, privacy: .public) interrupted=\(self.audioInterrupted, privacy: .public)")
+        let inputs = audioSession.currentRoute.inputs.map(\.portType.rawValue).joined(separator: ",")
+        let outputs = audioSession.currentRoute.outputs.map(\.portType.rawValue).joined(separator: ",")
+        logger.notice("AVAudioSession before LiveKit activation category=\(audioSession.category.rawValue, privacy: .public) mode=\(audioSession.mode.rawValue, privacy: .public) permission=\(String(describing: audioSession.recordPermission), privacy: .public) interrupted=\(self.audioInterrupted, privacy: .public) otherAudio=\(audioSession.isOtherAudioPlaying, privacy: .public) silencedHint=\(audioSession.secondaryAudioShouldBeSilencedHint, privacy: .public) input=\(inputs, privacy: .public) output=\(outputs, privacy: .public)")
     }
 
-    func retryTransientAudioStart() async {
-        let deadline = Date().addingTimeInterval(2.0)
-        let delays: [Duration] = [.milliseconds(100), .milliseconds(180), .milliseconds(300), .milliseconds(450), .milliseconds(600)]
-        for (index, delay) in delays.enumerated() {
-            guard Date() < deadline, !Task.isCancelled else { break }
-            try? await Task.sleep(for: delay)
-            guard !audioInterrupted else {
-                logger.notice("transient audio retry waiting for interruption to end")
-                continue
-            }
-            logger.notice("transient audio retry \(index + 1, privacy: .public) elapsed=\(2.0 - max(0, deadline.timeIntervalSinceNow), privacy: .public)s")
-            runtime.session.dismissError()
-            runtime.localMedia.dismissError()
-            await runtime.session.start()
-            if runtime.session.isConnected {
-                logger.notice("transient audio retry succeeded")
-                return
-            }
-            guard isTransientAudioStartFailure else { return }
+    func attemptLiveKitStart(number: Int, source: String) async {
+        logger.notice("LiveKit start attempt=\(number, privacy: .public) source=\(source, privacy: .public); automatic AVAudioSession activation is owned by LiveKit")
+        await runtime.session.start()
+        if runtime.session.isConnected {
+            logger.notice("LiveKit start attempt=\(number, privacy: .public) succeeded")
+        } else {
+            logger.error("LiveKit start attempt=\(number, privacy: .public) failed error=\(self.currentAudioErrorDescription, privacy: .public)")
         }
-        logger.error("transient audio startup retries exhausted")
     }
 
-    func handleAudioInterruption(_ raw: UInt) {
+    func retryTransientAudioStart(source: String) async {
+        guard !Task.isCancelled, !isTerminating else { return }
+        logger.notice("-3001/audio-engine failure: waiting for AVAudioSession release before one bounded retry")
+        let released = await waitForAudioReleaseOrTimeout(reason: "-3001 fallback")
+        guard !Task.isCancelled, !isTerminating else { return }
+        logger.notice("-3001 retry reason=\(released ? "interruption-ended" : "bounded-timeout", privacy: .public)")
+        if released { await Task.yield() }
+        runtime.session.dismissError()
+        runtime.localMedia.dismissError()
+        await attemptLiveKitStart(number: 2, source: source)
+        if !runtime.session.isConnected {
+            logger.error("bounded audio startup fallback failed error=\(self.currentAudioErrorDescription, privacy: .public)")
+        }
+    }
+
+    /// A waiter is registered on the MainActor before the timeout is started,
+    /// so an interruption-end notification cannot race into a duplicate start.
+    /// The timeout is a single recovery fallback for a notification that was
+    /// already in flight before app launch; it is not a polling loop.
+    func waitForAudioReleaseOrTimeout(reason: String) async -> Bool {
+        let token = UUID()
+        logger.notice("waiting for AVAudioSession interruption release reason=\(reason, privacy: .public) active=\(self.audioInterrupted, privacy: .public)")
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                audioReleaseWaiters[token] = continuation
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard !Task.isCancelled else { return }
+                    self?.resumeAudioReleaseWaiter(token, released: false)
+                }
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor in
+                self?.resumeAudioReleaseWaiter(token, released: false)
+            }
+        }
+    }
+
+    func resumeAudioReleaseWaiter(_ token: UUID, released: Bool) {
+        audioReleaseWaiters.removeValue(forKey: token)?.resume(returning: released)
+    }
+
+    func handleAudioInterruption(_ raw: UInt, options rawOptions: UInt) {
         guard let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         switch type {
         case .began:
@@ -187,10 +272,22 @@ private extension OrbitMiniVoiceCoordinator {
             logger.notice("AVAudioSession interruption began")
         case .ended:
             audioInterrupted = false
-            logger.notice("AVAudioSession interruption ended")
+            let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+            logger.notice("AVAudioSession interruption ended shouldResume=\(options.contains(.shouldResume), privacy: .public)")
+            let waiters = audioReleaseWaiters
+            audioReleaseWaiters.removeAll()
+            waiters.values.forEach { $0.resume(returning: true) }
         @unknown default:
             break
         }
+    }
+
+    var currentAudioErrorDescription: String {
+        [
+            runtime.session.error?.localizedDescription,
+            runtime.session.agent.error?.localizedDescription,
+            runtime.localMedia.error?.localizedDescription,
+        ].compactMap { $0 }.joined(separator: " | ")
     }
 
     var isTransientAudioStartFailure: Bool {

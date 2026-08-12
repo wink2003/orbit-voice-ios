@@ -10,6 +10,9 @@ struct VoiceAgentApp: App {
 
     init() {
         let runtime = OrbitRuntime.shared
+        // Install the public AVAudioSession interruption observer as the app
+        // starts, before an App Intent requests a microphone session.
+        _ = OrbitMiniVoiceCoordinator.shared
         _authentication = StateObject(wrappedValue: runtime.authentication)
         session = runtime.session
         localMedia = runtime.localMedia
