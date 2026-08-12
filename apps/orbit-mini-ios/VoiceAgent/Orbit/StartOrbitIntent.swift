@@ -1,5 +1,4 @@
 import AppIntents
-import OSLog
 
 struct StartOrbitMiniIntent: AppIntent {
     static let title: LocalizedStringResource = "Start Orbit Mini"
@@ -16,7 +15,7 @@ struct StartOrbitMiniIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        let logger = Logger(subsystem: "net.opik.orbit.mini", category: "voice-session")
+        let logger = OrbitMiniDiagnosticLogger.shared
         logger.notice("AppIntent perform begin")
         OrbitMiniVoiceCoordinator.shared.requestStartFromAppIntent()
         logger.notice("AppIntent perform end; voice start is queued after result")

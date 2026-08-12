@@ -1,8 +1,79 @@
-import Foundation
+@preconcurrency import Foundation
 import LiveKit
-import OSLog
+import os
 import UIKit
 import AVFAudio
+
+/// Bounded, local-only export of the existing Siri/audio diagnostics. The
+/// lock keeps audio callbacks non-blocking; persistence is queued separately.
+final class OrbitMiniDiagnosticLogger: @unchecked Sendable {
+    nonisolated(unsafe) static let shared = OrbitMiniDiagnosticLogger()
+
+    private nonisolated(unsafe) let osLogger: os.Logger
+    private nonisolated(unsafe) let lock = NSLock()
+    private nonisolated(unsafe) let persistenceQueue = DispatchQueue(label: "net.opik.orbit.mini.diagnostics", qos: .utility)
+    private nonisolated(unsafe) var entries: [String] = []
+    private nonisolated(unsafe) let maxEntries = 350
+    private nonisolated(unsafe) let storageKey = "mini.siriAudioDiagnostics.v1"
+
+    nonisolated init(category: String = "siri-audio") {
+        osLogger = os.Logger(subsystem: "net.opik.orbit.mini", category: category)
+        if let saved = UserDefaults(suiteName: "net.opik.orbit.mini")?.stringArray(forKey: storageKey) {
+            entries = Array(saved.suffix(maxEntries))
+        }
+    }
+
+    nonisolated var eventCount: Int { persistenceQueue.sync { lock.withLock { entries.count } } }
+
+    nonisolated func notice(_ message: String) {
+        osLogger.notice("\(message, privacy: .public)")
+        append(message)
+    }
+
+    nonisolated func error(_ message: String) {
+        osLogger.error("\(message, privacy: .public)")
+        append(message)
+    }
+
+    nonisolated func exportText() -> String {
+        persistenceQueue.sync { lock.withLock { entries.joined(separator: "\n") } }
+    }
+
+    nonisolated func clear() {
+        lock.withLock { entries.removeAll() }
+        persistenceQueue.async { [storageKey] in UserDefaults(suiteName: "net.opik.orbit.mini")?.removeObject(forKey: storageKey) }
+    }
+
+    private nonisolated func append(_ message: String) {
+        persistenceQueue.async { [weak self] in
+            guard let self else { return }
+            let safeMessage = Self.redact(message)
+            let timestamp = String(format: "%.3f", Date().timeIntervalSince1970)
+            let line = "\(timestamp) → siri-audio → \(safeMessage)"
+            let snapshot: [String] = self.lock.withLock {
+                self.entries.append(line)
+                if self.entries.count > self.maxEntries { self.entries.removeFirst(self.entries.count - self.maxEntries) }
+                return self.entries
+            }
+            UserDefaults(suiteName: "net.opik.orbit.mini")?.set(snapshot, forKey: self.storageKey)
+        }
+    }
+
+    private nonisolated static func redact(_ message: String) -> String {
+        var value = message
+        for pattern in ["https?://\\S+", "(?i)bearer\\s+\\S+", "(?i)(token|api[_-]?key|secret|password)=[^\\s]+"] {
+            value = value.replacingOccurrences(of: pattern, with: "[redacted]", options: .regularExpression)
+        }
+        return value
+    }
+}
+
+private extension NSLock {
+    nonisolated func withLock<T>(_ body: () -> T) -> T {
+        lock(); defer { unlock() }
+        return body()
+    }
+}
 
 /// A continuation may be completed by either the MainActor interruption
 /// observer or its bounded timeout. The lock makes that race one-shot.
@@ -28,7 +99,7 @@ private final class OrbitMiniAudioReleaseWaiter: @unchecked Sendable {
 final class OrbitMiniAudioEngineDiagnostics: AudioEngineObserver, @unchecked Sendable {
     private let lock = NSLock()
     private var storedNext: (any AudioEngineObserver)?
-    private let logger = Logger(subsystem: "net.opik.orbit.mini", category: "siri-audio")
+    private nonisolated(unsafe) let logger = OrbitMiniDiagnosticLogger.shared
 
     var next: (any AudioEngineObserver)? {
         get { lock.withLock { storedNext } }
@@ -36,33 +107,33 @@ final class OrbitMiniAudioEngineDiagnostics: AudioEngineObserver, @unchecked Sen
     }
 
     func engineDidCreate(_ engine: AVAudioEngine) -> Int {
-        logger.notice("audio-engine didCreate running=\(engine.isRunning, privacy: .public)")
+        logger.notice("audio-engine didCreate running=\(engine.isRunning)")
         return next?.engineDidCreate(engine) ?? 0
     }
 
     func engineWillEnable(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
-        logger.notice("audio-engine willEnable playout=\(isPlayoutEnabled, privacy: .public) recording=\(isRecordingEnabled, privacy: .public) running=\(engine.isRunning, privacy: .public)")
+        logger.notice("audio-engine willEnable playout=\(isPlayoutEnabled) recording=\(isRecordingEnabled) running=\(engine.isRunning)")
         return next?.engineWillEnable(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
     }
 
     func engineWillStart(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
         let format = engine.inputNode.inputFormat(forBus: 0)
-        logger.notice("audio-engine willStart (LiveKit AVAudioSession configuration/activation already passed) playout=\(isPlayoutEnabled, privacy: .public) recording=\(isRecordingEnabled, privacy: .public) inputSampleRate=\(format.sampleRate, privacy: .public) inputChannels=\(format.channelCount, privacy: .public)")
+        logger.notice("audio-engine willStart (LiveKit AVAudioSession configuration/activation already passed) playout=\(isPlayoutEnabled) recording=\(isRecordingEnabled) inputSampleRate=\(format.sampleRate) inputChannels=\(format.channelCount)")
         return next?.engineWillStart(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
     }
 
     func engineDidStop(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
-        logger.notice("audio-engine didStop playout=\(isPlayoutEnabled, privacy: .public) recording=\(isRecordingEnabled, privacy: .public)")
+        logger.notice("audio-engine didStop playout=\(isPlayoutEnabled) recording=\(isRecordingEnabled)")
         return next?.engineDidStop(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
     }
 
     func engineDidDisable(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
-        logger.notice("audio-engine didDisable playout=\(isPlayoutEnabled, privacy: .public) recording=\(isRecordingEnabled, privacy: .public)")
+        logger.notice("audio-engine didDisable playout=\(isPlayoutEnabled) recording=\(isRecordingEnabled)")
         return next?.engineDidDisable(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
     }
 
     func engineWillRelease(_ engine: AVAudioEngine) -> Int {
-        logger.notice("audio-engine willRelease running=\(engine.isRunning, privacy: .public)")
+        logger.notice("audio-engine willRelease running=\(engine.isRunning)")
         return next?.engineWillRelease(engine) ?? 0
     }
 }
@@ -80,7 +151,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
 
     private let runtime = OrbitRuntime.shared
     private let liveActivity = OrbitMiniLiveActivityManager.shared
-    private let logger = Logger(subsystem: "net.opik.orbit.mini", category: "voice-session")
+    private let logger = OrbitMiniDiagnosticLogger.shared
     private var audioInterrupted = false
     private var intentStartTask: Task<Void, Never>?
     private var audioReleaseWaiters: [UUID: OrbitMiniAudioReleaseWaiter] = [:]
@@ -153,12 +224,12 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
             return false
         }
         guard !runtime.session.isConnected, !isStarting, !isTerminating else {
-            logger.notice("voice start ignored source=\(source, privacy: .public) connected=\(self.runtime.session.isConnected, privacy: .public) starting=\(self.isStarting, privacy: .public) terminating=\(self.isTerminating, privacy: .public)")
+            logger.notice("voice start ignored source=\(source) connected=\(self.runtime.session.isConnected) starting=\(self.isStarting) terminating=\(self.isTerminating)")
             return false
         }
         isStarting = true
         lastError = nil
-        logger.notice("coordinator start requested source=\(source, privacy: .public)")
+        logger.notice("coordinator start requested source=\(source)")
         return true
     }
 
@@ -172,7 +243,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         if audioInterrupted {
             logger.notice("LiveKit start deferred: AVAudioSession interruption is active")
             let released = await waitForAudioReleaseOrTimeout(reason: "pre-start interruption")
-            logger.notice("audio release wait completed released=\(released, privacy: .public)")
+            logger.notice("audio release wait completed released=\(released)")
             if released { await Task.yield() }
         }
         guard !Task.isCancelled, !isTerminating else {
@@ -238,7 +309,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         audioReleaseWaiters.removeAll()
         waiters.values.forEach { $0.resume(released: false) }
         let started = ContinuousClock.now
-        logger.notice("termination requested reason=\(reason, privacy: .public)")
+        logger.notice("termination requested reason=\(reason)")
 
         let session = runtime.session
         let disconnectTask = Task { @MainActor in
@@ -258,7 +329,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
             guard let self else { return }
             self.isTerminating = false
             let elapsed = started.duration(to: .now)
-            self.logger.notice("termination completed in \(String(describing: elapsed), privacy: .public)")
+            self.logger.notice("termination completed in \(String(describing: elapsed))")
         }
     }
 
@@ -280,7 +351,7 @@ private extension OrbitMiniVoiceCoordinator {
     /// foreground Mini. Yield once so that transition work can progress, but
     /// never infer the result from a transient connected-scene snapshot.
     func foregroundBootstrap() async {
-        logger.notice("voice foreground bootstrap requested app=\(UIApplication.shared.applicationState.rawValue, privacy: .public) scene=\(self.sceneStateDescription, privacy: .public)")
+        logger.notice("voice foreground bootstrap requested app=\(UIApplication.shared.applicationState.rawValue) scene=\(self.sceneStateDescription)")
         await Task.yield()
     }
 
@@ -292,16 +363,16 @@ private extension OrbitMiniVoiceCoordinator {
         let inputs = audioSession.currentRoute.inputs.map(\.portType.rawValue).joined(separator: ",")
         let outputs = audioSession.currentRoute.outputs.map(\.portType.rawValue).joined(separator: ",")
         let availableInputs = audioSession.availableInputs?.map(\.portType.rawValue).joined(separator: ",") ?? "none"
-        logger.notice("AVAudioSession before LiveKit activation category=\(audioSession.category.rawValue, privacy: .public) mode=\(audioSession.mode.rawValue, privacy: .public) permission=\(String(describing: audioSession.recordPermission), privacy: .public) interrupted=\(self.audioInterrupted, privacy: .public) otherAudio=\(audioSession.isOtherAudioPlaying, privacy: .public) silencedHint=\(audioSession.secondaryAudioShouldBeSilencedHint, privacy: .public) input=\(inputs, privacy: .public) availableInputs=\(availableInputs, privacy: .public) output=\(outputs, privacy: .public)")
+        logger.notice("AVAudioSession before LiveKit activation category=\(audioSession.category.rawValue) mode=\(audioSession.mode.rawValue) permission=\(String(describing: audioSession.recordPermission)) interrupted=\(self.audioInterrupted) otherAudio=\(audioSession.isOtherAudioPlaying) silencedHint=\(audioSession.secondaryAudioShouldBeSilencedHint) input=\(inputs) availableInputs=\(availableInputs) output=\(outputs)")
     }
 
     func attemptLiveKitStart(number: Int, source: String) async {
-        logger.notice("LiveKit session.start begin attempt=\(number, privacy: .public) source=\(source, privacy: .public) engineRunningBefore=\(AudioManager.shared.isEngineRunning, privacy: .public)")
+        logger.notice("LiveKit session.start begin attempt=\(number) source=\(source) engineRunningBefore=\(AudioManager.shared.isEngineRunning)")
         await runtime.session.start()
         if runtime.session.isConnected {
-            logger.notice("LiveKit session connected attempt=\(number, privacy: .public) engineRunning=\(AudioManager.shared.isEngineRunning, privacy: .public)")
+            logger.notice("LiveKit session connected attempt=\(number) engineRunning=\(AudioManager.shared.isEngineRunning)")
         } else {
-            logger.error("LiveKit session.start failed attempt=\(number, privacy: .public) error=\(self.currentAudioErrorDescription, privacy: .public) engineRunningAfter=\(AudioManager.shared.isEngineRunning, privacy: .public) roomState=\(String(describing: self.runtime.session.room.connectionState), privacy: .public)")
+            logger.error("LiveKit session.start failed attempt=\(number) error=\(self.currentAudioErrorDescription) engineRunningAfter=\(AudioManager.shared.isEngineRunning) roomState=\(String(describing: self.runtime.session.room.connectionState))")
         }
     }
 
@@ -310,13 +381,13 @@ private extension OrbitMiniVoiceCoordinator {
         logger.notice("-3001/audio-engine failure: waiting for AVAudioSession release before one bounded retry")
         let released = await waitForAudioReleaseOrTimeout(reason: "-3001 fallback")
         guard !Task.isCancelled, !isTerminating else { return }
-        logger.notice("-3001 retry reason=\(released ? "interruption-ended" : "bounded-timeout", privacy: .public)")
+        logger.notice("-3001 retry reason=\(released ? "interruption-ended" : "bounded-timeout")")
         if released { await Task.yield() }
         runtime.session.dismissError()
         runtime.localMedia.dismissError()
         await attemptLiveKitStart(number: 2, source: source)
         if !runtime.session.isConnected {
-            logger.error("bounded audio startup fallback failed error=\(self.currentAudioErrorDescription, privacy: .public)")
+            logger.error("bounded audio startup fallback failed error=\(self.currentAudioErrorDescription)")
         }
     }
 
@@ -326,7 +397,7 @@ private extension OrbitMiniVoiceCoordinator {
     /// already in flight before app launch; it is not a polling loop.
     func waitForAudioReleaseOrTimeout(reason: String) async -> Bool {
         let token = UUID()
-        logger.notice("waiting for AVAudioSession interruption release reason=\(reason, privacy: .public) active=\(self.audioInterrupted, privacy: .public)")
+        logger.notice("waiting for AVAudioSession interruption release reason=\(reason) active=\(self.audioInterrupted)")
         let released = await withCheckedContinuation { continuation in
             let waiter = OrbitMiniAudioReleaseWaiter(continuation)
             audioReleaseWaiters[token] = waiter
@@ -353,7 +424,7 @@ private extension OrbitMiniVoiceCoordinator {
         case .ended:
             audioInterrupted = false
             let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
-            logger.notice("AVAudioSession interruption ended shouldResume=\(options.contains(.shouldResume), privacy: .public)")
+            logger.notice("AVAudioSession interruption ended shouldResume=\(options.contains(.shouldResume))")
             let waiters = audioReleaseWaiters
             audioReleaseWaiters.removeAll()
             waiters.values.forEach { $0.resume(released: true) }
@@ -364,7 +435,7 @@ private extension OrbitMiniVoiceCoordinator {
 
     func handleAudioRouteChange(_ raw: UInt) {
         let reason = AVAudioSession.RouteChangeReason(rawValue: raw)
-        logger.notice("AVAudioSession route changed reason=\(String(describing: reason), privacy: .public)")
+        logger.notice("AVAudioSession route changed reason=\(String(describing: reason))")
         logAudioReadiness()
     }
 

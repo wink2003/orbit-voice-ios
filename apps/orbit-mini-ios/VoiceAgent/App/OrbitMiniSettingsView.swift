@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct OrbitMiniSettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -12,6 +13,8 @@ struct OrbitMiniSettingsView: View {
     @State private var endPhrases = OrbitMiniEndPhrases.phrases
     @State private var newEndPhrase = ""
     @State private var addingEndPhrase = false
+    @State private var diagnosticCount = OrbitMiniDiagnosticLogger.shared.eventCount
+    @State private var diagnosticCopied = false
 
     private var profileSelection: Binding<String> {
         Binding(
@@ -74,12 +77,43 @@ struct OrbitMiniSettingsView: View {
                         }
                     }
                 }
+                Section {
+                    HStack {
+                        Text("Build")
+                        Spacer()
+                        Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")
+                    }
+                    HStack {
+                        Text("Подій збережено")
+                        Spacer()
+                        Text("\(diagnosticCount)")
+                    }
+                    Button("Скопіювати діагностику", systemImage: "doc.on.clipboard") {
+                        UIPasteboard.general.string = OrbitMiniDiagnosticLogger.shared.exportText()
+                        diagnosticCopied = true
+                    }
+                    Button("Очистити діагностику", systemImage: "trash", role: .destructive) {
+                        OrbitMiniDiagnosticLogger.shared.clear()
+                        diagnosticCount = 0
+                        diagnosticCopied = false
+                    }
+                    if diagnosticCopied {
+                        Text("Діагностику скопійовано")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Діагностика")
+                } footer: {
+                    Text("Зберігаються лише останні 350 безпечних подій Siri/audio.")
+                }
                 Section("Hands-free") {
                     Text("У «Швидких командах»: Отримати поточну програму → Start Orbit Mini → Відкрити отриману програму. Це повертає вас до Maps, Safari або іншої відкритої програми після готовності Orbit.")
                         .font(.footnote)
                 }
             }
             .navigationTitle("Налаштування")
+            .onAppear { diagnosticCount = OrbitMiniDiagnosticLogger.shared.eventCount }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
             .alert("Нова фраза завершення", isPresented: $addingEndPhrase) {
                 TextField("Наприклад, стоп", text: $newEndPhrase)
