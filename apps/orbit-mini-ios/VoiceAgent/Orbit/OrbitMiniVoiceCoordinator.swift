@@ -4,6 +4,25 @@ import OSLog
 import UIKit
 import AVFAudio
 
+/// A continuation may be completed by either the MainActor interruption
+/// observer or its bounded timeout. The lock makes that race one-shot.
+private final class OrbitMiniAudioReleaseWaiter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(released: Bool) {
+        lock.lock()
+        let continuation = continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: released)
+    }
+}
+
 /// A deliberately thin owner around the already-proven full Orbit `Session`.
 /// Mini does not implement STT, VAD, TTS, or a second transport: LiveKit's
 /// existing Orbit agent owns all of those behaviours.
@@ -20,7 +39,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     private let logger = Logger(subsystem: "net.opik.orbit.mini", category: "voice-session")
     private var audioInterrupted = false
     private var intentStartTask: Task<Void, Never>?
-    private var audioReleaseWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
+    private var audioReleaseWaiters: [UUID: OrbitMiniAudioReleaseWaiter] = [:]
 
     private override init() {
         super.init()
@@ -154,7 +173,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         isTerminating = true
         let waiters = audioReleaseWaiters
         audioReleaseWaiters.removeAll()
-        waiters.values.forEach { $0.resume(returning: false) }
+        waiters.values.forEach { $0.resume(released: false) }
         let started = ContinuousClock.now
         logger.notice("termination requested reason=\(reason, privacy: .public)")
 
@@ -244,24 +263,21 @@ private extension OrbitMiniVoiceCoordinator {
     func waitForAudioReleaseOrTimeout(reason: String) async -> Bool {
         let token = UUID()
         logger.notice("waiting for AVAudioSession interruption release reason=\(reason, privacy: .public) active=\(self.audioInterrupted, privacy: .public)")
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                audioReleaseWaiters[token] = continuation
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .seconds(1.5))
-                    guard !Task.isCancelled else { return }
-                    self?.resumeAudioReleaseWaiter(token, released: false)
-                }
-            }
-        } onCancel: { [weak self] in
-            Task { @MainActor in
-                self?.resumeAudioReleaseWaiter(token, released: false)
+        let released = await withCheckedContinuation { continuation in
+            let waiter = OrbitMiniAudioReleaseWaiter(continuation)
+            audioReleaseWaiters[token] = waiter
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                waiter.resume(released: false)
             }
         }
+        audioReleaseWaiters.removeValue(forKey: token)
+        return released
     }
 
     func resumeAudioReleaseWaiter(_ token: UUID, released: Bool) {
-        audioReleaseWaiters.removeValue(forKey: token)?.resume(returning: released)
+        audioReleaseWaiters.removeValue(forKey: token)?.resume(released: released)
     }
 
     func handleAudioInterruption(_ raw: UInt, options rawOptions: UInt) {
@@ -276,7 +292,7 @@ private extension OrbitMiniVoiceCoordinator {
             logger.notice("AVAudioSession interruption ended shouldResume=\(options.contains(.shouldResume), privacy: .public)")
             let waiters = audioReleaseWaiters
             audioReleaseWaiters.removeAll()
-            waiters.values.forEach { $0.resume(returning: true) }
+            waiters.values.forEach { $0.resume(released: true) }
         @unknown default:
             break
         }
