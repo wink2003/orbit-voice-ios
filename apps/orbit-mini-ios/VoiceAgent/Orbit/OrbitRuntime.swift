@@ -29,5 +29,12 @@ final class OrbitRuntime {
         // and does not create a fake phone call in iOS.
         AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = true
         try? AudioManager.shared.setEngineAvailability(.default)
+        // Keep LiveKit's default AudioSession → Mixer chain unchanged and add
+        // a forwarding observer solely to locate Siri-only engine failures.
+        AudioManager.shared.set(engineObservers: [
+            OrbitMiniAudioEngineDiagnostics(),
+            AudioManager.shared.audioSession,
+            AudioManager.shared.mixer,
+        ])
     }
 }

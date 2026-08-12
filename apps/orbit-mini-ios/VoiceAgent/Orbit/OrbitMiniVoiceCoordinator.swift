@@ -23,6 +23,50 @@ private final class OrbitMiniAudioReleaseWaiter: @unchecked Sendable {
     }
 }
 
+/// Diagnostics-only observer prepended to LiveKit's unchanged default chain.
+/// It neither configures nor retains the engine and always forwards its result.
+private final class OrbitMiniAudioEngineDiagnostics: AudioEngineObserver, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedNext: (any AudioEngineObserver)?
+    private let logger = Logger(subsystem: "net.opik.orbit.mini", category: "siri-audio")
+
+    var next: (any AudioEngineObserver)? {
+        get { lock.withLock { storedNext } }
+        set { lock.withLock { storedNext = newValue } }
+    }
+
+    func engineDidCreate(_ engine: AVAudioEngine) -> Int {
+        logger.notice("audio-engine didCreate running=\(engine.isRunning, privacy: .public)")
+        return next?.engineDidCreate(engine) ?? 0
+    }
+
+    func engineWillEnable(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
+        logger.notice("audio-engine willEnable playout=\(isPlayoutEnabled, privacy: .public) recording=\(isRecordingEnabled, privacy: .public) running=\(engine.isRunning, privacy: .public)")
+        return next?.engineWillEnable(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
+    func engineWillStart(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
+        let format = engine.inputNode.inputFormat(forBus: 0)
+        logger.notice("audio-engine willStart (LiveKit AVAudioSession configuration/activation already passed) playout=\(isPlayoutEnabled, privacy: .public) recording=\(isRecordingEnabled, privacy: .public) inputSampleRate=\(format.sampleRate, privacy: .public) inputChannels=\(format.channelCount, privacy: .public)")
+        return next?.engineWillStart(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
+    func engineDidStop(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
+        logger.notice("audio-engine didStop playout=\(isPlayoutEnabled, privacy: .public) recording=\(isRecordingEnabled, privacy: .public)")
+        return next?.engineDidStop(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
+    func engineDidDisable(_ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool) -> Int {
+        logger.notice("audio-engine didDisable playout=\(isPlayoutEnabled, privacy: .public) recording=\(isRecordingEnabled, privacy: .public)")
+        return next?.engineDidDisable(engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
+    func engineWillRelease(_ engine: AVAudioEngine) -> Int {
+        logger.notice("audio-engine willRelease running=\(engine.isRunning, privacy: .public)")
+        return next?.engineWillRelease(engine) ?? 0
+    }
+}
+
 /// A deliberately thin owner around the already-proven full Orbit `Session`.
 /// Mini does not implement STT, VAD, TTS, or a second transport: LiveKit's
 /// existing Orbit agent owns all of those behaviours.
@@ -53,6 +97,25 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
             let interruptionOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             Task { @MainActor [weak self] in
                 self?.handleAudioInterruption(interruptionType, options: interruptionOptions)
+            }
+        }
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
+            Task { @MainActor [weak self] in
+                self?.handleAudioRouteChange(reason)
+            }
+        }
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.logger.error("AVAudioSession media services were reset")
             }
         }
     }
@@ -228,16 +291,17 @@ private extension OrbitMiniVoiceCoordinator {
         let audioSession = AVAudioSession.sharedInstance()
         let inputs = audioSession.currentRoute.inputs.map(\.portType.rawValue).joined(separator: ",")
         let outputs = audioSession.currentRoute.outputs.map(\.portType.rawValue).joined(separator: ",")
-        logger.notice("AVAudioSession before LiveKit activation category=\(audioSession.category.rawValue, privacy: .public) mode=\(audioSession.mode.rawValue, privacy: .public) permission=\(String(describing: audioSession.recordPermission), privacy: .public) interrupted=\(self.audioInterrupted, privacy: .public) otherAudio=\(audioSession.isOtherAudioPlaying, privacy: .public) silencedHint=\(audioSession.secondaryAudioShouldBeSilencedHint, privacy: .public) input=\(inputs, privacy: .public) output=\(outputs, privacy: .public)")
+        let availableInputs = audioSession.availableInputs?.map(\.portType.rawValue).joined(separator: ",") ?? "none"
+        logger.notice("AVAudioSession before LiveKit activation category=\(audioSession.category.rawValue, privacy: .public) mode=\(audioSession.mode.rawValue, privacy: .public) permission=\(String(describing: audioSession.recordPermission), privacy: .public) interrupted=\(self.audioInterrupted, privacy: .public) otherAudio=\(audioSession.isOtherAudioPlaying, privacy: .public) silencedHint=\(audioSession.secondaryAudioShouldBeSilencedHint, privacy: .public) input=\(inputs, privacy: .public) availableInputs=\(availableInputs, privacy: .public) output=\(outputs, privacy: .public)")
     }
 
     func attemptLiveKitStart(number: Int, source: String) async {
-        logger.notice("LiveKit start attempt=\(number, privacy: .public) source=\(source, privacy: .public); automatic AVAudioSession activation is owned by LiveKit")
+        logger.notice("LiveKit session.start begin attempt=\(number, privacy: .public) source=\(source, privacy: .public) engineRunningBefore=\(AudioManager.shared.isEngineRunning, privacy: .public)")
         await runtime.session.start()
         if runtime.session.isConnected {
-            logger.notice("LiveKit start attempt=\(number, privacy: .public) succeeded")
+            logger.notice("LiveKit session connected attempt=\(number, privacy: .public) engineRunning=\(AudioManager.shared.isEngineRunning, privacy: .public)")
         } else {
-            logger.error("LiveKit start attempt=\(number, privacy: .public) failed error=\(self.currentAudioErrorDescription, privacy: .public)")
+            logger.error("LiveKit session.start failed attempt=\(number, privacy: .public) error=\(self.currentAudioErrorDescription, privacy: .public) engineRunningAfter=\(AudioManager.shared.isEngineRunning, privacy: .public) roomState=\(String(describing: self.runtime.session.room.connectionState), privacy: .public)")
         }
     }
 
@@ -296,6 +360,12 @@ private extension OrbitMiniVoiceCoordinator {
         @unknown default:
             break
         }
+    }
+
+    func handleAudioRouteChange(_ raw: UInt) {
+        let reason = AVAudioSession.RouteChangeReason(rawValue: raw)
+        logger.notice("AVAudioSession route changed reason=\(String(describing: reason), privacy: .public)")
+        logAudioReadiness()
     }
 
     var currentAudioErrorDescription: String {
