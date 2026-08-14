@@ -321,6 +321,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         // without relying on an invocation-type API that iOS doesn't expose.
         if source == "app-intent" {
             guard await performAppIntentAudioHandoff(startID: startID) else {
+                await resetFailedAudioProbe(reason: "handoff-terminal-exit")
                 isStarting = false
                 activeStartID = nil
                 lastError = lastAudioProbeError ?? "Мікрофон ще зайнятий системою. Спробуйте ще раз."
