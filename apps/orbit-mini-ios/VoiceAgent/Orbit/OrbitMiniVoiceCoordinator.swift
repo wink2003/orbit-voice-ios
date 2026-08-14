@@ -100,6 +100,11 @@ private enum OrbitMiniLifecycleWaitResult: Sendable, Equatable {
     case cancelled
 }
 
+private enum OrbitMiniShortcutReadinessResult: Sendable, Equatable {
+    case failed
+    case cancelled
+}
+
 /// UIApplication/UIScene activation and the lifecycle deadline race to
 /// complete this continuation. Exactly one result wins.
 private final class OrbitMiniLifecycleSignalWaiter: @unchecked Sendable {
@@ -111,32 +116,6 @@ private final class OrbitMiniLifecycleSignalWaiter: @unchecked Sendable {
     }
 
     func resume(_ result: OrbitMiniLifecycleWaitResult) {
-        lock.lock()
-        let continuation = continuation
-        self.continuation = nil
-        lock.unlock()
-        continuation?.resume(returning: result)
-    }
-}
-
-private enum OrbitMiniShortcutReadinessWaitResult: Sendable, Equatable {
-    case ready
-    case failed
-    case cancelled
-    case timedOut
-}
-
-/// A Wait AppIntent is resumed only by one terminal readiness state or its
-/// bounded deadline. It never starts audio and cannot release Open App early.
-private final class OrbitMiniShortcutReadinessWaiter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<OrbitMiniShortcutReadinessWaitResult, Never>?
-
-    init(_ continuation: CheckedContinuation<OrbitMiniShortcutReadinessWaitResult, Never>) {
-        self.continuation = continuation
-    }
-
-    func resume(_ result: OrbitMiniShortcutReadinessWaitResult) {
         lock.lock()
         let continuation = continuation
         self.continuation = nil
@@ -242,7 +221,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     private var lifecycleSignalWaiters: [UUID: OrbitMiniLifecycleSignalWaiter] = [:]
     private var audioHandoff: OrbitMiniAudioHandoffStateMachine?
     private var shortcutReturnReadiness = OrbitMiniShortcutReturnReadinessStateMachine()
-    private var shortcutReadinessWaiters: [UUID: OrbitMiniShortcutReadinessWaiter] = [:]
+    private var sceneReturn = OrbitMiniSceneReturnStateMachine()
     private var activeStartID: String?
     private var lastStartupError: String?
     private var didLifecycleTimeout = false
@@ -333,48 +312,17 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     var session: Session { runtime.session }
     var isVoiceActive: Bool { runtime.session.isConnected && !isTerminating }
 
-    /// Used only by an explicit, subsequent Shortcut action. Returning false
-    /// makes that action fail and therefore prevents Open App [PreviousApp]
-    /// from racing a still-starting Mini session.
-    func waitForShortcutReturnReadiness() async -> Bool {
-        switch shortcutReturnReadiness.phase {
-        case .ready:
-            logger.notice("shortcut return readiness immediate result=ready")
-            return true
-        case .failed, .cancelled, .idle:
-            logger.notice("shortcut return readiness immediate result=not-ready phase=\(String(describing: shortcutReturnReadiness.phase))")
-            return false
-        case .starting:
-            break
-        }
-
-        let token = UUID()
-        logger.notice("shortcut return readiness wait begin id=\(shortcutReturnReadiness.activeStartID ?? "none") timeoutSeconds=35")
-        let result = await withCheckedContinuation { continuation in
-            let waiter = OrbitMiniShortcutReadinessWaiter(continuation)
-            shortcutReadinessWaiters[token] = waiter
-            Task {
-                try? await Task.sleep(for: .seconds(35))
-                guard !Task.isCancelled else { return }
-                waiter.resume(.timedOut)
-            }
-        }
-        shortcutReadinessWaiters.removeValue(forKey: token)
-        logger.notice("shortcut return readiness wait end result=\(String(describing: result)) id=\(shortcutReturnReadiness.activeStartID ?? "none")")
-        return result == .ready
-    }
-
     func start() async {
-        guard prepareStart(source: "button") else { return }
+        guard prepareStart(source: "button", returnAfterReady: false) else { return }
         await beginPreparedStart(source: "button")
     }
 
     /// An App Intent must return before it competes with Siri for microphone
     /// ownership. `Task.yield()` schedules the attempt after `perform()` has
     /// completed; it is not a timed delay and does not inspect scene state.
-    func requestStartFromAppIntent() {
-        guard prepareStart(source: "app-intent") else { return }
-        logger.notice("app-intent start queued; perform may now complete")
+    func requestStartFromAppIntent(returnAfterReady: Bool = false) {
+        guard prepareStart(source: "app-intent", returnAfterReady: returnAfterReady) else { return }
+        logger.notice("app-intent start queued; perform may now complete returnAfterReady=\(returnAfterReady)")
         intentStartTask = Task { @MainActor [weak self] in
             await Task.yield()
             guard let self else { return }
@@ -388,7 +336,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         }
     }
 
-    private func prepareStart(source: String) -> Bool {
+    private func prepareStart(source: String, returnAfterReady: Bool) -> Bool {
         guard runtime.authentication.isPaired else {
             lastError = "Спершу активуйте цей iPhone."
             return false
@@ -405,6 +353,10 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         if source == "app-intent", let startID = activeStartID {
             _ = shortcutReturnReadiness.begin(id: startID)
             logger.notice("shortcut return readiness begin id=\(startID)")
+            if returnAfterReady {
+                _ = sceneReturn.arm(id: startID)
+                logger.notice("scene return armed id=\(startID) policy=after-connected-pcm-presentation")
+            }
         }
         logger.notice("coordinator start requested id=\(activeStartID ?? "none") source=\(source)")
         return true
@@ -422,6 +374,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         if source == "app-intent" {
             guard await performAppIntentAudioHandoff(startID: startID) else {
                 finishShortcutReturnReadiness(id: startID, result: .failed)
+                sceneReturn.cancel(id: startID)
                 isStarting = false
                 activeStartID = nil
                 audioHandoff = nil
@@ -434,6 +387,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         }
         guard !Task.isCancelled, !isTerminating else {
             finishShortcutReturnReadiness(id: startID, result: .cancelled)
+            sceneReturn.cancel(id: startID)
             isStarting = false
             activeStartID = nil
             logger.notice("LiveKit start cancelled before audio activation")
@@ -453,9 +407,11 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
             if runtime.session.room.connectionState == .connected {
                 markShortcutReturnRoomConnected(id: startID, source: source)
             }
+            requestSceneReturnIfReady(id: startID)
         } else {
             clearSessionPCMDiagnostics()
             finishShortcutReturnReadiness(id: startID, result: .failed)
+            sceneReturn.cancel(id: startID)
             lastError = lastStartupError ?? runtime.session.error?.localizedDescription ?? "Не вдалося підключити Orbit."
             logger.error("voice startup final failure id=\(startID) error=\(lastError ?? "unknown")")
         }
@@ -510,6 +466,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         lifecycleWaiters.values.forEach { $0.resume(.cancelled) }
         if let startID {
             finishShortcutReturnReadiness(id: startID, result: .cancelled)
+            sceneReturn.cancel(id: startID)
         }
         clearSessionPCMDiagnostics()
         let started = ContinuousClock.now
@@ -691,47 +648,51 @@ private extension OrbitMiniVoiceCoordinator {
         guard source == "app-intent" else { return }
         shortcutReturnReadiness.roomConnected(id: id)
         logger.notice("shortcut return readiness room-connected id=\(id) phase=\(String(describing: shortcutReturnReadiness.phase))")
-        releaseShortcutReadinessWaitersIfTerminal()
+        requestSceneReturnIfReady(id: id)
     }
 
     func markShortcutReturnFirstPCM(id: String) {
         shortcutReturnReadiness.receivedFirstPCM(id: id)
         logger.notice("shortcut return readiness first-pcm id=\(id) phase=\(String(describing: shortcutReturnReadiness.phase))")
-        releaseShortcutReadinessWaitersIfTerminal()
+        requestSceneReturnIfReady(id: id)
     }
 
     func markShortcutReturnPresentationEstablished(id: String, source: String) {
         guard source == "app-intent" else { return }
         shortcutReturnReadiness.presentationEstablished(id: id)
         logger.notice("shortcut return readiness presentation-established id=\(id) phase=\(String(describing: shortcutReturnReadiness.phase))")
-        releaseShortcutReadinessWaitersIfTerminal()
+        requestSceneReturnIfReady(id: id)
     }
 
-    func finishShortcutReturnReadiness(id: String, result: OrbitMiniShortcutReadinessWaitResult) {
+    func finishShortcutReturnReadiness(id: String, result: OrbitMiniShortcutReadinessResult) {
         switch result {
         case .failed:
             shortcutReturnReadiness.fail(id: id)
         case .cancelled:
             shortcutReturnReadiness.cancel(id: id)
-        case .ready, .timedOut:
-            return
         }
         logger.notice("shortcut return readiness terminal id=\(id) result=\(String(describing: result))")
-        releaseShortcutReadinessWaitersIfTerminal()
     }
 
-    func releaseShortcutReadinessWaitersIfTerminal() {
-        let result: OrbitMiniShortcutReadinessWaitResult?
-        switch shortcutReturnReadiness.phase {
-        case .ready: result = .ready
-        case .failed: result = .failed
-        case .cancelled: result = .cancelled
-        case .idle, .starting: result = nil
+    /// The system, not Mini, chooses the next foreground context after Mini
+    /// dismisses its own scene. Mini never receives or stores Shortcuts' Get
+    /// Current App value, so this uses only the public UIKit lifecycle API.
+    func requestSceneReturnIfReady(id: String) {
+        guard sceneReturn.claimIfReady(id: id, readiness: shortcutReturnReadiness) else { return }
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive })
+        else {
+            logger.error("scene return skipped id=\(id) reason=no-foreground-mini-scene")
+            return
         }
-        guard let result else { return }
-        let waiters = shortcutReadinessWaiters
-        shortcutReadinessWaiters.removeAll()
-        waiters.values.forEach { $0.resume(result) }
+
+        logger.notice("scene return request id=\(id) policy=public-scene-dismissal")
+        UIApplication.shared.requestSceneSessionDestruction(scene.session, options: nil) { [weak self] error in
+            Task { @MainActor in
+                self?.logger.error("scene return request failed id=\(id) domain=\((error as NSError).domain) code=\((error as NSError).code)")
+            }
+        }
     }
 
     func startDirectSession(startID: String, source: String) async -> Bool {

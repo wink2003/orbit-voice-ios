@@ -144,10 +144,10 @@ struct OrbitMiniSessionStartRetryStateMachine: Equatable {
     }
 }
 
-/// Tracks whether an AppIntent-started session is safe for the enclosing
-/// Shortcut to foreground the previously active app. It intentionally has no
-/// audio or UIKit operations: it is only the contract between Start Orbit Mini
-/// and the explicit Wait for Orbit Mini Ready Shortcut action.
+/// Tracks whether an AppIntent-started session is safe to leave Mini's
+/// foreground scene. It intentionally has no audio or UIKit operations:
+/// Room connection, local PCM, and presentation must all be real before any
+/// external presentation transition is requested.
 struct OrbitMiniShortcutReturnReadinessStateMachine: Equatable {
     enum Phase: Equatable {
         case idle
@@ -221,5 +221,46 @@ struct OrbitMiniShortcutReturnReadinessStateMachine: Equatable {
     private mutating func promoteIfReady(id: String) {
         guard roomConnected, firstPCMReceived, presentationEstablished else { return }
         phase = .ready(id: id)
+    }
+}
+
+/// Claims one public UIKit scene-dismissal request after a hands-free
+/// AppIntent has reached the readiness contract above. A claim is one-shot:
+/// duplicate Room/PCM/presentation events cannot dismiss the scene twice.
+struct OrbitMiniSceneReturnStateMachine: Equatable {
+    enum Phase: Equatable {
+        case idle
+        case armed(id: String)
+        case requested(id: String)
+        case cancelled(id: String)
+    }
+
+    private(set) var phase: Phase = .idle
+
+    mutating func arm(id: String) -> Bool {
+        guard phase == .idle || isTerminal else { return false }
+        phase = .armed(id: id)
+        return true
+    }
+
+    mutating func claimIfReady(id: String, readiness: OrbitMiniShortcutReturnReadinessStateMachine) -> Bool {
+        guard case let .armed(activeID) = phase, activeID == id,
+              readiness.isReady,
+              readiness.activeStartID == id
+        else { return false }
+        phase = .requested(id: id)
+        return true
+    }
+
+    mutating func cancel(id: String) {
+        guard case let .armed(activeID) = phase, activeID == id else { return }
+        phase = .cancelled(id: id)
+    }
+
+    private var isTerminal: Bool {
+        switch phase {
+        case .requested, .cancelled: true
+        case .idle, .armed: false
+        }
     }
 }

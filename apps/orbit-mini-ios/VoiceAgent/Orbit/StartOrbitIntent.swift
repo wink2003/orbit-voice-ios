@@ -41,12 +41,12 @@ struct StopOrbitMiniIntent: AppIntent {
     }
 }
 
-/// Place this directly after Start Orbit Mini in a custom Shortcut, before
-/// Open App [PreviousApp]. It waits for the already-requested session to be
-/// connected with an observed local PCM frame; it never starts audio itself.
-struct WaitForOrbitMiniReadyIntent: AppIntent {
-    static let title: LocalizedStringResource = "Wait for Orbit Mini Ready"
-    static let description = IntentDescription("Waits until Orbit Mini has safely started voice before the Shortcut continues.")
+/// Starts Mini, lets the originating Siri/Shortcuts execution finish, then
+/// asks UIKit to dismiss Mini's own scene only after voice is demonstrably
+/// background-safe. It never receives, stores, or opens a prior app itself.
+struct StartOrbitMiniHandsFreeIntent: AppIntent {
+    static let title: LocalizedStringResource = "Start Orbit Mini Hands-Free"
+    static let description = IntentDescription("Starts Orbit Mini voice, then dismisses Mini after microphone capture and connection are ready.")
     static let openAppWhenRun = true
 
     @available(iOS 26.0, *)
@@ -55,21 +55,10 @@ struct WaitForOrbitMiniReadyIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         let logger = OrbitMiniDiagnosticLogger.shared
-        logger.notice("AppIntent readiness wait begin")
-        guard await OrbitMiniVoiceCoordinator.shared.waitForShortcutReturnReadiness() else {
-            logger.error("AppIntent readiness wait failed; downstream Shortcut return must not run")
-            throw OrbitMiniShortcutReadinessError.notReady
-        }
-        logger.notice("AppIntent readiness wait end result=ready")
+        logger.notice("AppIntent hands-free perform begin")
+        OrbitMiniVoiceCoordinator.shared.requestStartFromAppIntent(returnAfterReady: true)
+        logger.notice("AppIntent hands-free perform end; scene return is queued after readiness")
         return .result()
-    }
-}
-
-private enum OrbitMiniShortcutReadinessError: LocalizedError {
-    case notReady
-
-    var errorDescription: String? {
-        "Orbit Mini ще не готова до повернення до попередньої програми."
     }
 }
 
@@ -80,6 +69,12 @@ struct OrbitMiniShortcuts: AppShortcutsProvider {
             phrases: ["Start \(.applicationName)", "Talk to \(.applicationName)", "Open \(.applicationName)"],
             shortTitle: "Start Orbit Mini",
             systemImageName: "waveform.circle.fill"
+        )
+        AppShortcut(
+            intent: StartOrbitMiniHandsFreeIntent(),
+            phrases: ["Start hands-free \(.applicationName)"],
+            shortTitle: "Start Orbit Mini Hands-Free",
+            systemImageName: "arrow.uturn.backward.circle.fill"
         )
         AppShortcut(
             intent: StopOrbitMiniIntent(),
