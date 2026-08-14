@@ -17,6 +17,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Test Siri audio handoff state machine
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-mini-ios/VoiceAgent/Orbit/OrbitMiniAudioHandoffStateMachine.swift \
+            apps/orbit-mini-ios/Tests/OrbitMiniAudioHandoffStateMachineTests.swift \
+            -o "$RUNNER_TEMP/orbit-mini-audio-handoff-tests"
+          "$RUNNER_TEMP/orbit-mini-audio-handoff-tests"
+
       - name: Build Orbit Mini and WidgetKit extension
         run: |
           set -uo pipefail
