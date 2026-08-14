@@ -17,6 +17,11 @@ struct StartOrbitMiniIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let logger = OrbitMiniDiagnosticLogger.shared
         logger.notice("AppIntent perform begin")
+        // Get Current App / Open App [PreviousApp] belong to the enclosing
+        // user Shortcut. App Intents does not pass that variable or its Open
+        // App result to Mini, so record the boundary without inventing a
+        // recipient or leaking app history.
+        logger.notice("previous-app capture category=external-unobservable restore=owned-by-shortcuts")
         OrbitMiniVoiceCoordinator.shared.requestStartFromAppIntent()
         logger.notice("AppIntent perform end; voice start is queued after result")
         return .result()

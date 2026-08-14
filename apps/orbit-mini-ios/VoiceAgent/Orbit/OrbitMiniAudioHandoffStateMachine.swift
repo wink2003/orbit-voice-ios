@@ -14,6 +14,7 @@ struct OrbitMiniAudioHandoffStateMachine: Equatable {
         case probing(attempt: Int)
         case waitingForRetry(attempt: Int)
         case readyForSession
+        case lifecycleTimedOut
         case failed
         case cancelled
     }
@@ -21,6 +22,8 @@ struct OrbitMiniAudioHandoffStateMachine: Equatable {
     enum Event: Equatable {
         case requested(appIsActive: Bool, interruptionActive: Bool)
         case appBecameActive
+        case appBecameInactive
+        case lifecycleWaitExpired
         case interruptionBegan
         case interruptionEnded
         case audioReadinessChanged
@@ -42,7 +45,11 @@ struct OrbitMiniAudioHandoffStateMachine: Equatable {
     }
 
     mutating func handle(_ event: Event) {
-        guard phase != .failed, phase != .cancelled, phase != .readyForSession else { return }
+        guard phase != .failed,
+              phase != .lifecycleTimedOut,
+              phase != .cancelled,
+              phase != .readyForSession
+        else { return }
 
         switch event {
         case let .requested(appIsActive, interruptionActive):
@@ -56,6 +63,20 @@ struct OrbitMiniAudioHandoffStateMachine: Equatable {
             if case .probing = phase { return }
             reconcileReadiness()
 
+        case .appBecameInactive:
+            appIsActive = false
+            if case .probing = phase {
+                // The coordinator rechecks lifecycle immediately before
+                // claiming a probe. A later resignation is handled by the
+                // probe result/normal background-audio lifecycle.
+                return
+            }
+            reconcileReadiness()
+
+        case .lifecycleWaitExpired:
+            guard case .waitingForForeground = phase else { return }
+            phase = .lifecycleTimedOut
+
         case .interruptionBegan:
             interruptionActive = true
             if case .probing = phase {
@@ -63,7 +84,7 @@ struct OrbitMiniAudioHandoffStateMachine: Equatable {
                 // reconciled against this interruption flag.
                 return
             }
-            phase = .waitingForAudioRelease
+            reconcileReadiness()
 
         case .interruptionEnded:
             interruptionActive = false
@@ -74,10 +95,12 @@ struct OrbitMiniAudioHandoffStateMachine: Equatable {
             if case .waitingForRetry = phase { reconcileReadiness() }
 
         case .boundedWaitExpired:
-            // Foreground/interruption notifications can predate observer
-            // installation. A bounded fallback may open a probe, whose actual
-            // engine start + PCM frame remains the readiness authority.
-            if case .waitingForForeground = phase { appIsActive = true }
+            // An interruption-ended notification can predate observer
+            // installation. A bounded audio fallback may open a probe, whose
+            // actual engine start + PCM frame remains the audio authority.
+            // Lifecycle readiness is different: a timeout must never invent
+            // foreground-active state.
+            guard phase != .waitingForForeground else { return }
             if case .waitingForAudioRelease = phase { interruptionActive = false }
             reconcileReadiness()
 
@@ -108,10 +131,12 @@ struct OrbitMiniAudioHandoffStateMachine: Equatable {
     }
 
     private mutating func reconcileReadiness() {
-        if interruptionActive {
-            phase = .waitingForAudioRelease
-        } else if !appIsActive {
+        // Lifecycle is the outer gate. Audio ownership is reconciled only
+        // after UIKit says the app and one window scene are truly active.
+        if !appIsActive {
             phase = .waitingForForeground
+        } else if interruptionActive {
+            phase = .waitingForAudioRelease
         } else {
             phase = .readyToProbe
         }

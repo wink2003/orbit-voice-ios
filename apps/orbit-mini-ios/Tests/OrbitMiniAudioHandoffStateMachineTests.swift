@@ -4,8 +4,19 @@ import Foundation
 enum OrbitMiniAudioHandoffStateMachineTests {
     static func main() {
         immediateTypedSiriPath()
+        delayedApplicationActivationStartsExactlyOneProbe()
+        lifecycleTimeoutStartsZeroProbes()
+        delayedActivationIsNotADeadlineFailure()
+        lifecycleSignalWinsTimeoutRace()
+        lifecycleTimeoutWinsSignalRace()
+        cancellationWhileWaitingForActiveIsTerminal()
+        validPreviousAppReturnPreservesCapturedSession()
+        invalidPreviousAppReturnCannotAbortMiniStartup()
         observedVoiceSiriInterruptionPath()
+        inactiveLifecyclePrecedesAudioInterruptionWait()
         missedInterruptionUsesBoundedProbeRecovery()
+        postActivationADMFailureUsesBoundedRetry()
+        engineWithoutPCMRemainsAnAudioRetry()
         transientAttemptsAreBounded()
         permanentFailureDoesNotRetry()
         probeClaimIsIdempotent()
@@ -14,6 +25,93 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         missedInterruptionEndCanBeProvenByCapture()
         cancellationIsTerminal()
         print("OrbitMiniAudioHandoffStateMachineTests: PASS")
+    }
+
+    private static func delayedApplicationActivationStartsExactlyOneProbe() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: false, interruptionActive: false))
+        expect(machine.phase == .waitingForForeground, "inactive Siri launch must wait")
+        expect(machine.beginProbe() == nil, "inactive lifecycle must never start ADM")
+
+        // Elapsed wall time is owned by the async coordinator; the pure state
+        // sees only the eventual UIKit signal, whether it took ms or seconds.
+        machine.handle(.appBecameActive)
+        expect(machine.beginProbe() == 1, "actual activation should open one probe")
+        expect(machine.beginProbe() == nil, "activation cannot duplicate a probe")
+        machine.handle(.probeSucceeded)
+        expect(machine.phase == .readyForSession, "PCM proof should continue once active")
+    }
+
+    private static func lifecycleTimeoutStartsZeroProbes() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: false, interruptionActive: false))
+        machine.handle(.lifecycleWaitExpired)
+        expect(machine.phase == .lifecycleTimedOut, "inactive deadline must have a distinct terminal state")
+        expect(machine.probeAttempts == 0, "lifecycle timeout must consume zero ADM attempts")
+        expect(machine.beginProbe() == nil, "lifecycle timeout cannot open ADM")
+    }
+
+    private static func delayedActivationIsNotADeadlineFailure() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: false, interruptionActive: false))
+        machine.handle(.audioReadinessChanged)
+        machine.handle(.boundedWaitExpired)
+        expect(machine.phase == .waitingForForeground, "audio events/timeouts cannot forge lifecycle activation")
+        expect(machine.probeAttempts == 0, "waiting several seconds must not burn retries")
+        machine.handle(.appBecameActive)
+        expect(machine.beginProbe() == 1, "late real activation remains usable")
+    }
+
+    private static func lifecycleSignalWinsTimeoutRace() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: false, interruptionActive: false))
+        machine.handle(.appBecameActive)
+        machine.handle(.lifecycleWaitExpired)
+        expect(machine.phase == .readyToProbe, "late timeout cannot override an activation signal")
+        expect(machine.beginProbe() == 1, "signal/timeout race may open only one probe")
+    }
+
+    private static func lifecycleTimeoutWinsSignalRace() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: false, interruptionActive: false))
+        machine.handle(.lifecycleWaitExpired)
+        machine.handle(.appBecameActive)
+        expect(machine.phase == .lifecycleTimedOut, "activation after terminal deadline must not revive start")
+        expect(machine.probeAttempts == 0, "timeout/signal race cannot start ADM")
+    }
+
+    private static func cancellationWhileWaitingForActiveIsTerminal() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: false, interruptionActive: false))
+        machine.handle(.cancel)
+        machine.handle(.appBecameActive)
+        expect(machine.phase == .cancelled, "late lifecycle signal cannot revive cancellation")
+        expect(machine.beginProbe() == nil, "cancelled lifecycle wait cannot start ADM")
+    }
+
+    private static func validPreviousAppReturnPreservesCapturedSession() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: true, interruptionActive: false))
+        expect(machine.beginProbe() == 1, "valid return path starts capture while Mini is active")
+        // The enclosing Shortcut opens the previous app after Mini's intent
+        // returns. Once a probe already owns capture, foreground resignation
+        // must not invalidate the proven background continuation path.
+        machine.handle(.appBecameInactive)
+        machine.handle(.probeSucceeded)
+        expect(machine.phase == .readyForSession, "valid previous-app return must preserve captured audio")
+    }
+
+    private static func invalidPreviousAppReturnCannotAbortMiniStartup() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: false, interruptionActive: false))
+        // A failed downstream Open App action has no callback into Mini and
+        // therefore cannot be a fatal state-machine event. Mini keeps waiting
+        // for UIKit's eventual real activation.
+        expect(machine.phase == .waitingForForeground, "external Open App failure must not abort pending start")
+        machine.handle(.appBecameActive)
+        expect(machine.beginProbe() == 1, "eventual activation should recover after downstream Shortcut failure")
+        machine.handle(.probeSucceeded)
+        expect(machine.phase == .readyForSession, "invalid/nil previous app must not poison voice startup")
     }
 
     private static func immediateTypedSiriPath() {
@@ -35,6 +133,15 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         expect(machine.phase == .readyForSession, "released microphone should start session")
     }
 
+    private static func inactiveLifecyclePrecedesAudioInterruptionWait() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: false, interruptionActive: true))
+        expect(machine.phase == .waitingForForeground, "inactive lifecycle must be resolved before audio ownership")
+        machine.handle(.appBecameActive)
+        expect(machine.phase == .waitingForAudioRelease, "active app must still respect an observed interruption")
+        expect(machine.beginProbe() == nil, "interruption cannot be bypassed after lifecycle activation")
+    }
+
     private static func missedInterruptionUsesBoundedProbeRecovery() {
         var machine = OrbitMiniAudioHandoffStateMachine()
         machine.handle(.requested(appIsActive: true, interruptionActive: false))
@@ -45,6 +152,26 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         expect(machine.beginProbe() == 2, "route/readiness signal opens the retry")
         machine.handle(.probeSucceeded)
         expect(machine.phase == .readyForSession, "successful retry should continue")
+    }
+
+    private static func postActivationADMFailureUsesBoundedRetry() {
+        var machine = OrbitMiniAudioHandoffStateMachine(maximumProbeAttempts: 2)
+        machine.handle(.requested(appIsActive: false, interruptionActive: false))
+        machine.handle(.appBecameActive)
+        expect(machine.beginProbe() == 1, "first ADM attempt must happen after activation")
+        machine.handle(.probeFailed(transient: true)) // e.g. LiveKit ADM -3001
+        expect(machine.phase == .waitingForRetry(attempt: 1), "post-active -3001 remains retryable")
+        machine.handle(.boundedWaitExpired)
+        expect(machine.beginProbe() == 2, "bounded audio retry should open a second attempt")
+    }
+
+    private static func engineWithoutPCMRemainsAnAudioRetry() {
+        var machine = OrbitMiniAudioHandoffStateMachine(maximumProbeAttempts: 2)
+        machine.handle(.requested(appIsActive: true, interruptionActive: false))
+        expect(machine.beginProbe() == 1, "active path should claim probe")
+        machine.handle(.probeFailed(transient: true)) // engineRunning=true, pcmFrame=false
+        expect(machine.phase == .waitingForRetry(attempt: 1), "missing PCM is distinct from lifecycle waiting")
+        expect(machine.appIsActive, "missing PCM must not erase proven lifecycle state")
     }
 
     private static func transientAttemptsAreBounded() {
