@@ -1,21 +1,15 @@
 import Foundation
 
-/// Pure, deterministic policy for the Siri-to-Mini microphone handoff.
-///
-/// UIKit, AVAudioSession and LiveKit perform the effects; this type only owns
-/// ordering and retry bounds so notifications and timeout fallbacks cannot
-/// create two concurrent audio starts.
+/// Pure, deterministic gate for handing an App Intent to the normal LiveKit
+/// Session startup. It deliberately owns no AudioDeviceModule operations:
+/// LiveKit's Session/PreConnectAudioBuffer is the single owner of capture.
 struct OrbitMiniAudioHandoffStateMachine: Equatable {
     enum Phase: Equatable {
         case idle
         case waitingForForeground
         case waitingForAudioRelease
-        case readyToProbe
-        case probing(attempt: Int)
-        case waitingForRetry(attempt: Int)
         case readyForSession
         case lifecycleTimedOut
-        case failed
         case cancelled
     }
 
@@ -26,27 +20,16 @@ struct OrbitMiniAudioHandoffStateMachine: Equatable {
         case lifecycleWaitExpired
         case interruptionBegan
         case interruptionEnded
-        case audioReadinessChanged
-        case boundedWaitExpired
-        case probeSucceeded
-        case probeFailed(transient: Bool)
+        case audioReleaseWaitExpired
         case cancel
     }
 
-    let maximumProbeAttempts: Int
     private(set) var phase: Phase = .idle
     private(set) var appIsActive = false
     private(set) var interruptionActive = false
-    private(set) var probeAttempts = 0
-
-    init(maximumProbeAttempts: Int = 4) {
-        precondition(maximumProbeAttempts > 0)
-        self.maximumProbeAttempts = maximumProbeAttempts
-    }
 
     mutating func handle(_ event: Event) {
-        guard phase != .failed,
-              phase != .lifecycleTimedOut,
+        guard phase != .lifecycleTimedOut,
               phase != .cancelled,
               phase != .readyForSession
         else { return }
@@ -60,85 +43,103 @@ struct OrbitMiniAudioHandoffStateMachine: Equatable {
 
         case .appBecameActive:
             appIsActive = true
-            if case .probing = phase { return }
             reconcileReadiness()
 
         case .appBecameInactive:
             appIsActive = false
-            if case .probing = phase {
-                // The coordinator rechecks lifecycle immediately before
-                // claiming a probe. A later resignation is handled by the
-                // probe result/normal background-audio lifecycle.
-                return
-            }
             reconcileReadiness()
 
         case .lifecycleWaitExpired:
-            guard case .waitingForForeground = phase else { return }
+            guard phase == .waitingForForeground else { return }
             phase = .lifecycleTimedOut
 
         case .interruptionBegan:
             interruptionActive = true
-            if case .probing = phase {
-                // The in-flight probe owns its cleanup. Its result is then
-                // reconciled against this interruption flag.
-                return
-            }
             reconcileReadiness()
 
         case .interruptionEnded:
             interruptionActive = false
-            if case .probing = phase { return }
             reconcileReadiness()
 
-        case .audioReadinessChanged:
-            if case .waitingForRetry = phase { reconcileReadiness() }
-
-        case .boundedWaitExpired:
-            // An interruption-ended notification can predate observer
-            // installation. A bounded audio fallback may open a probe, whose
-            // actual engine start + PCM frame remains the audio authority.
-            // Lifecycle readiness is different: a timeout must never invent
-            // foreground-active state.
-            guard phase != .waitingForForeground else { return }
-            if case .waitingForAudioRelease = phase { interruptionActive = false }
+        case .audioReleaseWaitExpired:
+            // An interruption-ended notification can precede observer setup.
+            // This fallback is allowed only after the independent lifecycle
+            // gate is satisfied; it never fabricates foreground-active state.
+            guard phase == .waitingForAudioRelease else { return }
+            interruptionActive = false
             reconcileReadiness()
-
-        case .probeSucceeded:
-            guard case .probing = phase else { return }
-            phase = interruptionActive ? .waitingForAudioRelease : .readyForSession
-
-        case let .probeFailed(transient):
-            guard case .probing = phase else { return }
-            if transient, probeAttempts < maximumProbeAttempts {
-                phase = interruptionActive ? .waitingForAudioRelease : .waitingForRetry(attempt: probeAttempts)
-            } else {
-                phase = .failed
-            }
 
         case .cancel:
             phase = .cancelled
         }
     }
 
-    /// Atomically claims the next probe. Calling this twice without a probe
-    /// result cannot create a second engine.
-    mutating func beginProbe() -> Int? {
-        guard phase == .readyToProbe, probeAttempts < maximumProbeAttempts else { return nil }
-        probeAttempts += 1
-        phase = .probing(attempt: probeAttempts)
-        return probeAttempts
-    }
-
     private mutating func reconcileReadiness() {
-        // Lifecycle is the outer gate. Audio ownership is reconciled only
-        // after UIKit says the app and one window scene are truly active.
         if !appIsActive {
             phase = .waitingForForeground
         } else if interruptionActive {
             phase = .waitingForAudioRelease
         } else {
-            phase = .readyToProbe
+            phase = .readyForSession
         }
+    }
+}
+
+/// Separates idempotent, bounded full Session retries from lifecycle gating.
+/// Each claimed attempt must either become terminal or be fully cleaned up
+/// before a later claim can occur.
+struct OrbitMiniSessionStartRetryStateMachine: Equatable {
+    enum Phase: Equatable {
+        case idle
+        case ready
+        case starting(attempt: Int)
+        case waitingForRetry(attempt: Int)
+        case succeeded
+        case failed
+        case cancelled
+    }
+
+    let maximumAttempts: Int
+    private(set) var phase: Phase = .idle
+    private(set) var attempts = 0
+
+    init(maximumAttempts: Int = 3) {
+        precondition(maximumAttempts > 0)
+        self.maximumAttempts = maximumAttempts
+    }
+
+    mutating func begin() {
+        guard phase == .idle else { return }
+        phase = .ready
+    }
+
+    mutating func claimAttempt() -> Int? {
+        guard phase == .ready, attempts < maximumAttempts else { return nil }
+        attempts += 1
+        phase = .starting(attempt: attempts)
+        return attempts
+    }
+
+    mutating func succeeded() {
+        guard case .starting = phase else { return }
+        phase = .succeeded
+    }
+
+    mutating func failed(transient: Bool) {
+        guard case .starting = phase else { return }
+        if transient, attempts < maximumAttempts {
+            phase = .waitingForRetry(attempt: attempts)
+        } else {
+            phase = .failed
+        }
+    }
+
+    mutating func retryDelayElapsed() {
+        guard case .waitingForRetry = phase else { return }
+        phase = .ready
+    }
+
+    mutating func cancel() {
+        phase = .cancelled
     }
 }

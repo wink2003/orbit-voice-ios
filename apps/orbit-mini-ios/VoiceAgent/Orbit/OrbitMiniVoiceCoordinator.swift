@@ -119,51 +119,30 @@ private final class OrbitMiniLifecycleSignalWaiter: @unchecked Sendable {
     }
 }
 
-/// Observes the first actual local PCM buffer after the LiveKit ADM reports a
-/// successful start. This distinguishes an engine object that merely exists
-/// from a microphone capture path that is delivering data.
-private final class OrbitMiniAudioFrameProbe: AudioRenderer, @unchecked Sendable {
+/// Passive capture diagnostics. It deliberately never starts, stops, resets,
+/// or otherwise owns the ADM; LiveKit Session owns that lifecycle.
+private final class OrbitMiniSessionPCMObserver: AudioRenderer, @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<Bool, Never>?
-    private var receivedFrame = false
+    private let source: String
+    private let startID: String
+    private let logger = OrbitMiniDiagnosticLogger.shared
+    private var hasLoggedFirstFrame = false
+
+    init(source: String, startID: String) {
+        self.source = source
+        self.startID = startID
+    }
 
     func render(pcmBuffer _: AVAudioPCMBuffer) {
-        resume(received: true)
-    }
-
-    func waitForFrame(timeout: Duration) async -> Bool {
-        await withCheckedContinuation { continuation in
-            let resumeImmediately = lock.withLock {
-                if receivedFrame { return true }
-                self.continuation = continuation
-                return false
-            }
-            if resumeImmediately {
-                continuation.resume(returning: true)
-                return
-            }
-            Task { [weak self] in
-                try? await Task.sleep(for: timeout)
-                self?.resume(received: false)
-            }
+        let shouldLog = lock.withLock {
+            guard !hasLoggedFirstFrame else { return false }
+            hasLoggedFirstFrame = true
+            return true
+        }
+        if shouldLog {
+            logger.notice("audio capture first PCM source=\(source) id=\(startID) engineRunning=\(AudioManager.shared.isEngineRunning)")
         }
     }
-
-    private func resume(received: Bool) {
-        lock.lock()
-        if received { receivedFrame = true }
-        let continuation = continuation
-        self.continuation = nil
-        let result = receivedFrame
-        lock.unlock()
-        continuation?.resume(returning: result)
-    }
-}
-
-private struct OrbitMiniAudioProbeResult {
-    let succeeded: Bool
-    let transient: Bool
-    let detail: String
 }
 
 /// Diagnostics-only observer prepended to LiveKit's unchanged default chain.
@@ -234,9 +213,9 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     private var lifecycleSignalWaiters: [UUID: OrbitMiniLifecycleSignalWaiter] = [:]
     private var audioHandoff: OrbitMiniAudioHandoffStateMachine?
     private var activeStartID: String?
-    private var lastAudioProbeError: String?
-    private var didStartAppIntentAudioProbe = false
+    private var lastStartupError: String?
     private var didLifecycleTimeout = false
+    private var sessionPCMObserver: OrbitMiniSessionPCMObserver?
 
     private override init() {
         super.init()
@@ -358,8 +337,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         }
         isStarting = true
         lastError = nil
-        lastAudioProbeError = nil
-        didStartAppIntentAudioProbe = false
+        lastStartupError = nil
         didLifecycleTimeout = false
         activeStartID = String(UUID().uuidString.prefix(8))
         logger.notice("coordinator start requested id=\(activeStartID ?? "none") source=\(source)")
@@ -372,55 +350,40 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         await foregroundBootstrap()
         logAudioReadiness()
 
-        // Button startup remains on the proven direct path. AppIntent startup
-        // first proves that the shared LiveKit ADM can own the microphone and
-        // deliver PCM. This covers manual Shortcut, Type-to-Siri and voice-Siri
-        // without relying on an invocation-type API that iOS doesn't expose.
+        // The button and AppIntent both start the same LiveKit Session. The
+        // AppIntent adds only the lifecycle gate above; Session's own
+        // PreConnectAudioBuffer is the sole microphone/ADM owner.
         if source == "app-intent" {
             guard await performAppIntentAudioHandoff(startID: startID) else {
-                if didStartAppIntentAudioProbe {
-                    await resetFailedAudioProbe(reason: "handoff-terminal-exit")
-                }
                 isStarting = false
                 activeStartID = nil
                 audioHandoff = nil
                 lastError = didLifecycleTimeout
                     ? "Orbit Mini не отримав активний стан після Siri. Закрийте Siri та спробуйте ще раз."
-                    : lastAudioProbeError ?? "Мікрофон ще зайнятий системою. Спробуйте ще раз."
+                    : lastStartupError ?? "Мікрофон ще зайнятий системою. Спробуйте ще раз."
                 logger.error("audio handoff terminal failure id=\(startID) error=\(lastError ?? "unknown")")
                 return
             }
         }
         guard !Task.isCancelled, !isTerminating else {
-            if source == "app-intent", didStartAppIntentAudioProbe {
-                await resetFailedAudioProbe(reason: "start-cancelled")
-            }
             isStarting = false
             activeStartID = nil
             logger.notice("LiveKit start cancelled before audio activation")
             return
         }
 
-        await attemptLiveKitStart(number: 1, source: source)
-        let sessionReady = runtime.session.isConnected && AudioManager.shared.isEngineRunning
-        if runtime.session.isConnected, !sessionReady {
-            logger.error("LiveKit connected without running microphone engine id=\(startID); cleaning partial start")
-            await runtime.session.end()
-        }
-        if !sessionReady, runtime.session.room.connectionState != .disconnected {
-            logger.notice("cleaning partial LiveKit room id=\(startID) state=\(String(describing: runtime.session.room.connectionState))")
-            await runtime.session.end()
-        }
-        if !sessionReady, source == "app-intent" {
-            await resetFailedAudioProbe(reason: "session-start-failed")
-        }
+        installSessionPCMDiagnostics(source: source, startID: startID)
+        let sessionReady = source == "app-intent"
+            ? await startAppIntentSessionWithRetry(startID: startID)
+            : await startDirectSession(startID: startID, source: source)
         isStarting = false
         activeStartID = nil
         audioHandoff = nil
         if sessionReady {
             await liveActivity.begin(userName: runtime.authentication.displayName ?? "Orbit")
         } else {
-            lastError = runtime.session.error?.localizedDescription ?? "Не вдалося підключити Orbit."
+            clearSessionPCMDiagnostics()
+            lastError = lastStartupError ?? runtime.session.error?.localizedDescription ?? "Не вдалося підключити Orbit."
             logger.error("voice startup final failure id=\(startID) error=\(lastError ?? "unknown")")
         }
     }
@@ -471,6 +434,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         let lifecycleWaiters = lifecycleSignalWaiters
         lifecycleSignalWaiters.removeAll()
         lifecycleWaiters.values.forEach { $0.resume(.cancelled) }
+        clearSessionPCMDiagnostics()
         let started = ContinuousClock.now
         logger.notice("termination requested reason=\(reason)")
 
@@ -554,7 +518,7 @@ private extension OrbitMiniVoiceCoordinator {
     }
 
     func attemptLiveKitStart(number: Int, source: String) async {
-        logger.notice("LiveKit session.start begin attempt=\(number) source=\(source) engineRunningBefore=\(AudioManager.shared.isEngineRunning)")
+        logger.notice("LiveKit session.start begin attempt=\(number) source=\(source) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription) category=\(AVAudioSession.sharedInstance().category.rawValue) mode=\(AVAudioSession.sharedInstance().mode.rawValue) engineAvailability=\(String(describing: AudioManager.shared.engineAvailability)) engineRunningBefore=\(AudioManager.shared.isEngineRunning)")
         await runtime.session.start()
         if runtime.session.isConnected {
             logger.notice("LiveKit session connected attempt=\(number) engineRunning=\(AudioManager.shared.isEngineRunning)")
@@ -563,11 +527,11 @@ private extension OrbitMiniVoiceCoordinator {
         }
     }
 
-    /// Voice Siri can foreground Mini after the interruption-began event was
-    /// already emitted. Therefore notifications guide this loop, but only a
-    /// successful ADM start plus a real PCM buffer authorizes Session.start().
+    /// Voice Siri and manually run Shortcuts can invoke an AppIntent while Mini
+    /// is visible but inactive. This waits for lifecycle and any observed
+    /// interruption, then hands directly to the normal Session.start path.
     func performAppIntentAudioHandoff(startID: String) async -> Bool {
-        var machine = OrbitMiniAudioHandoffStateMachine(maximumProbeAttempts: 4)
+        var machine = OrbitMiniAudioHandoffStateMachine()
         machine.handle(.requested(
             appIsActive: isUsableForegroundActive,
             interruptionActive: audioInterrupted
@@ -576,8 +540,8 @@ private extension OrbitMiniVoiceCoordinator {
         logger.notice("audio handoff begin id=\(startID) phase=\(String(describing: machine.phase))")
 
         while !Task.isCancelled, !isTerminating {
-            guard var current = audioHandoff else { return false }
-            logger.notice("audio handoff state id=\(startID) phase=\(String(describing: current.phase)) attempts=\(current.probeAttempts)")
+            guard let current = audioHandoff else { return false }
+            logger.notice("audio handoff state id=\(startID) phase=\(String(describing: current.phase))")
 
             switch current.phase {
             case .waitingForForeground:
@@ -588,8 +552,8 @@ private extension OrbitMiniVoiceCoordinator {
                     mutateAudioHandoff(.appBecameActive)
                 case .timedOut:
                     didLifecycleTimeout = true
-                    lastAudioProbeError = "Lifecycle timeout: application/scene did not become foreground-active"
-                    logger.error("lifecycle wait timeout id=\(startID) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription) admProbes=\(current.probeAttempts)")
+                    lastStartupError = "Lifecycle timeout: application/scene did not become foreground-active"
+                    logger.error("lifecycle wait timeout id=\(startID) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription) sessionStarts=0")
                     mutateAudioHandoff(.lifecycleWaitExpired)
                 case .cancelled:
                     mutateAudioHandoff(.cancel)
@@ -597,54 +561,22 @@ private extension OrbitMiniVoiceCoordinator {
 
             case .waitingForAudioRelease:
                 let signalled = await waitForAudioSignalOrTimeout(reason: "interruption-release", timeout: .milliseconds(900))
-                if !signalled { mutateAudioHandoff(.boundedWaitExpired) }
+                if !signalled { mutateAudioHandoff(.audioReleaseWaitExpired) }
 
-            case let .waitingForRetry(attempt):
-                let timeouts: [Duration] = [.milliseconds(120), .milliseconds(280), .milliseconds(600), .milliseconds(900)]
-                let timeout = timeouts[min(max(attempt - 1, 0), timeouts.count - 1)]
-                let signalled = await waitForAudioSignalOrTimeout(reason: "transient-adm-retry-\(attempt)", timeout: timeout)
-                if !signalled { mutateAudioHandoff(.boundedWaitExpired) }
-
-            case .readyToProbe:
+            case .readyForSession:
                 guard isUsableForegroundActive else {
-                    logger.notice("audio probe prevented before active id=\(startID) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription)")
+                    logger.notice("Session.start prevented before active id=\(startID) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription)")
                     mutateAudioHandoff(.appBecameInactive)
                     continue
                 }
-                guard let attempt = current.beginProbe() else {
-                    logger.error("audio handoff invariant failure id=\(startID): probe claim rejected")
-                    return false
-                }
-                audioHandoff = current
-                didStartAppIntentAudioProbe = true
-                let result = await probeMicrophoneCapture(attempt: attempt, startID: startID)
-                lastAudioProbeError = result.detail
-                if result.succeeded {
-                    mutateAudioHandoff(.probeSucceeded)
-                } else {
-                    await resetFailedAudioProbe(reason: "probe-\(attempt)-failed")
-                    mutateAudioHandoff(.probeFailed(transient: result.transient))
-                }
-
-            case .readyForSession:
-                logger.notice("audio handoff ready id=\(startID) attempts=\(current.probeAttempts) engineRunning=\(AudioManager.shared.isEngineRunning)")
+                logger.notice("audio handoff ready for Session.start id=\(startID) engineRunning=\(AudioManager.shared.isEngineRunning)")
                 return true
 
-            case .failed:
-                logger.error("audio handoff exhausted id=\(startID) attempts=\(current.probeAttempts) error=\(lastAudioProbeError ?? "unknown")")
-                return false
-
             case .lifecycleTimedOut:
-                logger.error("audio handoff lifecycle timeout id=\(startID) admProbes=\(current.probeAttempts)")
+                logger.error("audio handoff lifecycle timeout id=\(startID) sessionStarts=0")
                 return false
 
             case .cancelled, .idle:
-                return false
-
-            case .probing:
-                // The coordinator itself owns the only probe and never waits
-                // concurrently while this phase is active.
-                logger.error("audio handoff invariant failure id=\(startID): orphan probing phase")
                 return false
             }
         }
@@ -659,70 +591,85 @@ private extension OrbitMiniVoiceCoordinator {
         audioHandoff = machine
     }
 
-    func probeMicrophoneCapture(attempt: Int, startID: String) async -> OrbitMiniAudioProbeResult {
-        let manager = AudioManager.shared
-        let frameProbe = OrbitMiniAudioFrameProbe()
-        manager.add(localAudioRenderer: frameProbe)
-        defer { manager.remove(localAudioRenderer: frameProbe) }
-
-        logger.notice("audio probe begin id=\(startID) attempt=\(attempt) interrupted=\(audioInterrupted) inputAvailable=\(AVAudioSession.sharedInstance().isInputAvailable) engineRunning=\(manager.isEngineRunning)")
-        do {
-            try manager.setEngineAvailability(.default)
-            try manager.startLocalRecording()
-            logger.notice("audio probe ADM start result id=\(startID) attempt=\(attempt) success=true engineRunning=\(manager.isEngineRunning)")
-        } catch {
-            let detail = error.localizedDescription
-            let transient = isTransientAudioFailure(detail)
-            logger.error("audio probe ADM start result id=\(startID) attempt=\(attempt) success=false transient=\(transient) error=\(detail)")
-            return OrbitMiniAudioProbeResult(succeeded: false, transient: transient, detail: detail)
-        }
-
-        let receivedFrame = await frameProbe.waitForFrame(timeout: .milliseconds(650))
-        let running = manager.isEngineRunning
-        logger.notice("audio probe capture result id=\(startID) attempt=\(attempt) engineRunning=\(running) pcmFrame=\(receivedFrame)")
-        // A running ADM that delivered a new PCM buffer is authoritative even
-        // if the interruption-ended notification was missed and the mirrored
-        // diagnostic flag is stale. The state machine still blocks a probe
-        // when it actually observed an interruption during that probe.
-        if running, receivedFrame {
-            return OrbitMiniAudioProbeResult(succeeded: true, transient: false, detail: "ready")
-        }
-
-        let detail = audioInterrupted
-            ? "AVAudioSession interruption became active during microphone probe"
-            : "LiveKit audio engine started without a local PCM frame"
-        return OrbitMiniAudioProbeResult(succeeded: false, transient: true, detail: detail)
+    func installSessionPCMDiagnostics(source: String, startID: String) {
+        clearSessionPCMDiagnostics()
+        let observer = OrbitMiniSessionPCMObserver(source: source, startID: startID)
+        sessionPCMObserver = observer
+        AudioManager.shared.add(localAudioRenderer: observer)
+        logger.notice("audio capture diagnostics attached source=\(source) id=\(startID)")
     }
 
-    /// Clears only the local ADM attempt. No Room exists yet on the normal
-    /// handoff path, so a retry cannot stack over a partial LiveKit session.
-    func resetFailedAudioProbe(reason: String) async {
-        let manager = AudioManager.shared
-        do {
-            try manager.stopLocalRecording()
-            logger.notice("audio probe cleanup stopRecording success reason=\(reason)")
-        } catch {
-            logger.notice("audio probe cleanup stopRecording result reason=\(reason) error=\(error.localizedDescription)")
+    func clearSessionPCMDiagnostics() {
+        guard let observer = sessionPCMObserver else { return }
+        AudioManager.shared.remove(localAudioRenderer: observer)
+        sessionPCMObserver = nil
+        logger.notice("audio capture diagnostics detached")
+    }
+
+    func startDirectSession(startID: String, source: String) async -> Bool {
+        await attemptLiveKitStart(number: 1, source: source)
+        let ready = runtime.session.isConnected && AudioManager.shared.isEngineRunning
+        if !ready {
+            lastStartupError = runtime.session.error?.localizedDescription
+            await cleanUpFailedSessionAttempt(startID: startID, attempt: 1, reason: "direct-session-failed")
         }
-        do {
-            try manager.setEngineAvailability(.none)
-            logger.notice("audio probe cleanup engine disabled reason=\(reason)")
-        } catch {
-            logger.error("audio probe cleanup engine disable failed reason=\(reason) error=\(error.localizedDescription)")
+        return ready
+    }
+
+    func startAppIntentSessionWithRetry(startID: String) async -> Bool {
+        var retry = OrbitMiniSessionStartRetryStateMachine(maximumAttempts: 3)
+        retry.begin()
+        let retryTimeouts: [Duration] = [.milliseconds(250), .milliseconds(750)]
+
+        while !Task.isCancelled, !isTerminating {
+            guard isUsableForegroundActive else {
+                lastStartupError = "Lifecycle changed before Session.start"
+                logger.notice("Session.start retry paused before active id=\(startID)")
+                return false
+            }
+            guard let attempt = retry.claimAttempt() else { break }
+            await attemptLiveKitStart(number: attempt, source: "shortcut-appintent")
+            let ready = runtime.session.isConnected && AudioManager.shared.isEngineRunning
+            if ready {
+                retry.succeeded()
+                logger.notice("AppIntent Session.start success id=\(startID) attempt=\(attempt) engineRunning=true")
+                return true
+            }
+
+            let detail = currentAudioErrorDescription
+            lastStartupError = detail.isEmpty ? "Не вдалося запустити голосову сесію." : detail
+            let transient = isTransientAudioFailure(detail)
+            logger.error("AppIntent Session.start failure id=\(startID) attempt=\(attempt) transient=\(transient) error=\(lastStartupError ?? "unknown")")
+            await cleanUpFailedSessionAttempt(startID: startID, attempt: attempt, reason: "session-start-failed")
+            retry.failed(transient: transient)
+
+            guard case let .waitingForRetry(failedAttempt) = retry.phase else { break }
+            let timeout = retryTimeouts[min(max(failedAttempt - 1, 0), retryTimeouts.count - 1)]
+            let signalled = await waitForAudioSignalOrTimeout(reason: "transient-session-retry-\(failedAttempt)", timeout: timeout)
+            logger.notice("Session.start retry gate id=\(startID) attempt=\(failedAttempt) signal=\(signalled)")
+            retry.retryDelayElapsed()
         }
-        await Task.yield()
-        do {
-            try manager.setEngineAvailability(.default)
-            logger.notice("audio probe cleanup engine reset reason=\(reason)")
-        } catch {
-            logger.error("audio probe cleanup engine reset failed reason=\(reason) error=\(error.localizedDescription)")
+
+        if Task.isCancelled || isTerminating {
+            retry.cancel()
+        }
+        return false
+    }
+
+    func cleanUpFailedSessionAttempt(startID: String, attempt: Int, reason: String) async {
+        if runtime.session.room.connectionState != .disconnected {
+            logger.notice("LiveKit Session cleanup begin id=\(startID) attempt=\(attempt) reason=\(reason) state=\(String(describing: runtime.session.room.connectionState))")
+            await runtime.session.end()
+            logger.notice("LiveKit Session cleanup end id=\(startID) attempt=\(attempt) roomState=\(String(describing: runtime.session.room.connectionState))")
+        } else {
+            logger.notice("LiveKit Session cleanup no-room id=\(startID) attempt=\(attempt) reason=\(reason)")
         }
         runtime.session.dismissError()
         runtime.localMedia.dismissError()
     }
 
     /// Registered before its timeout task, so notification and timeout races
-    /// are one-shot and can never launch competing probes.
+    /// are one-shot and can never launch competing Session retries.
     func waitForAudioSignalOrTimeout(reason: String, timeout: Duration) async -> Bool {
         let token = UUID()
         logger.notice("audio handoff wait reason=\(reason) interrupted=\(audioInterrupted)")
@@ -769,6 +716,10 @@ private extension OrbitMiniVoiceCoordinator {
 
     func signalAudioHandoff(_ event: OrbitMiniAudioHandoffStateMachine.Event, reason: String) {
         mutateAudioHandoff(event)
+        signalAudioWaiters(reason: reason)
+    }
+
+    func signalAudioWaiters(reason: String) {
         guard !audioSignalWaiters.isEmpty else { return }
         logger.notice("audio handoff notification reason=\(reason)")
         let waiters = audioSignalWaiters
@@ -797,13 +748,13 @@ private extension OrbitMiniVoiceCoordinator {
         let reason = AVAudioSession.RouteChangeReason(rawValue: raw)
         logger.notice("AVAudioSession route changed reason=\(String(describing: reason))")
         logAudioReadiness()
-        signalAudioHandoff(.audioReadinessChanged, reason: "route-changed")
+        signalAudioWaiters(reason: "route-changed")
     }
 
     func handleAvailableInputsChange() {
         logger.notice("AVAudioSession available inputs changed")
         logAudioReadiness()
-        signalAudioHandoff(.audioReadinessChanged, reason: "available-inputs-changed")
+        signalAudioWaiters(reason: "available-inputs-changed")
     }
 
     func handleApplicationDidBecomeActive() {
@@ -830,7 +781,7 @@ private extension OrbitMiniVoiceCoordinator {
 
     func handleMediaServicesReset() {
         logger.error("AVAudioSession media services were reset")
-        signalAudioHandoff(.audioReadinessChanged, reason: "media-services-reset")
+        signalAudioWaiters(reason: "media-services-reset")
     }
 
     var currentAudioErrorDescription: String {
