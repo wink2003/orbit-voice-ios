@@ -11,6 +11,7 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         probeClaimIsIdempotent()
         interruptionDuringProbeMustReleaseBeforeSession()
         completeInterruptionDuringProbeDoesNotDuplicateProbe()
+        missedInterruptionEndCanBeProvenByCapture()
         print("OrbitMiniAudioHandoffStateMachineTests: PASS")
     }
 
@@ -95,6 +96,15 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         machine.handle(.probeSucceeded)
         expect(machine.phase == .readyForSession, "released successful probe should commit")
         expect(machine.beginProbe() == nil, "committed handoff must not start a duplicate probe")
+    }
+
+    private static func missedInterruptionEndCanBeProvenByCapture() {
+        var machine = OrbitMiniAudioHandoffStateMachine()
+        machine.handle(.requested(appIsActive: true, interruptionActive: true))
+        machine.handle(.boundedWaitExpired)
+        expect(machine.beginProbe() == 1, "bounded fallback should open an authoritative probe")
+        machine.handle(.probeSucceeded)
+        expect(machine.phase == .readyForSession, "PCM proof must recover a missed end notification")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {

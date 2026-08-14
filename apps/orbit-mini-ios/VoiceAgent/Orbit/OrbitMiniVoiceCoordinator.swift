@@ -567,7 +567,11 @@ private extension OrbitMiniVoiceCoordinator {
         let receivedFrame = await frameProbe.waitForFrame(timeout: .milliseconds(650))
         let running = manager.isEngineRunning
         logger.notice("audio probe capture result id=\(startID) attempt=\(attempt) engineRunning=\(running) pcmFrame=\(receivedFrame)")
-        if running, receivedFrame, !audioInterrupted {
+        // A running ADM that delivered a new PCM buffer is authoritative even
+        // if the interruption-ended notification was missed and the mirrored
+        // diagnostic flag is stale. The state machine still blocks a probe
+        // when it actually observed an interruption during that probe.
+        if running, receivedFrame {
             return OrbitMiniAudioProbeResult(succeeded: true, transient: false, detail: "ready")
         }
 
