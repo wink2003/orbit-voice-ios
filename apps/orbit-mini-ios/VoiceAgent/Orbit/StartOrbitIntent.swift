@@ -1,4 +1,5 @@
 import AppIntents
+import Foundation
 
 struct StartOrbitMiniIntent: AppIntent {
     static let title: LocalizedStringResource = "Start Orbit Mini"
@@ -37,6 +38,38 @@ struct StopOrbitMiniIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         await OrbitMiniVoiceCoordinator.shared.stop(reason: "app-intent")
         return .result()
+    }
+}
+
+/// Place this directly after Start Orbit Mini in a custom Shortcut, before
+/// Open App [PreviousApp]. It waits for the already-requested session to be
+/// connected with an observed local PCM frame; it never starts audio itself.
+struct WaitForOrbitMiniReadyIntent: AppIntent {
+    static let title: LocalizedStringResource = "Wait for Orbit Mini Ready"
+    static let description = IntentDescription("Waits until Orbit Mini has safely started voice before the Shortcut continues.")
+    static let openAppWhenRun = true
+
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes { .foreground(.immediate) }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        let logger = OrbitMiniDiagnosticLogger.shared
+        logger.notice("AppIntent readiness wait begin")
+        guard await OrbitMiniVoiceCoordinator.shared.waitForShortcutReturnReadiness() else {
+            logger.error("AppIntent readiness wait failed; downstream Shortcut return must not run")
+            throw OrbitMiniShortcutReadinessError.notReady
+        }
+        logger.notice("AppIntent readiness wait end result=ready")
+        return .result()
+    }
+}
+
+private enum OrbitMiniShortcutReadinessError: LocalizedError {
+    case notReady
+
+    var errorDescription: String? {
+        "Orbit Mini ще не готова до повернення до попередньої програми."
     }
 }
 

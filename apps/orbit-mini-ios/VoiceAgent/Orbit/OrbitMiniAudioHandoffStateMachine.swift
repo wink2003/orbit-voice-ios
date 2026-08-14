@@ -143,3 +143,83 @@ struct OrbitMiniSessionStartRetryStateMachine: Equatable {
         phase = .cancelled
     }
 }
+
+/// Tracks whether an AppIntent-started session is safe for the enclosing
+/// Shortcut to foreground the previously active app. It intentionally has no
+/// audio or UIKit operations: it is only the contract between Start Orbit Mini
+/// and the explicit Wait for Orbit Mini Ready Shortcut action.
+struct OrbitMiniShortcutReturnReadinessStateMachine: Equatable {
+    enum Phase: Equatable {
+        case idle
+        case starting(id: String)
+        case ready(id: String)
+        case failed(id: String)
+        case cancelled(id: String)
+    }
+
+    private(set) var phase: Phase = .idle
+    private var roomConnected = false
+    private var firstPCMReceived = false
+    private var presentationEstablished = false
+
+    var activeStartID: String? {
+        switch phase {
+        case let .starting(id), let .ready(id), let .failed(id), let .cancelled(id): id
+        case .idle: nil
+        }
+    }
+
+    var isReady: Bool {
+        if case .ready = phase { return true }
+        return false
+    }
+
+    mutating func begin(id: String) -> Bool {
+        guard phase == .idle || isTerminal else { return false }
+        phase = .starting(id: id)
+        roomConnected = false
+        firstPCMReceived = false
+        presentationEstablished = false
+        return true
+    }
+
+    mutating func roomConnected(id: String) {
+        guard case let .starting(activeID) = phase, activeID == id else { return }
+        roomConnected = true
+        promoteIfReady(id: id)
+    }
+
+    mutating func receivedFirstPCM(id: String) {
+        guard case let .starting(activeID) = phase, activeID == id else { return }
+        firstPCMReceived = true
+        promoteIfReady(id: id)
+    }
+
+    mutating func presentationEstablished(id: String) {
+        guard case let .starting(activeID) = phase, activeID == id else { return }
+        presentationEstablished = true
+        promoteIfReady(id: id)
+    }
+
+    mutating func fail(id: String) {
+        guard case let .starting(activeID) = phase, activeID == id else { return }
+        phase = .failed(id: id)
+    }
+
+    mutating func cancel(id: String) {
+        guard case let .starting(activeID) = phase, activeID == id else { return }
+        phase = .cancelled(id: id)
+    }
+
+    private var isTerminal: Bool {
+        switch phase {
+        case .ready, .failed, .cancelled: true
+        case .idle, .starting: false
+        }
+    }
+
+    private mutating func promoteIfReady(id: String) {
+        guard roomConnected, firstPCMReceived, presentationEstablished else { return }
+        phase = .ready(id: id)
+    }
+}

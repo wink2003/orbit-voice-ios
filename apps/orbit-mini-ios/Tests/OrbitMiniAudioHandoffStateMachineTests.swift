@@ -18,6 +18,11 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         transientSessionRetriesAreBounded()
         permanentSessionFailureIsTerminal()
         cancellationDuringSessionStartIsTerminal()
+        shortcutReturnBlocksUntilSessionAndPCM()
+        shortcutReturnFailureNeverReleasesPreviousApp()
+        shortcutReturnCancellationNeverReleasesPreviousApp()
+        duplicateShortcutStartDoesNotCreateAnotherReadinessToken()
+        readyShortcutReturnSurvivesBackgroundTransition()
         print("OrbitMiniAudioHandoffStateMachineTests: PASS")
     }
 
@@ -157,6 +162,55 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         retry.cancel()
         retry.succeeded()
         expect(retry.phase == .cancelled, "late Session completion cannot revive cancellation")
+    }
+
+    private static func shortcutReturnBlocksUntilSessionAndPCM() {
+        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
+        expect(readiness.begin(id: "one"), "first Shortcut start creates one readiness token")
+        expect(!readiness.isReady, "Open PreviousApp must wait before voice starts")
+        readiness.roomConnected(id: "one")
+        expect(!readiness.isReady, "Room connection alone is not capture proof")
+        readiness.receivedFirstPCM(id: "one")
+        expect(!readiness.isReady, "capture alone must not race Live Activity setup")
+        readiness.presentationEstablished(id: "one")
+        expect(readiness.isReady, "connected Session plus PCM and presentation releases previous-app return")
+    }
+
+    private static func shortcutReturnFailureNeverReleasesPreviousApp() {
+        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
+        _ = readiness.begin(id: "one")
+        readiness.fail(id: "one")
+        expect(!readiness.isReady, "failed voice startup must not return to PreviousApp")
+        expect(readiness.phase == .failed(id: "one"), "failed start is terminal")
+    }
+
+    private static func shortcutReturnCancellationNeverReleasesPreviousApp() {
+        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
+        _ = readiness.begin(id: "one")
+        readiness.cancel(id: "one")
+        readiness.receivedFirstPCM(id: "one")
+        readiness.roomConnected(id: "one")
+        readiness.presentationEstablished(id: "one")
+        expect(!readiness.isReady, "late audio cannot revive cancelled startup")
+        expect(readiness.phase == .cancelled(id: "one"), "cancelled start remains terminal")
+    }
+
+    private static func duplicateShortcutStartDoesNotCreateAnotherReadinessToken() {
+        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
+        expect(readiness.begin(id: "one"), "first start is accepted")
+        expect(!readiness.begin(id: "two"), "duplicate start cannot replace a pending token")
+        expect(readiness.activeStartID == "one", "original readiness token remains authoritative")
+    }
+
+    private static func readyShortcutReturnSurvivesBackgroundTransition() {
+        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
+        _ = readiness.begin(id: "one")
+        readiness.receivedFirstPCM(id: "one")
+        readiness.roomConnected(id: "one")
+        readiness.presentationEstablished(id: "one")
+        // The return action is external. Once ready, moving Mini background
+        // must not undo the established voice/background session.
+        expect(readiness.isReady, "valid PreviousApp return preserves readiness")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
