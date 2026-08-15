@@ -1,0 +1,28 @@
+{
+  "name": "Orbit Mini",
+  "subtitle": "Hands-free Orbit companion",
+  "description": "Orbit Mini for hands-free Orbit conversations via Siri Shortcuts, LiveKit, and Live Activities.",
+  "website": "https://voice.orbit.opik.net",
+  "identifier": "net.opik.orbit.mini.source",
+  "apps": [
+    {
+      "name": "Orbit Mini",
+      "bundleIdentifier": "net.opik.orbit.mini",
+      "developerName": "Orbit Family",
+      "iconURL": "https://raw.githubusercontent.com/wink2003/orbit-voice-ios/main/apps/orbit-mini-ios/VoiceAgent/Assets.xcassets/AppIcon.appiconset/App_store_1024_1x.png",
+      "subtitle": "Hands-free voice companion",
+      "localizedDescription": "Orbit Mini starts hands-free Orbit voice sessions through Siri Shortcuts and keeps the active conversation available in the background.",
+      "versions": [
+        {
+          "version": "1.0",
+          "buildVersion": "15",
+          "date": "2026-08-15",
+          "size": 12297647,
+          "downloadURL": "https://github.com/wink2003/orbit-voice-ios/releases/download/orbit-mini-1.0-15/Orbit-Mini.ipa",
+          "minOSVersion": "18.0"
+        }
+      ]
+    }
+  ],
+  "news": []
+}
