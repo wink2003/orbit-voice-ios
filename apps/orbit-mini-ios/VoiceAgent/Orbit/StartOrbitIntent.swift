@@ -41,12 +41,12 @@ struct StopOrbitMiniIntent: AppIntent {
     }
 }
 
-/// Starts Mini, lets the originating Siri/Shortcuts execution finish, then
-/// asks UIKit to dismiss Mini's own scene only after voice is demonstrably
-/// background-safe. It never receives, stores, or opens a prior app itself.
+/// Starts Mini hands-free. Returning to a previous app is intentionally an
+/// external Shortcuts/Automation responsibility; Mini keeps its own scene
+/// and only owns the voice session lifecycle.
 struct StartOrbitMiniHandsFreeIntent: AppIntent {
     static let title: LocalizedStringResource = "Start Orbit Mini Hands-Free"
-    static let description = IntentDescription("Starts Orbit Mini voice, then dismisses Mini after microphone capture and connection are ready.")
+    static let description = IntentDescription("Opens Orbit Mini and starts a hands-free voice session.")
     static let openAppWhenRun = true
 
     @available(iOS 26.0, *)
@@ -56,8 +56,8 @@ struct StartOrbitMiniHandsFreeIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let logger = OrbitMiniDiagnosticLogger.shared
         logger.notice("AppIntent hands-free perform begin")
-        OrbitMiniVoiceCoordinator.shared.requestStartFromAppIntent(returnAfterReady: true)
-        logger.notice("AppIntent hands-free perform end; scene return is queued after readiness")
+        OrbitMiniVoiceCoordinator.shared.requestStartFromAppIntent()
+        logger.notice("AppIntent hands-free perform end; external Shortcuts may handle return")
         return .result()
     }
 }

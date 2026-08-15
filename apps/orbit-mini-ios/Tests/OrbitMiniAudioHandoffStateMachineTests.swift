@@ -11,19 +11,13 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         cancellationWhileWaitingForActiveIsTerminal()
         observedInterruptionBlocksSessionUntilRelease()
         missedInterruptionEndHasBoundedPostActiveFallback()
-        validPreviousAppReturnDoesNotUndoEstablishedSession()
-        invalidPreviousAppReturnCannotAbortPendingStartup()
+        backgroundTransitionDoesNotUndoEstablishedSession()
+        externalReturnCannotAbortPendingStartup()
         retryClaimsExactlyOneSessionStartAtATime()
         transientSessionFailureRetriesOnlyAfterCleanupBoundary()
         transientSessionRetriesAreBounded()
         permanentSessionFailureIsTerminal()
         cancellationDuringSessionStartIsTerminal()
-        sceneReturnBlocksUntilSessionAndPCM()
-        sceneReturnFailureNeverDismissesMini()
-        sceneReturnCancellationNeverDismissesMini()
-        duplicateHandsFreeStartDoesNotCreateAnotherReturnToken()
-        readySceneReturnSurvivesBackgroundTransition()
-        sceneReturnIsClaimedExactlyOnce()
         print("OrbitMiniAudioHandoffStateMachineTests: PASS")
     }
 
@@ -98,20 +92,20 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         expect(handoff.phase == .readyForSession, "only post-active audio fallback may proceed")
     }
 
-    private static func validPreviousAppReturnDoesNotUndoEstablishedSession() {
+    private static func backgroundTransitionDoesNotUndoEstablishedSession() {
         var handoff = OrbitMiniAudioHandoffStateMachine()
         handoff.handle(.requested(appIsActive: true, interruptionActive: false))
-        expect(handoff.phase == .readyForSession, "active Mini can start Session before valid return")
-        // A later background transition belongs to the already-running session,
-        // not the startup gate.
+        expect(handoff.phase == .readyForSession, "active Mini can start Session")
+        // A later external foreground transition belongs to the already-running
+        // session, not the startup gate.
         handoff.handle(.appBecameInactive)
         expect(handoff.phase == .readyForSession, "terminal ready state preserves background continuation")
     }
 
-    private static func invalidPreviousAppReturnCannotAbortPendingStartup() {
+    private static func externalReturnCannotAbortPendingStartup() {
         var handoff = OrbitMiniAudioHandoffStateMachine()
         handoff.handle(.requested(appIsActive: false, interruptionActive: false))
-        // External Open App has no callback into Mini. It is deliberately not
+        // External Shortcuts has no callback into Mini. It is deliberately not
         // a failure event; Mini waits for UIKit's actual activation.
         handoff.handle(.appBecameActive)
         expect(handoff.phase == .readyForSession, "external Shortcut failure cannot poison startup")
@@ -163,68 +157,6 @@ enum OrbitMiniAudioHandoffStateMachineTests {
         retry.cancel()
         retry.succeeded()
         expect(retry.phase == .cancelled, "late Session completion cannot revive cancellation")
-    }
-
-    private static func sceneReturnBlocksUntilSessionAndPCM() {
-        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
-        expect(readiness.begin(id: "one"), "first Shortcut start creates one readiness token")
-        expect(!readiness.isReady, "Mini scene cannot dismiss before voice starts")
-        readiness.roomConnected(id: "one")
-        expect(!readiness.isReady, "Room connection alone is not capture proof")
-        readiness.receivedFirstPCM(id: "one")
-        expect(!readiness.isReady, "capture alone must not race Live Activity setup")
-        readiness.presentationEstablished(id: "one")
-        expect(readiness.isReady, "connected Session plus PCM and presentation makes scene dismissal safe")
-    }
-
-    private static func sceneReturnFailureNeverDismissesMini() {
-        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
-        _ = readiness.begin(id: "one")
-        readiness.fail(id: "one")
-        expect(!readiness.isReady, "failed voice startup must not dismiss Mini")
-        expect(readiness.phase == .failed(id: "one"), "failed start is terminal")
-    }
-
-    private static func sceneReturnCancellationNeverDismissesMini() {
-        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
-        _ = readiness.begin(id: "one")
-        readiness.cancel(id: "one")
-        readiness.receivedFirstPCM(id: "one")
-        readiness.roomConnected(id: "one")
-        readiness.presentationEstablished(id: "one")
-        expect(!readiness.isReady, "late audio cannot revive cancelled startup or dismiss Mini")
-        expect(readiness.phase == .cancelled(id: "one"), "cancelled start remains terminal")
-    }
-
-    private static func duplicateHandsFreeStartDoesNotCreateAnotherReturnToken() {
-        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
-        expect(readiness.begin(id: "one"), "first start is accepted")
-        expect(!readiness.begin(id: "two"), "duplicate start cannot replace a pending token")
-        expect(readiness.activeStartID == "one", "original readiness token remains authoritative")
-    }
-
-    private static func readySceneReturnSurvivesBackgroundTransition() {
-        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
-        _ = readiness.begin(id: "one")
-        readiness.receivedFirstPCM(id: "one")
-        readiness.roomConnected(id: "one")
-        readiness.presentationEstablished(id: "one")
-        // Once ready, leaving Mini's scene must not undo the established
-        // voice/background session.
-        expect(readiness.isReady, "valid scene dismissal preserves readiness")
-    }
-
-    private static func sceneReturnIsClaimedExactlyOnce() {
-        var readiness = OrbitMiniShortcutReturnReadinessStateMachine()
-        var sceneReturn = OrbitMiniSceneReturnStateMachine()
-        _ = readiness.begin(id: "one")
-        expect(sceneReturn.arm(id: "one"), "hands-free intent arms one scene return")
-        expect(!sceneReturn.claimIfReady(id: "one", readiness: readiness), "no dismissal before readiness")
-        readiness.roomConnected(id: "one")
-        readiness.receivedFirstPCM(id: "one")
-        readiness.presentationEstablished(id: "one")
-        expect(sceneReturn.claimIfReady(id: "one", readiness: readiness), "ready session claims one dismissal")
-        expect(!sceneReturn.claimIfReady(id: "one", readiness: readiness), "duplicate signals cannot dismiss twice")
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {

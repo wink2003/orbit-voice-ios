@@ -13,13 +13,14 @@ final class OrbitMiniDiagnosticLogger: @unchecked Sendable {
     private nonisolated(unsafe) let lock = NSLock()
     private nonisolated(unsafe) let persistenceQueue = DispatchQueue(label: "net.opik.orbit.mini.diagnostics", qos: .utility)
     private nonisolated(unsafe) var entries: [String] = []
-    private nonisolated(unsafe) let maxEntries = 350
+    private nonisolated(unsafe) let maxEntries = 300
+    private nonisolated(unsafe) let maxStoredBytes = 384 * 1024
     private nonisolated(unsafe) let storageKey = "mini.siriAudioDiagnostics.v1"
 
     nonisolated init(category: String = "siri-audio") {
         osLogger = os.Logger(subsystem: "net.opik.orbit.mini", category: category)
         if let saved = UserDefaults(suiteName: "net.opik.orbit.mini")?.stringArray(forKey: storageKey) {
-            entries = Array(saved.suffix(maxEntries))
+            entries = Self.trim(saved, maxEntries: maxEntries, maxStoredBytes: maxStoredBytes)
         }
     }
 
@@ -52,7 +53,11 @@ final class OrbitMiniDiagnosticLogger: @unchecked Sendable {
             let line = "\(timestamp) → siri-audio → \(safeMessage)"
             let snapshot: [String] = self.lock.withLock {
                 self.entries.append(line)
-                if self.entries.count > self.maxEntries { self.entries.removeFirst(self.entries.count - self.maxEntries) }
+                self.entries = Self.trim(
+                    self.entries,
+                    maxEntries: self.maxEntries,
+                    maxStoredBytes: self.maxStoredBytes
+                )
                 return self.entries
             }
             UserDefaults(suiteName: "net.opik.orbit.mini")?.set(snapshot, forKey: self.storageKey)
@@ -65,6 +70,19 @@ final class OrbitMiniDiagnosticLogger: @unchecked Sendable {
             value = value.replacingOccurrences(of: pattern, with: "[redacted]", options: .regularExpression)
         }
         return value
+    }
+
+    private nonisolated static func trim(
+        _ source: [String],
+        maxEntries: Int,
+        maxStoredBytes: Int
+    ) -> [String] {
+        var trimmed = Array(source.suffix(maxEntries))
+        var bytes = trimmed.reduce(0) { $0 + $1.utf8.count + 1 }
+        while bytes > maxStoredBytes, !trimmed.isEmpty {
+            bytes -= trimmed.removeFirst().utf8.count + 1
+        }
+        return trimmed
     }
 }
 
@@ -100,11 +118,6 @@ private enum OrbitMiniLifecycleWaitResult: Sendable, Equatable {
     case cancelled
 }
 
-private enum OrbitMiniShortcutReadinessResult: Sendable, Equatable {
-    case failed
-    case cancelled
-}
-
 /// UIApplication/UIScene activation and the lifecycle deadline race to
 /// complete this continuation. Exactly one result wins.
 private final class OrbitMiniLifecycleSignalWaiter: @unchecked Sendable {
@@ -130,14 +143,12 @@ private final class OrbitMiniSessionPCMObserver: AudioRenderer, @unchecked Senda
     private let lock = NSLock()
     private let source: String
     private let startID: String
-    private let onFirstFrame: @Sendable () -> Void
     private let logger = OrbitMiniDiagnosticLogger.shared
     private var hasLoggedFirstFrame = false
 
-    init(source: String, startID: String, onFirstFrame: @escaping @Sendable () -> Void) {
+    init(source: String, startID: String) {
         self.source = source
         self.startID = startID
-        self.onFirstFrame = onFirstFrame
     }
 
     func render(pcmBuffer _: AVAudioPCMBuffer) {
@@ -148,7 +159,6 @@ private final class OrbitMiniSessionPCMObserver: AudioRenderer, @unchecked Senda
         }
         if shouldLog {
             logger.notice("audio capture first PCM source=\(source) id=\(startID) engineRunning=\(AudioManager.shared.isEngineRunning)")
-            onFirstFrame()
         }
     }
 }
@@ -220,8 +230,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     private var audioSignalWaiters: [UUID: OrbitMiniAudioSignalWaiter] = [:]
     private var lifecycleSignalWaiters: [UUID: OrbitMiniLifecycleSignalWaiter] = [:]
     private var audioHandoff: OrbitMiniAudioHandoffStateMachine?
-    private var shortcutReturnReadiness = OrbitMiniShortcutReturnReadinessStateMachine()
-    private var sceneReturn = OrbitMiniSceneReturnStateMachine()
     private var activeStartID: String?
     private var lastStartupError: String?
     private var didLifecycleTimeout = false
@@ -313,16 +321,16 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     var isVoiceActive: Bool { runtime.session.isConnected && !isTerminating }
 
     func start() async {
-        guard prepareStart(source: "button", returnAfterReady: false) else { return }
+        guard prepareStart(source: "button") else { return }
         await beginPreparedStart(source: "button")
     }
 
     /// An App Intent must return before it competes with Siri for microphone
     /// ownership. `Task.yield()` schedules the attempt after `perform()` has
     /// completed; it is not a timed delay and does not inspect scene state.
-    func requestStartFromAppIntent(returnAfterReady: Bool = false) {
-        guard prepareStart(source: "app-intent", returnAfterReady: returnAfterReady) else { return }
-        logger.notice("app-intent start queued; perform may now complete returnAfterReady=\(returnAfterReady)")
+    func requestStartFromAppIntent() {
+        guard prepareStart(source: "app-intent") else { return }
+        logger.notice("app-intent start queued; perform may now complete")
         intentStartTask = Task { @MainActor [weak self] in
             await Task.yield()
             guard let self else { return }
@@ -336,7 +344,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         }
     }
 
-    private func prepareStart(source: String, returnAfterReady: Bool) -> Bool {
+    private func prepareStart(source: String) -> Bool {
         guard runtime.authentication.isPaired else {
             lastError = "Спершу активуйте цей iPhone."
             return false
@@ -350,14 +358,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         lastStartupError = nil
         didLifecycleTimeout = false
         activeStartID = String(UUID().uuidString.prefix(8))
-        if source == "app-intent", let startID = activeStartID {
-            _ = shortcutReturnReadiness.begin(id: startID)
-            logger.notice("shortcut return readiness begin id=\(startID)")
-            if returnAfterReady {
-                _ = sceneReturn.arm(id: startID)
-                logger.notice("scene return armed id=\(startID) policy=after-connected-pcm-presentation")
-            }
-        }
         logger.notice("coordinator start requested id=\(activeStartID ?? "none") source=\(source)")
         return true
     }
@@ -373,8 +373,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         // PreConnectAudioBuffer is the sole microphone/ADM owner.
         if source == "app-intent" {
             guard await performAppIntentAudioHandoff(startID: startID) else {
-                finishShortcutReturnReadiness(id: startID, result: .failed)
-                sceneReturn.cancel(id: startID)
                 isStarting = false
                 activeStartID = nil
                 audioHandoff = nil
@@ -386,8 +384,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
             }
         }
         guard !Task.isCancelled, !isTerminating else {
-            finishShortcutReturnReadiness(id: startID, result: .cancelled)
-            sceneReturn.cancel(id: startID)
             isStarting = false
             activeStartID = nil
             logger.notice("LiveKit start cancelled before audio activation")
@@ -403,15 +399,8 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         audioHandoff = nil
         if sessionReady {
             await liveActivity.begin(userName: runtime.authentication.displayName ?? "Orbit")
-            markShortcutReturnPresentationEstablished(id: startID, source: source)
-            if runtime.session.room.connectionState == .connected {
-                markShortcutReturnRoomConnected(id: startID, source: source)
-            }
-            requestSceneReturnIfReady(id: startID)
         } else {
             clearSessionPCMDiagnostics()
-            finishShortcutReturnReadiness(id: startID, result: .failed)
-            sceneReturn.cancel(id: startID)
             lastError = lastStartupError ?? runtime.session.error?.localizedDescription ?? "Не вдалося підключити Orbit."
             logger.error("voice startup final failure id=\(startID) error=\(lastError ?? "unknown")")
         }
@@ -454,7 +443,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         intentStartTask = nil
         audioHandoff?.handle(.cancel)
         audioHandoff = nil
-        let startID = activeStartID
         activeStartID = nil
         guard !isTerminating else { return }
         isTerminating = true
@@ -464,10 +452,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         let lifecycleWaiters = lifecycleSignalWaiters
         lifecycleSignalWaiters.removeAll()
         lifecycleWaiters.values.forEach { $0.resume(.cancelled) }
-        if let startID {
-            finishShortcutReturnReadiness(id: startID, result: .cancelled)
-            sceneReturn.cancel(id: startID)
-        }
         clearSessionPCMDiagnostics()
         let started = ContinuousClock.now
         logger.notice("termination requested reason=\(reason)")
@@ -540,9 +524,8 @@ private extension OrbitMiniVoiceCoordinator {
         await Task.yield()
     }
 
-    /// LiveKit owns the audio-session configuration. This check is
-    /// observational. UIKit lifecycle-active is the prerequisite; after that,
-    /// ADM running plus a real PCM buffer is the audio-readiness proof.
+    /// LiveKit owns the audio-session configuration. This startup snapshot is
+    /// observational; repeated route/input changes are logged separately.
     func logAudioReadiness() {
         let audioSession = AVAudioSession.sharedInstance()
         let inputs = audioSession.currentRoute.inputs.map(\.portType.rawValue).joined(separator: ",")
@@ -627,11 +610,7 @@ private extension OrbitMiniVoiceCoordinator {
 
     func installSessionPCMDiagnostics(source: String, startID: String) {
         clearSessionPCMDiagnostics()
-        let observer = OrbitMiniSessionPCMObserver(source: source, startID: startID) { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.markShortcutReturnFirstPCM(id: startID)
-            }
-        }
+        let observer = OrbitMiniSessionPCMObserver(source: source, startID: startID)
         sessionPCMObserver = observer
         AudioManager.shared.add(localAudioRenderer: observer)
         logger.notice("audio capture diagnostics attached source=\(source) id=\(startID)")
@@ -642,57 +621,6 @@ private extension OrbitMiniVoiceCoordinator {
         AudioManager.shared.remove(localAudioRenderer: observer)
         sessionPCMObserver = nil
         logger.notice("audio capture diagnostics detached")
-    }
-
-    func markShortcutReturnRoomConnected(id: String, source: String) {
-        guard source == "app-intent" else { return }
-        shortcutReturnReadiness.roomConnected(id: id)
-        logger.notice("shortcut return readiness room-connected id=\(id) phase=\(String(describing: shortcutReturnReadiness.phase))")
-        requestSceneReturnIfReady(id: id)
-    }
-
-    func markShortcutReturnFirstPCM(id: String) {
-        shortcutReturnReadiness.receivedFirstPCM(id: id)
-        logger.notice("shortcut return readiness first-pcm id=\(id) phase=\(String(describing: shortcutReturnReadiness.phase))")
-        requestSceneReturnIfReady(id: id)
-    }
-
-    func markShortcutReturnPresentationEstablished(id: String, source: String) {
-        guard source == "app-intent" else { return }
-        shortcutReturnReadiness.presentationEstablished(id: id)
-        logger.notice("shortcut return readiness presentation-established id=\(id) phase=\(String(describing: shortcutReturnReadiness.phase))")
-        requestSceneReturnIfReady(id: id)
-    }
-
-    func finishShortcutReturnReadiness(id: String, result: OrbitMiniShortcutReadinessResult) {
-        switch result {
-        case .failed:
-            shortcutReturnReadiness.fail(id: id)
-        case .cancelled:
-            shortcutReturnReadiness.cancel(id: id)
-        }
-        logger.notice("shortcut return readiness terminal id=\(id) result=\(String(describing: result))")
-    }
-
-    /// The system, not Mini, chooses the next foreground context after Mini
-    /// dismisses its own scene. Mini never receives or stores Shortcuts' Get
-    /// Current App value, so this uses only the public UIKit lifecycle API.
-    func requestSceneReturnIfReady(id: String) {
-        guard sceneReturn.claimIfReady(id: id, readiness: shortcutReturnReadiness) else { return }
-        guard let scene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive })
-        else {
-            logger.error("scene return skipped id=\(id) reason=no-foreground-mini-scene")
-            return
-        }
-
-        logger.notice("scene return request id=\(id) policy=public-scene-dismissal")
-        UIApplication.shared.requestSceneSessionDestruction(scene.session, options: nil) { [weak self] error in
-            Task { @MainActor in
-                self?.logger.error("scene return request failed id=\(id) domain=\((error as NSError).domain) code=\((error as NSError).code)")
-            }
-        }
     }
 
     func startDirectSession(startID: String, source: String) async -> Bool {
@@ -836,13 +764,11 @@ private extension OrbitMiniVoiceCoordinator {
     func handleAudioRouteChange(_ raw: UInt) {
         let reason = AVAudioSession.RouteChangeReason(rawValue: raw)
         logger.notice("AVAudioSession route changed reason=\(String(describing: reason))")
-        logAudioReadiness()
         signalAudioWaiters(reason: "route-changed")
     }
 
     func handleAvailableInputsChange() {
         logger.notice("AVAudioSession available inputs changed")
-        logAudioReadiness()
         signalAudioWaiters(reason: "available-inputs-changed")
     }
 
@@ -894,10 +820,7 @@ private extension OrbitMiniVoiceCoordinator {
 extension OrbitMiniVoiceCoordinator: RoomDelegate {
     nonisolated func room(_ room: Room, didUpdateConnectionState connectionState: ConnectionState, from oldConnectionState: ConnectionState) {
         if connectionState == .connected {
-            Task { @MainActor [weak self] in
-                guard let self, let startID = self.shortcutReturnReadiness.activeStartID else { return }
-                self.markShortcutReturnRoomConnected(id: startID, source: "app-intent")
-            }
+            OrbitMiniDiagnosticLogger.shared.notice("LiveKit room connected")
         }
         guard connectionState == .disconnected, oldConnectionState != .disconnected else { return }
         Task { @MainActor [weak self] in
