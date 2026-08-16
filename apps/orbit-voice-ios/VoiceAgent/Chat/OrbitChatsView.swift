@@ -178,9 +178,16 @@ private struct MessageBubble: View {
     var body: some View {
         HStack {
             if message.senderKind == "person" { Spacer(minLength: 52) }
-            Text(message.content)
+            markdownText(message.content)
                 .font(.body)
                 .foregroundStyle(message.senderKind == "person" ? .white : .primary)
+                .textSelection(.enabled)
+                .contextMenu {
+                    #if os(iOS)
+                    Button { UIPasteboard.general.string = message.content } label: { Label("Копіювати", systemImage: "doc.on.doc") }
+                    #endif
+                    ShareLink(item: message.content) { Label("Поділитися", systemImage: "square.and.arrow.up") }
+                }
                 .padding(.horizontal, 13)
                 .padding(.vertical, 10)
                 .background(message.senderKind == "person" ? Color.indigo : Color(uiColor: .secondarySystemBackground))
@@ -188,5 +195,12 @@ private struct MessageBubble: View {
             if message.senderKind == "orbit" { Spacer(minLength: 52) }
         }
         .padding(.horizontal)
+    }
+
+    private func markdownText(_ content: String) -> Text {
+        if let attributed = try? AttributedString(markdown: content, options: .init(interpretedSyntax: .full)) {
+            return Text(attributed)
+        }
+        return Text(content)
     }
 }

@@ -13,10 +13,16 @@ struct AppView: View {
 
     var body: some View {
         TabView {
-            voice()
-                .tabItem { Label("Orbit", systemImage: "waveform") }
             OrbitChatsView()
-                .tabItem { Label("Чати", systemImage: "message") }
+                .tabItem { Label("Чат", systemImage: "message") }
+            voice()
+                .tabItem { Label("Голос", systemImage: "waveform") }
+            FamilyHubView()
+                .tabItem { Label("Сім’я", systemImage: "person.3") }
+            OrbitCalendarView()
+                .tabItem { Label("Календар", systemImage: "calendar") }
+            OrbitSettingsView()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .environment(\.namespace, namespace)
         .task {
