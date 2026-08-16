@@ -20,7 +20,6 @@ struct StartView: View {
         }
         .padding(.horizontal, horizontalSizeClass == .regular ? 32 * .grid : 16 * .grid)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaInset(edge: .bottom, content: tip)
         #if os(visionOS)
             .glassBackgroundEffect()
             .frame(maxWidth: 175 * .grid)
@@ -38,27 +37,12 @@ struct StartView: View {
         }
     }
 
-    private func tip() -> some View {
-        VStack(spacing: 2 * .grid) {
-            #if targetEnvironment(simulator)
-                Text("connect.simulator")
-                    .foregroundStyle(.fgModerate)
-            #endif
-            Text("connect.tip")
-                .foregroundStyle(.fg3)
-        }
-        .font(.system(size: 12))
-        .multilineTextAlignment(.center)
-        .safeAreaPadding(.horizontal, horizontalSizeClass == .regular ? 32 * .grid : 16 * .grid)
-        .safeAreaPadding(.vertical)
-    }
-
     @ViewBuilder
     private func connectButton() -> some View {
         if isConnectingAutomatically {
             HStack(spacing: 4 * .grid) {
                 Spinner()
-                Text("Connecting to Orbit...")
+                Text("Підключення до Orbit…")
             }
             .frame(width: 58 * .grid, height: 11 * .grid)
             .foregroundStyle(.fgModerate)
@@ -68,7 +52,7 @@ struct StartView: View {
         } label: {
             HStack {
                 Spacer()
-                Text("connect.start")
+                Text("Почати розмову")
                     .matchedGeometryEffect(id: "connect", in: button)
                 Spacer()
             }
@@ -78,7 +62,7 @@ struct StartView: View {
                 Spacer()
                 Spinner()
                     .transition(.scale.combined(with: .opacity))
-                Text("connect.connecting")
+                Text("Підключення…")
                     .matchedGeometryEffect(id: "connect", in: button)
                 Spacer()
             }
@@ -99,7 +83,7 @@ struct StartView: View {
         } label: {
             HStack(spacing: .grid) {
                 Image(systemName: "slider.horizontal.3")
-                Text("audio.title")
+                Text("Налаштування голосу")
             }
             .font(.system(size: 13))
             .foregroundStyle(.fg3)

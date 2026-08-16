@@ -9,6 +9,13 @@ struct OrbitFamilyMessage: Decodable, Identifiable {
     let createdAt: Date
 }
 
+struct OrbitFamilyProfile: Decodable, Identifiable {
+    let personId: String
+    let displayName: String
+    let isMinor: Bool
+    var id: String { personId }
+}
+
 struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     let id: String
     let familyId: String
@@ -24,7 +31,6 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     let updatedAt: Date
 }
 
-private struct FamilyProfilesResponse: Decodable { let profiles: [OrbitProfile] }
 private struct FamilyMessagesResponse: Decodable { let messages: [OrbitFamilyMessage] }
 private struct CalendarResponse: Decodable { let events: [OrbitCalendarEvent] }
 private struct MessageResponse: Decodable { let message: OrbitFamilyMessage }
@@ -45,8 +51,8 @@ final class MainProductAPI {
         return encoder
     }()
 
-    func familyProfiles() async throws -> [OrbitProfile] {
-        let response: [OrbitProfile] = try await request(path: "/api/family/profiles")
+    func familyProfiles() async throws -> [OrbitFamilyProfile] {
+        let response: [OrbitFamilyProfile] = try await request(path: "/api/family/profiles")
         return response
     }
 

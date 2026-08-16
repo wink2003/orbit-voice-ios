@@ -4,10 +4,6 @@ import SwiftUI
 struct AppView: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var localMedia: LocalMedia
-    @Environment(\.scenePhase) private var scenePhase
-
-    @State private var isAutoStarting = false
-    @State private var hasScheduledAutomaticStart = false
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
 
@@ -22,20 +18,9 @@ struct AppView: View {
             OrbitCalendarView()
                 .tabItem { Label("Календар", systemImage: "calendar") }
             OrbitSettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tabItem { Label("Налаштування", systemImage: "gearshape") }
         }
         .environment(\.namespace, namespace)
-        .task {
-            #if !ORBIT_CALLKIT_ONLY
-            await autoStartIfNeeded()
-            #endif
-        }
-        .onChange(of: scenePhase) { _, phase in
-            #if !ORBIT_CALLKIT_ONLY
-            guard phase == .active else { return }
-            Task { await autoStartIfNeeded() }
-            #endif
-        }
     }
 
     private func voice() -> some View {
@@ -46,7 +31,7 @@ struct AppView: View {
                         agentListening().padding()
                     }
             } else {
-                StartView(isConnectingAutomatically: isAutoStarting)
+                StartView(isConnectingAutomatically: false)
             }
             errors()
         }
@@ -63,24 +48,6 @@ struct AppView: View {
         .animation(.default, value: session.isConnected)
         .animation(.default, value: session.error?.localizedDescription)
         .animation(.default, value: session.agent.error?.localizedDescription)
-    }
-
-    @MainActor
-    private func autoStartIfNeeded() async {
-        guard !session.isConnected,
-              !isAutoStarting,
-              !hasScheduledAutomaticStart
-        else { return }
-
-        // Give iOS a short moment to activate the audio session, then join
-        // LiveKit directly.  This is intentionally not a CallKit transaction.
-        hasScheduledAutomaticStart = true
-        isAutoStarting = true
-        defer { isAutoStarting = false }
-
-        try? await Task.sleep(for: .milliseconds(750))
-        guard !Task.isCancelled, !session.isConnected else { return }
-        await session.start()
     }
 
     @ViewBuilder

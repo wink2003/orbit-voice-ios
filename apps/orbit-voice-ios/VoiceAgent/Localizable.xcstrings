@@ -7,7 +7,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Waiting for agent, start talking"
+            "value" : "Очікування Orbit — можна говорити"
           }
         }
       }
@@ -18,7 +18,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agent is listening"
+            "value" : "Orbit слухає"
           }
         }
       }
@@ -29,7 +29,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apply"
+            "value" : "Застосувати"
           }
         }
       }
@@ -40,7 +40,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Close"
+            "value" : "Закрити"
           }
         }
       }
@@ -51,7 +51,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Automatic"
+            "value" : "Автоматично"
           }
         }
       }
@@ -62,7 +62,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prefers Apple voice processing when available and falls back to WebRTC software processing."
+            "value" : "Використовує системну обробку голосу, якщо вона доступна."
           }
         }
       }
@@ -73,7 +73,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Platform"
+            "value" : "Система"
           }
         }
       }
@@ -84,7 +84,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uses Apple voice processing only. Applying fails when it is not available."
+            "value" : "Використовує лише системну обробку голосу."
           }
         }
       }
@@ -95,7 +95,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Software"
+            "value" : "Програмно"
           }
         }
       }
@@ -106,7 +106,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uses WebRTC software processing. Turns off Apple voice processing for the microphone."
+            "value" : "Використовує програмну обробку голосу."
           }
         }
       }
@@ -117,7 +117,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Voice Processing"
+            "value" : "Обробка голосу"
           }
         }
       }
@@ -128,7 +128,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Audio Options"
+            "value" : "Налаштування голосу"
           }
         }
       }
@@ -139,7 +139,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connecting"
+            "value" : "Підключення…"
           }
         }
       }
@@ -150,7 +150,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Running on Simulator, camera and screen sharing will be unavailable."
+            "value" : "Симулятор: камера та демонстрація екрана недоступні."
           }
         }
       }
@@ -161,7 +161,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Start call"
+            "value" : "Почати розмову"
           }
         }
       }
@@ -172,7 +172,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Need help getting set up? Check out the [Voice AI quickstart](https://docs.livekit.io/agents/start/voice-ai/)."
+            "value" : ""
           }
         }
       }
@@ -182,7 +182,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OK"
+            "value" : "Гаразд"
           }
         }
       }
@@ -192,7 +192,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Error"
+            "value" : "Помилка"
           }
         }
       }
@@ -202,7 +202,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Message"
+            "value" : "Повідомлення"
           }
         }
       }
@@ -213,7 +213,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trying to reconnect"
+            "value" : "Повторне підключення"
           }
         }
       }
@@ -224,7 +224,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Warning"
+            "value" : "Попередження"
           }
         }
       }

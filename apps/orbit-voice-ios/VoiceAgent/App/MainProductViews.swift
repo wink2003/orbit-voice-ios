@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FamilyHubView: View {
-    @State private var profiles: [OrbitProfile] = []
+    @State private var profiles: [OrbitFamilyProfile] = []
     @State private var messages: [OrbitFamilyMessage] = []
     @State private var isLoading = true
     @State private var error: Error?
@@ -9,11 +9,17 @@ struct FamilyHubView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Сім’я") {
-                    if profiles.isEmpty && !isLoading {
+                Section {
+                    if let error {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Не вдалося завантажити сімейні дані", systemImage: "exclamationmark.triangle")
+                            Text(error.localizedDescription).font(.footnote).foregroundStyle(.secondary)
+                            Button("Повторити") { Task { await load() } }
+                        }
+                    } else if profiles.isEmpty && !isLoading {
                         ContentUnavailableView("Профілів ще немає", systemImage: "person.3", description: Text("Коли профілі будуть доступні, вони з’являться тут."))
                     } else {
-                        ForEach(profiles, id: \.personId) { profile in
+                        ForEach(profiles) { profile in
                             HStack(spacing: 12) {
                                 Text(initials(profile.displayName))
                                     .font(.headline)
@@ -51,23 +57,21 @@ struct FamilyHubView: View {
 
                 Section {
                     NavigationLink { FamilyMessengerView() } label: {
-                        Label("Відкрити родинний messenger", systemImage: "bubble.left.and.bubble.right")
+                        Label("Відкрити родинний чат", systemImage: "bubble.left.and.bubble.right")
                     }
                 }
 
                 Section {
-                    Label("Приватні Memory V2 факти не показуються тут автоматично.", systemImage: "lock.fill")
+                    Label("Приватна інформація доступна лише відповідно до налаштувань доступу.", systemImage: "lock.fill")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Сім’я")
+            .navigationBarTitleDisplayMode(.inline)
             .refreshable { await load() }
             .task { await load() }
             .overlay { if isLoading { ProgressView() } }
-            .alert("Не вдалося завантажити Family Hub", isPresented: .constant(error != nil)) {
-                Button("Гаразд") { error = nil }
-            } message: { Text(error?.localizedDescription ?? "Спробуйте ще раз.") }
         }
     }
 
@@ -96,7 +100,7 @@ struct FamilyMessengerView: View {
     var body: some View {
         VStack(spacing: 0) {
             if messages.isEmpty {
-                ContentUnavailableView("Родинний messenger", systemImage: "bubble.left.and.bubble.right", description: Text("Напишіть коротке повідомлення для сім’ї."))
+                ContentUnavailableView("Родинний чат", systemImage: "bubble.left.and.bubble.right", description: Text("Напишіть коротке повідомлення для сім’ї."))
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -123,10 +127,12 @@ struct FamilyMessengerView: View {
             }
             .padding()
         }
-        .navigationTitle("Messenger")
+        .navigationTitle("Родинний чат")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .task { await load() }
         .refreshable { await load() }
-        .alert("Messenger недоступний", isPresented: .constant(error != nil)) {
+        .alert("Родинний чат недоступний", isPresented: .constant(error != nil)) {
             Button("Гаразд") { error = nil }
         } message: { Text(error?.localizedDescription ?? "Спробуйте ще раз.") }
     }
@@ -181,6 +187,8 @@ struct OrbitCalendarView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Календар")
+            .navigationBarTitleDisplayMode(.inline)
+            .environment(\.locale, Locale(identifier: "uk_UA"))
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { editingEvent = nil; showingEditor = true } label: { Image(systemName: "plus") } } }
             .task { await load() }
             .refreshable { await load() }
@@ -201,7 +209,7 @@ struct OrbitCalendarView: View {
                     deleteCandidate = nil
                 }
                 Button("Скасувати", role: .cancel) {}
-            } message: { Text("Подію буде приховано з сімейного календаря.") }
+            } message: { Text("Подію буде приховано з родинного календаря.") }
             .alert("Помилка календаря", isPresented: .constant(error != nil)) {
                 Button("Гаразд") { error = nil }
             } message: { Text(error?.localizedDescription ?? "Спробуйте ще раз.") }
@@ -296,19 +304,21 @@ struct OrbitToolsView: View {
         NavigationStack {
             List {
                 Section("Дії") {
-                    NavigationLink { OrbitChatsView() } label: { Label("Telegram та Orbit actions", systemImage: "paperplane") }
-                    Text("Консеквентні дії проходять через preview → confirmation → verified result.")
+                    NavigationLink { OrbitChatsView() } label: { Label("Виконати дію через Orbit", systemImage: "paperplane") }
+                    Text("Orbit підготує дію в чаті та попросить підтвердження, якщо воно потрібне.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Інтеграції") {
-                    Label("Memory V2 — увімкнено в hybrid mode", systemImage: "brain.head.profile")
-                    Label("Oracle Hunter / KölnBäder Hunter — окремі сервіси", systemImage: "magnifyingglass")
-                    Label("WhatsApp Cloud API — підготовлено на майбутнє", systemImage: "message.badge")
+                    Label("Пам’ять Orbit — активна", systemImage: "brain.head.profile")
+                    Label("Telegram — керується Orbit", systemImage: "paperplane")
+                    Label("WhatsApp — не підключено", systemImage: "message.badge")
                         .foregroundStyle(.secondary)
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("Tools")
+            .navigationTitle("Інструменти")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .tabBar)
         }
     }
 }
@@ -318,37 +328,45 @@ struct OrbitSettingsView: View {
     @EnvironmentObject private var audioOptions: AudioOptions
     @State private var showingAudio = false
     @State private var serverOnline: Bool?
+    @State private var showsChangeUserConfirmation = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Профіль") {
                     Label(authentication.displayName ?? "Активний профіль", systemImage: "person.crop.circle")
-                    Button("Змінити користувача на цьому iPhone", role: .destructive) { authentication.forgetDevice() }
+                    Button("Змінити профіль на цьому iPhone", role: .destructive) { showsChangeUserConfirmation = true }
                 }
                 Section("Голос") {
                     Button { showingAudio = true } label: { LabeledContent("Обробка мікрофона", value: audioOptions.voiceProcessingModeLabel) }
-                    LabeledContent("Voice status", value: "Спільний LiveKit шлях")
+                    LabeledContent("Стан голосу", value: "Готовий до запуску")
                 }
-                Section("Memory та приватність") {
+                Section("Пам’ять і приватність") {
                     Label("Memory V2 увімкнено", systemImage: "brain.head.profile")
-                    Text("Orbit використовує релевантну пам’ять за правилами доступу. Приватні health/financial/legal факти не стають спільними автоматично.")
+                    Text("Orbit використовує релевантну пам’ять за правилами доступу. Медичні, фінансові та юридичні дані не стають спільними автоматично.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Стан") {
                     LabeledContent("Сервер", value: serverOnline == true ? "Доступний" : serverOnline == false ? "Недоступний" : "Перевірка…")
                     LabeledContent("Telegram", value: "Керується сервером")
-                    LabeledContent("Build", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+                    LabeledContent("Версія / збірка", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"))")
                 }
-                Section("Tools та інтеграції") {
-                    NavigationLink { OrbitToolsView() } label: { Label("Tools / Actions", systemImage: "wrench.and.screwdriver") }
+                Section("Інструменти та інтеграції") {
+                    NavigationLink { OrbitToolsView() } label: { Label("Інструменти", systemImage: "wrench.and.screwdriver") }
                 }
-                Section("Про Orbit") { Text("Main Orbit — сімейний AI control center. Orbit Mini залишається окремим hands-free клієнтом.").font(.footnote).foregroundStyle(.secondary) }
+                Section("Про Orbit") { Text("Main Orbit — сімейний AI-помічник. Orbit Mini залишається окремим клієнтом для голосу без рук.").font(.footnote).foregroundStyle(.secondary) }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("Settings")
+            .navigationTitle("Налаштування")
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingAudio) { AudioOptionsSheet() }
             .task { await checkServer() }
+            .confirmationDialog("Змінити профіль на цьому iPhone?", isPresented: $showsChangeUserConfirmation) {
+                Button("Змінити профіль", role: .destructive) { authentication.forgetDevice() }
+                Button("Скасувати", role: .cancel) {}
+            } message: {
+                Text("Поточний профіль буде від’єднано. Для повторної активації знадобиться новий одноразовий код.")
+            }
         }
     }
     private func checkServer() async {

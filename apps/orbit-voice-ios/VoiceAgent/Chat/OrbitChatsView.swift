@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct OrbitChatsView: View {
     @EnvironmentObject private var authentication: OrbitAuthentication
@@ -7,7 +8,7 @@ struct OrbitChatsView: View {
     @State private var selectedChat: OrbitConversation?
     @State private var isLoading = true
     @State private var error: Error?
-    @State private var showsChangeUserConfirmation = false
+    @State private var familyProfiles: [OrbitFamilyProfile] = []
 
     var body: some View {
         NavigationStack {
@@ -38,14 +39,21 @@ struct OrbitChatsView: View {
                 }
             }
             .navigationTitle("Чати")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if let profile {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            Button(role: .destructive) {
-                                showsChangeUserConfirmation = true
-                            } label: {
-                                Label("Змінити користувача на цьому iPhone", systemImage: "person.crop.circle.badge.xmark")
+                            Label("Активний профіль", systemImage: "checkmark.circle")
+                            if !familyProfiles.isEmpty {
+                                Section("Профілі родини") {
+                                    ForEach(familyProfiles) { familyProfile in
+                                        Label(
+                                            familyProfile.displayName + (familyProfile.personId == profile.personId ? " · активний" : ""),
+                                            systemImage: familyProfile.personId == profile.personId ? "checkmark" : "person"
+                                        )
+                                    }
+                                }
                             }
                         } label: {
                             HStack(spacing: 4) {
@@ -67,17 +75,6 @@ struct OrbitChatsView: View {
             } message: {
                 Text(error?.localizedDescription ?? "Спробуй ще раз.")
             }
-            .confirmationDialog(
-                "Змінити користувача?",
-                isPresented: $showsChangeUserConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("Змінити користувача", role: .destructive) {
-                    authentication.forgetDevice()
-                }
-            } message: {
-                Text("Orbit попросить новий одноразовий код. Історія чатів на сервері не видаляється.")
-            }
         }
     }
 
@@ -88,6 +85,7 @@ struct OrbitChatsView: View {
             let response = try await OrbitChatAPI.shared.chats()
             profile = response.profile
             chats = response.chats
+            familyProfiles = (try? await MainProductAPI.shared.familyProfiles()) ?? []
         } catch {
             self.error = error
         }
@@ -140,6 +138,7 @@ private struct OrbitConversationView: View {
         }
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .task { await loadMessages() }
         .alert("Orbit тимчасово недоступний", isPresented: .constant(error != nil)) {
             Button("Гаразд") { error = nil }
@@ -178,10 +177,10 @@ private struct MessageBubble: View {
     var body: some View {
         HStack {
             if message.senderKind == "person" { Spacer(minLength: 52) }
-            markdownText(message.content)
-                .font(.body)
-                .foregroundStyle(message.senderKind == "person" ? .white : .primary)
-                .textSelection(.enabled)
+            SelectableMarkdownText(
+                content: message.content,
+                foregroundColor: message.senderKind == "person" ? .white : .label
+            )
                 .contextMenu {
                     #if os(iOS)
                     Button { UIPasteboard.general.string = message.content } label: { Label("Копіювати", systemImage: "doc.on.doc") }
@@ -197,10 +196,42 @@ private struct MessageBubble: View {
         .padding(.horizontal)
     }
 
-    private func markdownText(_ content: String) -> Text {
-        if let attributed = try? AttributedString(markdown: content, options: .init(interpretedSyntax: .full)) {
-            return Text(attributed)
+}
+
+private struct SelectableMarkdownText: UIViewRepresentable {
+    let content: String
+    let foregroundColor: UIColor
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.dataDetectorTypes = [.link]
+        view.adjustsFontForContentSizeCategory = true
+        view.font = UIFont.preferredFont(forTextStyle: .body)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        let attributed: NSAttributedString
+        if let markdown = try? AttributedString(markdown: content, options: .init(interpretedSyntax: .full)) {
+            attributed = NSAttributedString(markdown)
+        } else {
+            attributed = NSAttributedString(string: content)
         }
-        return Text(content)
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        mutable.addAttribute(.foregroundColor, value: foregroundColor, range: NSRange(location: 0, length: mutable.length))
+        mutable.addAttribute(.font, value: UIFont.preferredFont(forTextStyle: .body), range: NSRange(location: 0, length: mutable.length))
+        view.attributedText = mutable
+        view.invalidateIntrinsicContentSize()
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? 300
+        return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
     }
 }
