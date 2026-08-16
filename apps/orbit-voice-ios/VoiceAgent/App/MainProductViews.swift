@@ -176,27 +176,7 @@ struct OrbitCalendarView: View {
                 if events.isEmpty {
                     ContentUnavailableView("Календар порожній", systemImage: "calendar", description: Text("Додайте першу сімейну подію."))
                 } else {
-                    ForEach(events) { event in
-                        Button { editingEvent = event; showingEditor = true } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack {
-                                    Text(event.title)
-                                        .font(.headline)
-                                        .foregroundStyle(.primary)
-                                    Spacer()
-                                    Text(event.startsAt, style: .date).font(.caption).foregroundStyle(.secondary)
-                                }
-                                Text(event.startsAt, style: .time).font(.subheadline).foregroundStyle(.secondary)
-                                if !event.notes.isEmpty { Text(event.notes).font(.footnote).foregroundStyle(.secondary).lineLimit(2) }
-                                Label(event.sourceType == "external" ? "Зовнішній календар" : "Сімейний Orbit", systemImage: "calendar.badge.checkmark")
-                                    .font(.caption2).foregroundStyle(.tertiary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) { deleteCandidate = event } label: { Label("Видалити", systemImage: "trash") }
-                        }
-                    }
+                    ForEach(events) { event in calendarRow(event) }
                 }
             }
             .listStyle(.insetGrouped)
@@ -223,6 +203,31 @@ struct OrbitCalendarView: View {
     }
 
     private func load() async { do { events = try await MainProductAPI.shared.calendarEvents() } catch let caught { error = caught } }
+
+    private func calendarRow(_ event: OrbitCalendarEvent) -> some View {
+        Button { editingEvent = event; showingEditor = true } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text(event.title).font(.headline).foregroundStyle(.primary)
+                    Spacer()
+                    Text(event.startsAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                }
+                Text(event.startsAt, style: .time).font(.subheadline).foregroundStyle(.secondary)
+                if !event.notes.isEmpty {
+                    Text(event.notes).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Label(event.sourceType == "external" ? "Зовнішній календар" : "Сімейний Orbit", systemImage: "calendar.badge.checkmark")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) { deleteCandidate = event } label: {
+                Label("Видалити", systemImage: "trash")
+            }
+        }
+    }
+
     private func save(_ event: OrbitCalendarEvent?) async {
         do {
             if let event { let updated = try await MainProductAPI.shared.updateCalendarEvent(event); replace(updated) }
