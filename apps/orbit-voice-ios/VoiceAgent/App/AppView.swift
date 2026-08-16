@@ -6,6 +6,7 @@ struct AppView: View {
     @EnvironmentObject private var localMedia: LocalMedia
     @FocusState private var keyboardFocus: Bool
     @Namespace private var namespace
+    @AppStorage("orbit.appearance") private var appearance = "system"
 
     var body: some View {
         TabView {
@@ -21,6 +22,15 @@ struct AppView: View {
                 .tabItem { Label("Налаштування", systemImage: "gearshape") }
         }
         .environment(\.namespace, namespace)
+        .preferredColorScheme(preferredColorScheme)
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        switch appearance {
+        case "light": .light
+        case "dark": .dark
+        default: nil
+        }
     }
 
     private func voice() -> some View {

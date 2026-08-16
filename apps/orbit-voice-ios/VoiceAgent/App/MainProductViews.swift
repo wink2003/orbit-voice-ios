@@ -330,6 +330,9 @@ struct OrbitSettingsView: View {
     @State private var serverOnline: Bool?
     @State private var showsChangeUserConfirmation = false
     @AppStorage("orbit.chat.showTimestamps") private var showChatTimestamps = false
+    @AppStorage("orbit.chat.compact") private var compactChat = false
+    @AppStorage("orbit.chat.haptics") private var chatHaptics = true
+    @AppStorage("orbit.appearance") private var appearance = "system"
 
     var body: some View {
         NavigationStack {
@@ -344,8 +347,17 @@ struct OrbitSettingsView: View {
                 }
                 Section("Чат") {
                     Toggle("Показувати час повідомлень", isOn: $showChatTimestamps)
-                    Text("Час відображається лише у ваших локальних чатах на цьому iPhone.")
+                    Toggle("Компактний вигляд", isOn: $compactChat)
+                    Toggle("Легкий відгук під час надсилання", isOn: $chatHaptics)
+                    Text("Ці параметри діють лише на цьому iPhone.")
                         .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("Вигляд") {
+                    Picker("Тема", selection: $appearance) {
+                        Text("Системна").tag("system")
+                        Text("Світла").tag("light")
+                        Text("Темна").tag("dark")
+                    }
                 }
                 Section("Пам’ять і приватність") {
                     Label("Memory V2 увімкнено", systemImage: "brain.head.profile")

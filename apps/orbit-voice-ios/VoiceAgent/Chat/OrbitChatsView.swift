@@ -14,23 +14,43 @@ struct OrbitChatsView: View {
             Group {
                 if isLoading {
                     ProgressView("Завантажую чати…")
+                } else if chats.isEmpty {
+                    ContentUnavailableView {
+                        Label("Чатів ще немає", systemImage: "bubble.left.and.bubble.right")
+                    } description: {
+                        Text("Ваші особисті та родинні розмови з Orbit з’являться тут.")
+                    } actions: {
+                        Button("Оновити") { Task { await load() } }
+                    }
                 } else {
                     List(chats) { chat in
                         Button { selectedChat = chat } label: {
-                            VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 12) {
+                                Image(systemName: chat.kind == "family" ? "person.3.fill" : "sparkles")
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+                                    .frame(width: 38, height: 38)
+                                    .background(chat.kind == "family" ? Color.teal : Color.indigo, in: Circle())
+                                VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Image(systemName: chat.kind == "family" ? "person.3.fill" : "sparkles")
-                                        .foregroundStyle(chat.kind == "family" ? .teal : .indigo)
                                     Text(chat.title).font(.headline)
                                     Spacer()
-                                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                                    if let updatedAt = chat.updatedAt {
+                                        Text(updatedAt, style: .relative)
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                    }
                                 }
-                                Text(chat.lastMessage ?? chat.subtitle)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
+                                    Text(chat.lastMessage ?? chat.subtitle)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
                             }
-                            .padding(.vertical, 5)
+                            .padding(.vertical, 3)
                         }
                         .buttonStyle(.plain)
                     }
@@ -107,12 +127,32 @@ private struct OrbitConversationView: View {
     @State private var jumpToLatestRequest = 0
     @State private var didInitialLoad = false
     @State private var failedMessageID: String?
+    @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 10) {
+                        if messages.isEmpty && !isSending {
+                            VStack(alignment: .leading, spacing: 14) {
+                                Label("Чим допомогти?", systemImage: "sparkles")
+                                    .font(.title3.weight(.semibold))
+                                Text("Поставте запитання або оберіть швидкий початок.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                HStack(spacing: 8) {
+                                    quickPrompt("Спланувати мій день")
+                                    quickPrompt("Що ти пам’ятаєш?")
+                                }
+                                quickPrompt("Написати родині", fullWidth: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(20)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .padding(.horizontal)
+                            .padding(.top, 24)
+                        }
                         ForEach(messages) { message in
                             MessageBubble(message: message, deliveryFailed: failedMessageID == message.id)
                                 .id(message.id)
@@ -210,6 +250,22 @@ private struct OrbitConversationView: View {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
     }
 
+    @ViewBuilder
+    private func quickPrompt(_ title: String, fullWidth: Bool = false) -> some View {
+        Button {
+            draft = title
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: fullWidth ? .infinity : nil, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     private func scrollToLatest(using proxy: ScrollViewProxy, animated: Bool) {
         guard !messages.isEmpty || isSending else { return }
         Task { @MainActor in
@@ -244,6 +300,9 @@ private struct OrbitConversationView: View {
         draft = ""
         failedMessageID = nil
         messages.append(localMessage)
+        if hapticsEnabled {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
         isSending = true
         Task { @MainActor in
             defer { isSending = false }
@@ -278,6 +337,7 @@ private struct MessageBubble: View {
     let message: OrbitChatMessage
     let deliveryFailed: Bool
     @AppStorage("orbit.chat.showTimestamps") private var showTimestamp = false
+    @AppStorage("orbit.chat.compact") private var compactMessages = false
 
     var body: some View {
         HStack {
@@ -301,7 +361,7 @@ private struct MessageBubble: View {
                 }
             }
             .padding(.horizontal, 13)
-            .padding(.vertical, 10)
+            .padding(.vertical, compactMessages ? 7 : 10)
                 .background(message.senderKind == "person" ? Color.indigo : Color(uiColor: .secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             if message.senderKind == "orbit" { Spacer(minLength: 52) }
