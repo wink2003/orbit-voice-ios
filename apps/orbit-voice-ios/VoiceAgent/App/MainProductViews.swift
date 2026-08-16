@@ -78,7 +78,7 @@ struct FamilyHubView: View {
             async let loadedMessages = MainProductAPI.shared.familyMessages(limit: 20)
             profiles = try await loadedProfiles
             messages = try await loadedMessages
-        } catch { error = error }
+        } catch let caught { error = caught }
     }
 
     private func initials(_ name: String) -> String {
@@ -158,7 +158,7 @@ struct FamilyMessengerView: View {
         Task {
             defer { isSending = false }
             do { messages.append(try await MainProductAPI.shared.sendFamilyMessage(text)) }
-            catch { draft = text; error = error }
+            catch let caught { draft = text; error = caught }
         }
     }
 }
@@ -180,7 +180,9 @@ struct OrbitCalendarView: View {
                         Button { editingEvent = event; showingEditor = true } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack {
-                                    Text(event.title).font(.headline).foregroundStyle(.primary)
+                                    Text(event.title)
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
                                     Spacer()
                                     Text(event.startsAt, style: .date).font(.caption).foregroundStyle(.secondary)
                                 }
@@ -220,16 +222,16 @@ struct OrbitCalendarView: View {
         }
     }
 
-    private func load() async { do { events = try await MainProductAPI.shared.calendarEvents() } catch { error = error } }
+    private func load() async { do { events = try await MainProductAPI.shared.calendarEvents() } catch let caught { error = caught } }
     private func save(_ event: OrbitCalendarEvent?) async {
         do {
             if let event { let updated = try await MainProductAPI.shared.updateCalendarEvent(event); replace(updated) }
-        } catch { error = error }
+        } catch let caught { error = caught }
         if event == nil { await load() }
     }
     private func delete(_ event: OrbitCalendarEvent) async {
         do { try await MainProductAPI.shared.deleteCalendarEvent(event); events.removeAll { $0.id == event.id } }
-        catch { error = error }
+        catch let caught { error = caught }
     }
     private func replace(_ event: OrbitCalendarEvent) { if let index = events.firstIndex(where: { $0.id == event.id }) { events[index] = event } else { events.append(event) } }
 }
