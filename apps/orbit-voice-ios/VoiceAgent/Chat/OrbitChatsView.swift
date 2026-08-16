@@ -106,6 +106,7 @@ private struct OrbitConversationView: View {
     @State private var showLatestButton = false
     @State private var jumpToLatestRequest = 0
     @State private var didInitialLoad = false
+    @State private var failedMessageID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -113,7 +114,7 @@ private struct OrbitConversationView: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         ForEach(messages) { message in
-                            MessageBubble(message: message)
+                            MessageBubble(message: message, deliveryFailed: failedMessageID == message.id)
                                 .id(message.id)
                         }
                         if isSending {
@@ -229,46 +230,92 @@ private struct OrbitConversationView: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isSending else { return }
+        let clientMessageID = UUID().uuidString.lowercased()
+        let localMessageID = "local-\(clientMessageID)"
+        let localMessage = OrbitChatMessage(
+            id: localMessageID,
+            conversationId: conversation.id,
+            senderKind: "person",
+            senderPersonId: nil,
+            content: text,
+            createdAt: .now,
+            clientMessageId: clientMessageID
+        )
         draft = ""
+        failedMessageID = nil
+        messages.append(localMessage)
         isSending = true
-        Task {
+        Task { @MainActor in
             defer { isSending = false }
             do {
-                let response = try await OrbitChatAPI.shared.send(text, to: conversation)
-                messages.append(response.userMessage)
-                messages.append(response.assistantMessage)
+                let response = try await OrbitChatAPI.shared.send(text, to: conversation, clientMessageId: clientMessageID)
+                if let index = messages.firstIndex(where: { $0.id == localMessageID }) {
+                    messages[index] = response.userMessage
+                }
+                if !messages.contains(where: { $0.id == response.assistantMessage.id }) {
+                    messages.append(response.assistantMessage)
+                }
             } catch {
-                draft = text
-                self.error = error
+                if !(await reconcile(clientMessageID: clientMessageID)) {
+                    failedMessageID = localMessageID
+                    draft = text
+                    self.error = error
+                }
             }
         }
+    }
+
+    private func reconcile(clientMessageID: String) async -> Bool {
+        guard let remoteMessages = try? await OrbitChatAPI.shared.messages(in: conversation),
+              remoteMessages.contains(where: { $0.clientMessageId == clientMessageID }) else { return false }
+        messages = remoteMessages
+        failedMessageID = nil
+        return true
     }
 }
 
 private struct MessageBubble: View {
     let message: OrbitChatMessage
+    let deliveryFailed: Bool
+    @AppStorage("orbit.chat.showTimestamps") private var showTimestamp = false
 
     var body: some View {
         HStack {
             if message.senderKind == "person" { Spacer(minLength: 52) }
-            SelectableMarkdownText(
-                content: message.content,
-                foregroundColor: message.senderKind == "person" ? .white : .label
-            )
-                .equatable()
-                .contextMenu {
-                    #if os(iOS)
-                    Button { UIPasteboard.general.string = message.content } label: { Label("Копіювати", systemImage: "doc.on.doc") }
-                    #endif
-                    ShareLink(item: message.content) { Label("Поділитися", systemImage: "square.and.arrow.up") }
+            VStack(alignment: message.senderKind == "person" ? .trailing : .leading, spacing: 4) {
+                SelectableMarkdownText(
+                    content: message.content,
+                    foregroundColor: message.senderKind == "person" ? .white : .label
+                )
+                    .equatable()
+                    .contextMenu {
+                        #if os(iOS)
+                        Button { UIPasteboard.general.string = message.content } label: { Label("Копіювати", systemImage: "doc.on.doc") }
+                        #endif
+                        ShareLink(item: message.content) { Label("Поділитися", systemImage: "square.and.arrow.up") }
+                    }
+                if showTimestamp {
+                    Text(message.createdAt, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(message.senderKind == "person" ? .white.opacity(0.75) : .secondary)
                 }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 10)
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
                 .background(message.senderKind == "person" ? Color.indigo : Color(uiColor: .secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             if message.senderKind == "orbit" { Spacer(minLength: 52) }
         }
         .padding(.horizontal)
+        .overlay(alignment: .bottomTrailing) {
+            if deliveryFailed {
+                Label("Не підтверджено", systemImage: "exclamationmark.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .padding(.trailing, 20)
+                    .offset(y: 18)
+            }
+        }
     }
 
 }

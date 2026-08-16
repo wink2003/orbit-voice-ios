@@ -23,6 +23,7 @@ struct OrbitChatMessage: Decodable, Identifiable {
     let senderPersonId: String?
     let content: String
     let createdAt: Date
+    let clientMessageId: String?
 }
 
 private struct ChatsResponse: Decodable {
@@ -73,10 +74,10 @@ final class OrbitChatAPI {
         return response.messages
     }
 
-    func send(_ text: String, to conversation: OrbitConversation) async throws -> SendMessageResponse {
+    func send(_ text: String, to conversation: OrbitConversation, clientMessageId: String = UUID().uuidString.lowercased()) async throws -> SendMessageResponse {
         let body: [String: String] = [
             "content": text,
-            "clientMessageId": UUID().uuidString.lowercased(),
+            "clientMessageId": clientMessageId,
         ]
         return try await request(path: "/api/chats/\(conversation.id)/messages", method: "POST", body: body)
     }

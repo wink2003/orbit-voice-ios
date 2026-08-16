@@ -329,6 +329,7 @@ struct OrbitSettingsView: View {
     @State private var showingAudio = false
     @State private var serverOnline: Bool?
     @State private var showsChangeUserConfirmation = false
+    @AppStorage("orbit.chat.showTimestamps") private var showChatTimestamps = false
 
     var body: some View {
         NavigationStack {
@@ -340,6 +341,11 @@ struct OrbitSettingsView: View {
                 Section("Голос") {
                     Button { showingAudio = true } label: { LabeledContent("Обробка мікрофона", value: audioOptions.voiceProcessingModeLabel) }
                     LabeledContent("Стан голосу", value: "Готовий до запуску")
+                }
+                Section("Чат") {
+                    Toggle("Показувати час повідомлень", isOn: $showChatTimestamps)
+                    Text("Час відображається лише у ваших локальних чатах на цьому iPhone.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Пам’ять і приватність") {
                     Label("Memory V2 увімкнено", systemImage: "brain.head.profile")
