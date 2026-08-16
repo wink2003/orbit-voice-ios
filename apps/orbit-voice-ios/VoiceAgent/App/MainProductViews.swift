@@ -192,10 +192,16 @@ struct OrbitCalendarView: View {
             .onChange(of: showingEditor) { _, isPresented in
                 if !isPresented { Task { await load() } }
             }
-            .confirmationDialog("Видалити подію?", item: $deleteCandidate) { event in
-                Button("Видалити", role: .destructive) { Task { await delete(event) } }
+            .confirmationDialog("Видалити подію?", isPresented: Binding(
+                get: { deleteCandidate != nil },
+                set: { if !$0 { deleteCandidate = nil } }
+            )) {
+                Button("Видалити", role: .destructive) {
+                    if let event = deleteCandidate { Task { await delete(event) } }
+                    deleteCandidate = nil
+                }
                 Button("Скасувати", role: .cancel) {}
-            } message: { _ in Text("Подію буде приховано з сімейного календаря.") }
+            } message: { Text("Подію буде приховано з сімейного календаря.") }
             .alert("Помилка календаря", isPresented: .constant(error != nil)) {
                 Button("Гаразд") { error = nil }
             } message: { Text(error?.localizedDescription ?? "Спробуйте ще раз.") }
