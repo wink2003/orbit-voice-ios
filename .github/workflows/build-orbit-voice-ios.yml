@@ -19,6 +19,15 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Normalize Main Orbit icon
+        run: |
+          set -euo pipefail
+          icon_dir="apps/orbit-voice-ios/VoiceAgent/Assets.xcassets/AppIcon.appiconset"
+          /usr/bin/sips -s format png -z 1024 1024 \
+            "$icon_dir/MainOrbitIcon.jpg" \
+            --out "$icon_dir/App_store_1024_1x.png"
+          rm "$icon_dir/MainOrbitIcon.jpg"
+
       - name: Build unsigned iOS application
         run: |
           set -uo pipefail
