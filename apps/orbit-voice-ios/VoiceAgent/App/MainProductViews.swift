@@ -323,6 +323,286 @@ struct OrbitToolsView: View {
     }
 }
 
+struct MemoryCenterView: View {
+    @State private var response: OrbitMemoryCenterResponse?
+    @State private var query = ""
+    @State private var isLoading = true
+    @State private var error: Error?
+    @State private var correctingAssertion: OrbitMemoryAssertion?
+    @AppStorage("orbit.memory.showHistory") private var showHistory = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isLoading && response == nil {
+                    ProgressView("Завантажую пам’ять…")
+                } else if let error, response == nil {
+                    ContentUnavailableView {
+                        Label("Пам’ять недоступна", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error.localizedDescription)
+                    } actions: {
+                        Button("Повторити") { Task { await load() } }
+                    }
+                } else if isEmpty {
+                    ContentUnavailableView {
+                        Label(query.isEmpty ? "Пам’яті ще немає" : "Нічого не знайдено", systemImage: query.isEmpty ? "brain.head.profile" : "magnifyingglass")
+                    } description: {
+                        Text(query.isEmpty ? "Коли Orbit збереже важливу інформацію, вона з’явиться тут." : "Спробуйте інше слово або вимкніть фільтр історії.")
+                    }
+                } else {
+                    List {
+                        if let response {
+                            if !response.assertions.isEmpty {
+                                Section("Факти та вподобання") {
+                                    ForEach(response.assertions) { assertion in
+                                        NavigationLink {
+                                            MemoryAssertionDetailView(assertion: assertion) { correctingAssertion = assertion }
+                                        } label: {
+                                            MemoryAssertionRow(assertion: assertion)
+                                        }
+                                    }
+                                }
+                            }
+                            if !response.relationships.isEmpty {
+                                Section("Зв’язки") {
+                                    ForEach(response.relationships) { relationship in
+                                        MemoryRelationshipRow(relationship: relationship)
+                                    }
+                                }
+                            }
+                            if !response.events.isEmpty {
+                                Section("Події") {
+                                    ForEach(response.events) { event in
+                                        MemoryEventRow(event: event)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                }
+            }
+            .navigationTitle("Центр пам’яті")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Знайти в пам’яті")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Toggle("Показувати історію", isOn: $showHistory)
+                        Button { Task { await load() } } label: { Label("Оновити", systemImage: "arrow.clockwise") }
+                    } label: {
+                        Image(systemName: showHistory ? "clock.arrow.circlepath" : "line.3.horizontal.decrease.circle")
+                    }
+                }
+            }
+            .environment(\.locale, Locale(identifier: "uk_UA"))
+            .task { await load() }
+            .refreshable { await load() }
+            .onSubmit(of: .search) { Task { await load() } }
+            .onChange(of: showHistory) { _, _ in Task { await load() } }
+            .onChange(of: query) { _, value in
+                if value.isEmpty { Task { await load() } }
+            }
+            .sheet(item: $correctingAssertion) { assertion in
+                MemoryCorrectionSheet(assertion: assertion) {
+                    try await MainProductAPI.shared.correctMemoryAssertion(id: assertion.id, correction: $0)
+                    await load()
+                }
+            }
+            .alert("Помилка пам’яті", isPresented: .constant(error != nil && response != nil)) {
+                Button("Гаразд") { error = nil }
+            } message: {
+                Text(error?.localizedDescription ?? "Спробуйте ще раз.")
+            }
+        }
+    }
+
+    private var isEmpty: Bool {
+        guard let response else { return true }
+        return response.assertions.isEmpty && response.relationships.isEmpty && response.events.isEmpty
+    }
+
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            response = try await MainProductAPI.shared.memoryCenter(query: query, includeHistory: showHistory)
+            error = nil
+        } catch {
+            self.error = error
+        }
+    }
+}
+
+private struct MemoryAssertionRow: View {
+    let assertion: OrbitMemoryAssertion
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: assertion.status == "active" ? "brain.head.profile" : "clock.arrow.circlepath")
+                .foregroundStyle(assertion.status == "active" ? .indigo : .secondary)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(assertion.subjectName).font(.subheadline.weight(.semibold))
+                Text(assertion.valueText).font(.body).lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(memoryPredicateLabel(assertion.predicate))
+                    Text("·")
+                    Text(memoryStatusLabel(assertion.status))
+                }
+                .font(.caption)
+                .foregroundStyle(assertion.status == "active" ? .secondary : .orange)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct MemoryAssertionDetailView: View {
+    let assertion: OrbitMemoryAssertion
+    let onCorrect: () -> Void
+
+    var body: some View {
+        List {
+            Section {
+                Text(assertion.valueText)
+                    .font(.title3.weight(.medium))
+                    .textSelection(.enabled)
+            } header: {
+                Text(memoryPredicateLabel(assertion.predicate))
+            }
+            Section("Стан") {
+                LabeledContent("Статус", value: memoryStatusLabel(assertion.status))
+                LabeledContent("Кому належить", value: assertion.subjectName)
+                if let observedAt = assertion.observedAt { LabeledContent("Помічено", value: observedAt.formatted(date: .abbreviated, time: .shortened)) }
+                if let validFrom = assertion.validFrom { LabeledContent("Дійсне від", value: validFrom.formatted(date: .abbreviated, time: .omitted)) }
+                if let validTo = assertion.validTo { LabeledContent("Дійсне до", value: validTo.formatted(date: .abbreviated, time: .omitted)) }
+            }
+            Section("Походження") {
+                LabeledContent("Джерело", value: memorySourceLabel(assertion.sourceType))
+                if let timestamp = assertion.sourceTimestamp { LabeledContent("Дата джерела", value: timestamp.formatted(date: .abbreviated, time: .shortened)) }
+                Text("Orbit зберігає історію змін, щоб старі відомості не ставали поточними непомітно.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            if assertion.canCorrect {
+                Section {
+                    Button { onCorrect() } label: {
+                        Label("Виправити цю інформацію", systemImage: "pencil")
+                    }
+                } footer: {
+                    Text("Нова відповідь замінить цю як актуальну, а попередня залишиться в історії.")
+                }
+            }
+        }
+        .navigationTitle("Пам’ять")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct MemoryCorrectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let assertion: OrbitMemoryAssertion
+    let onSave: (String) async throws -> Void
+    @State private var correction = ""
+    @State private var isSaving = false
+    @State private var error: Error?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Поточна інформація") {
+                    Text(assertion.valueText).foregroundStyle(.secondary)
+                }
+                Section("Правильна інформація") {
+                    TextField("Введіть нове значення", text: $correction, axis: .vertical)
+                        .lineLimit(2 ... 5)
+                }
+                Section {
+                    Text("Orbit збереже нове значення як актуальне, а попереднє — як історію.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Виправити пам’ять")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Зберегти") { Task { await save() } }
+                        .disabled(correction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                }
+            }
+            .alert("Не вдалося зберегти", isPresented: .constant(error != nil)) {
+                Button("Гаразд") { error = nil }
+            } message: { Text(error?.localizedDescription ?? "Спробуйте ще раз.") }
+        }
+    }
+
+    private func save() async {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            try await onSave(correction.trimmingCharacters(in: .whitespacesAndNewlines))
+            dismiss()
+        } catch { self.error = error }
+    }
+}
+
+private struct MemoryRelationshipRow: View {
+    let relationship: OrbitMemoryRelationship
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(relationship.subjectName) · \(relationship.relationType)").font(.subheadline.weight(.semibold))
+                Text(relationship.objectName).foregroundStyle(.secondary)
+            }
+        } icon: { Image(systemName: "arrow.triangle.branch").foregroundStyle(.teal) }
+    }
+}
+
+private struct MemoryEventRow: View {
+    let event: OrbitMemoryEvent
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(event.summary).font(.subheadline.weight(.semibold)).lineLimit(3)
+                if let date = event.occurredFrom { Text(date, style: .date).font(.caption).foregroundStyle(.secondary) }
+            }
+        } icon: { Image(systemName: "calendar.badge.clock").foregroundStyle(.orange) }
+    }
+}
+
+private func memoryPredicateLabel(_ predicate: String) -> String {
+    switch predicate {
+    case "preferred_drink", "preference": "Уподобання"
+    case "grade", "school_class": "Освіта"
+    case "job", "employer": "Робота"
+    case "address", "home_address": "Дім"
+    case "vehicle": "Автомобіль"
+    default: predicate.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
+private func memoryStatusLabel(_ status: String) -> String {
+    switch status {
+    case "active": "Актуальне"
+    case "superseded": "Замінено новішою інформацією"
+    case "retracted": "Відкликано"
+    case "disputed": "Потребує уточнення"
+    default: "Історичне"
+    }
+}
+
+private func memorySourceLabel(_ source: String?) -> String {
+    switch source {
+    case "user_chat_message": "Розмова з Orbit"
+    case "manual_confirmation": "Ручне уточнення"
+    case "chatgpt_export": "Імпорт ChatGPT"
+    case "tool/runtime_verified": "Підтверджена дія"
+    default: "Orbit"
+    }
+}
+
 struct OrbitSettingsView: View {
     @EnvironmentObject private var authentication: OrbitAuthentication
     @EnvironmentObject private var audioOptions: AudioOptions
@@ -360,7 +640,10 @@ struct OrbitSettingsView: View {
                     }
                 }
                 Section("Пам’ять і приватність") {
-                    Label("Memory V2 увімкнено", systemImage: "brain.head.profile")
+                    NavigationLink { MemoryCenterView() } label: {
+                        Label("Центр пам’яті", systemImage: "brain.head.profile")
+                    }
+                    Label("Пам’ять Orbit — активна", systemImage: "checkmark.circle")
                     Text("Orbit використовує релевантну пам’ять за правилами доступу. Медичні, фінансові та юридичні дані не стають спільними автоматично.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }

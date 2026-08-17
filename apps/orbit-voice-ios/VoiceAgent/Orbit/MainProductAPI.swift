@@ -31,6 +31,65 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     let updatedAt: Date
 }
 
+struct OrbitMemoryAssertion: Decodable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let subjectName: String
+    let predicate: String
+    let valueText: String
+    let valueType: String
+    let status: String
+    let validFrom: Date?
+    let validTo: Date?
+    let observedAt: Date?
+    let recordedAt: Date?
+    let supersedesId: String?
+    let sourceType: String?
+    let sourceTimestamp: Date?
+    let conversationIdentifier: String?
+    let sensitivity: String
+    let confidence: Double
+    let canCorrect: Bool
+}
+
+struct OrbitMemoryRelationship: Decodable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let subjectName: String
+    let relationType: String
+    let objectName: String
+    let status: String
+    let validFrom: Date?
+    let validTo: Date?
+    let sourceType: String?
+    let sourceTimestamp: Date?
+    let sensitivity: String
+}
+
+struct OrbitMemoryEvent: Decodable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let eventType: String
+    let summary: String
+    let occurredFrom: Date?
+    let occurredTo: Date?
+    let sourceType: String?
+    let sourceTimestamp: Date?
+    let sensitivity: String
+}
+
+struct OrbitMemoryCenterResponse: Decodable {
+    let assertions: [OrbitMemoryAssertion]
+    let relationships: [OrbitMemoryRelationship]
+    let events: [OrbitMemoryEvent]
+    let profile: OrbitMemoryProfile
+}
+
+struct OrbitMemoryProfile: Decodable {
+    let personId: String
+    let displayName: String
+}
+
 private struct FamilyMessagesResponse: Decodable { let messages: [OrbitFamilyMessage] }
 private struct CalendarResponse: Decodable { let events: [OrbitCalendarEvent] }
 private struct MessageResponse: Decodable { let message: OrbitFamilyMessage }
@@ -91,8 +150,27 @@ final class MainProductAPI {
         _ = try await request(path: "/api/family/calendar/\(event.id)", method: "DELETE", body: nil) as Empty
     }
 
+    func memoryCenter(query: String = "", includeHistory: Bool = false, limit: Int = 50) async throws -> OrbitMemoryCenterResponse {
+        var components = URLComponents(string: "/api/memory")!
+        components.queryItems = [
+            URLQueryItem(name: "history", value: includeHistory ? "true" : "false"),
+            URLQueryItem(name: "limit", value: String(min(max(limit, 1), 80))),
+        ]
+        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            components.queryItems?.append(URLQueryItem(name: "q", value: query))
+        }
+        return try await request(path: components.url!.absoluteString)
+    }
+
+    func correctMemoryAssertion(id: String, correction: String) async throws {
+        let body = try JSONEncoder().encode(MemoryCorrection(correction: correction))
+        let _: MemoryCorrectionResponse = try await request(path: "/api/memory/assertions/\(id)/correct", method: "POST", body: body)
+    }
+
     private struct SendFamilyMessage: Encodable { let content: String; let clientMessageId: String }
     private struct CalendarEventPayload: Encodable { let title: String; let notes: String; let startsAt: Date; let endsAt: Date; let allDay: Bool }
+    private struct MemoryCorrection: Encodable { let correction: String }
+    private struct MemoryCorrectionResponse: Decodable { let idempotent: Bool; let confirmed: Bool }
 
     private func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil) async throws -> T {
         guard let token = KeychainStore.readDeviceToken() else { throw OrbitChatAPIError.notPaired }
