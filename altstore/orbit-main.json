@@ -1,24 +1,25 @@
 {
-  "name": "Orbit Main",
-  "subtitle": "Full family AI control center",
-  "description": "Main Orbit for family AI chat, realtime voice, profiles, messenger, calendar, actions and integrations.",
+  "name": "Orbit Family",
+  "subtitle": "Особистий сімейний AI-помічник",
+  "description": "Офіційне приватне джерело оновлень Orbit для родини Minkovskyi.",
   "website": "https://voice.orbit.opik.net",
-  "identifier": "net.opik.orbit.voice.main.source",
+  "identifier": "net.opik.orbit.altstore",
   "apps": [
     {
-      "name": "Orbit Main",
+      "name": "Orbit",
       "bundleIdentifier": "net.opik.orbit.voice",
       "developerName": "Orbit Family",
-      "iconURL": "https://raw.githubusercontent.com/wink2003/orbit-voice-ios/main/apps/orbit-voice-ios/VoiceAgent/Assets.xcassets/AppIcon.appiconset/MainOrbitIcon.jpg",
-      "subtitle": "Family AI control center",
-      "localizedDescription": "Main Orbit combines family AI chat, realtime voice, memory-aware conversations, profiles, messenger, calendar and confirmed actions.",
+      "iconURL": "https://voice.orbit.opik.net/altstore/orbit-icon.png",
+      "subtitle": "Голосовий сімейний AI-помічник",
+      "localizedDescription": "Orbit — приватний сімейний AI-помічник для чату, голосу, родинних профілів, повідомлень і календаря.",
       "versions": [
         {
           "version": "1.1",
-          "buildVersion": "8",
-          "date": "2026-08-16",
-          "size": 18604311,
-          "downloadURL": "https://github.com/wink2003/orbit-voice-ios/releases/download/orbit-main-1.1-8/Orbit-Voice.ipa",
+          "buildVersion": "16",
+          "date": "2026-08-17",
+          "size": 18845282,
+          "localizedDescription": "Підтвердження WhatsApp: видима картка з адресатом, текстом і безпечними кнопками підтвердити або скасувати.",
+          "downloadURL": "https://voice.orbit.opik.net/altstore/Orbit-Voice-v16.ipa",
           "minOSVersion": "18.0"
         }
       ]
