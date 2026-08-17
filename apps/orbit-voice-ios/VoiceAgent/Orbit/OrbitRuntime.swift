@@ -14,7 +14,7 @@ final class OrbitRuntime: NSObject {
     let audioOptions: AudioOptions
     private var voiceAudioWasActivated = false
 
-    private init() {
+    private override init() {
         authentication = OrbitAuthentication()
 
         let session = Session(
