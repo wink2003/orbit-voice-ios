@@ -159,7 +159,11 @@ final class MainProductAPI {
         if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             components.queryItems?.append(URLQueryItem(name: "q", value: query))
         }
-        return try await request(path: components.url!.absoluteString)
+        do {
+            return try await request(path: components.url!.absoluteString)
+        } catch let OrbitChatAPIError.requestFailed(message) where message == "memory_center_unavailable" {
+            throw OrbitChatAPIError.requestFailed("Не вдалося завантажити пам’ять Orbit. Перевірте з’єднання та повторіть спробу.")
+        }
     }
 
     func correctMemoryAssertion(id: String, correction: String) async throws {
