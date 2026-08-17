@@ -452,7 +452,7 @@ private struct MemoryAssertionRow: View {
                     Text(memoryStatusLabel(assertion.status))
                 }
                 .font(.caption)
-                .foregroundStyle(assertion.status == "active" ? .secondary : .orange)
+                .foregroundStyle(assertion.status == "active" ? Color.secondary : Color.orange)
             }
         }
         .padding(.vertical, 4)
