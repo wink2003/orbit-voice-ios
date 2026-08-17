@@ -9,17 +9,17 @@
       "name": "Orbit",
       "bundleIdentifier": "net.opik.orbit.voice",
       "developerName": "Orbit Family",
-      "iconURL": "https://voice.orbit.opik.net/altstore/orbit-icon.png",
+      "iconURL": "https://voice.orbit.opik.net/altstore/orbit-icon-v18.jpg",
       "subtitle": "Голосовий сімейний AI-помічник",
       "localizedDescription": "Orbit — приватний сімейний AI-помічник для чату, голосу, родинних профілів, повідомлень і календаря.",
       "versions": [
         {
           "version": "1.1",
-          "buildVersion": "17",
-          "date": "2026-08-17",
-          "localizedDescription": "Main Orbit не активує аудіосесію, доки ви самі не запустите голосову розмову.",
-          "downloadURL": "https://voice.orbit.opik.net/altstore/Orbit-Voice-v17.ipa",
-          "size": 18842818,
+          "buildVersion": "18",
+          "date": "2026-08-18",
+          "localizedDescription": "Голосова сесія тепер повністю повертає аудіо іншим застосункам після завершення. Додано чесний статус WhatsApp та історію імпортів памʼяті.",
+          "downloadURL": "https://voice.orbit.opik.net/altstore/Orbit-Voice-v18.ipa",
+          "size": 18896121,
           "minOSVersion": "18.0"
         }
       ]
