@@ -48,7 +48,7 @@ struct StartView: View {
             .foregroundStyle(.fgModerate)
         } else {
         AsyncButton {
-            await session.start()
+            await OrbitRuntime.shared.startVoiceSession()
         } label: {
             HStack {
                 Spacer()

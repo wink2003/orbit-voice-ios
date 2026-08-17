@@ -66,7 +66,7 @@ struct AppView: View {
             ErrorView(error: error) { session.dismissError() }
         }
         if let agentError = session.agent.error {
-            ErrorView(error: agentError) { Task { await session.end() } }
+            ErrorView(error: agentError) { Task { await OrbitRuntime.shared.endVoiceSession() } }
         }
         if let mediaError = localMedia.error {
             ErrorView(error: mediaError) { localMedia.dismissError() }

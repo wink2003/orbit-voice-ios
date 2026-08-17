@@ -7,7 +7,7 @@ struct StartOrbitIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        await OrbitRuntime.shared.session.start()
+        await OrbitRuntime.shared.startVoiceSession()
         return .result()
     }
 }
@@ -19,8 +19,7 @@ struct EndOrbitIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        await OrbitRuntime.shared.session.end()
-        OrbitRuntime.shared.session.restoreMessageHistory([])
+        await OrbitRuntime.shared.endVoiceSession()
         return .result()
     }
 }
