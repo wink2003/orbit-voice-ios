@@ -348,7 +348,7 @@ struct MemoryCenterView: View {
                     ContentUnavailableView {
                         Label(query.isEmpty ? "Пам’яті ще немає" : "Нічого не знайдено", systemImage: query.isEmpty ? "brain.head.profile" : "magnifyingglass")
                     } description: {
-                        Text(query.isEmpty ? "Коли Orbit збереже важливу інформацію, вона з’явиться тут." : "Спробуйте інше слово або вимкніть фільтр історії.")
+                        Text(query.isEmpty ? "Коли Orbit збереже важливу інформацію, вона з’явиться тут." : memorySearchEmptyDescription(showHistory: showHistory))
                     }
                 } else {
                     List {
@@ -475,13 +475,30 @@ private struct MemoryAssertionDetailView: View {
             Section("Стан") {
                 LabeledContent("Статус", value: memoryStatusLabel(assertion.status))
                 LabeledContent("Кому належить", value: assertion.subjectName)
-                if let observedAt = assertion.observedAt { LabeledContent("Помічено", value: observedAt.formatted(date: .abbreviated, time: .shortened)) }
-                if let validFrom = assertion.validFrom { LabeledContent("Дійсне від", value: validFrom.formatted(date: .abbreviated, time: .omitted)) }
-                if let validTo = assertion.validTo { LabeledContent("Дійсне до", value: validTo.formatted(date: .abbreviated, time: .omitted)) }
+                if let observedAt = assertion.observedAt { LabeledContent("Помічено", value: memoryDateTime(observedAt)) }
+                if let validFrom = assertion.validFrom { LabeledContent("Дійсне від", value: memoryDate(validFrom)) }
+                if let validTo = assertion.validTo { LabeledContent("Дійсне до", value: memoryDate(validTo)) }
+            }
+            if assertion.status == "superseded" {
+                Section("Наступна інформація") {
+                    if let successor = assertion.successor {
+                        NavigationLink {
+                            MemorySuccessorDetailView(successor: successor, subjectName: assertion.subjectName, predicate: assertion.predicate)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(successor.valueText).font(.body.weight(.medium))
+                                Text(memoryStatusLabel(successor.status)).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        Text("Новіше значення недоступне")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             Section("Походження") {
                 LabeledContent("Джерело", value: memorySourceLabel(assertion.sourceType))
-                if let timestamp = assertion.sourceTimestamp { LabeledContent("Дата джерела", value: timestamp.formatted(date: .abbreviated, time: .shortened)) }
+                if let timestamp = assertion.sourceTimestamp { LabeledContent("Дата джерела", value: memoryDateTime(timestamp)) }
                 Text("Orbit зберігає історію змін, щоб старі відомості не ставали поточними непомітно.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
@@ -496,6 +513,33 @@ private struct MemoryAssertionDetailView: View {
             }
         }
         .navigationTitle("Пам’ять")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct MemorySuccessorDetailView: View {
+    let successor: OrbitMemorySuccessor
+    let subjectName: String
+    let predicate: String
+
+    var body: some View {
+        List {
+            Section {
+                Text(successor.valueText)
+                    .font(.title3.weight(.medium))
+                    .textSelection(.enabled)
+            } header: {
+                Text(memoryPredicateLabel(predicate))
+            }
+            Section("Стан") {
+                LabeledContent("Статус", value: memoryStatusLabel(successor.status))
+                LabeledContent("Кому належить", value: subjectName)
+                if let observedAt = successor.observedAt { LabeledContent("Помічено", value: memoryDateTime(observedAt)) }
+                if let validFrom = successor.validFrom { LabeledContent("Дійсне від", value: memoryDate(validFrom)) }
+                if let validTo = successor.validTo { LabeledContent("Дійсне до", value: memoryDate(validTo)) }
+            }
+        }
+        .navigationTitle("Наступна інформація")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -570,6 +614,26 @@ private struct MemoryEventRow: View {
             }
         } icon: { Image(systemName: "calendar.badge.clock").foregroundStyle(.orange) }
     }
+}
+
+private func memorySearchEmptyDescription(showHistory: Bool) -> String {
+    showHistory ? "Спробуйте інше слово або сховайте історичні записи." : "Спробуйте інше слово або увімкніть перегляд історії."
+}
+
+private func memoryDateTime(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "uk_UA")
+    formatter.dateStyle = .long
+    formatter.timeStyle = .short
+    return formatter.string(from: date)
+}
+
+private func memoryDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "uk_UA")
+    formatter.dateStyle = .long
+    formatter.timeStyle = .none
+    return formatter.string(from: date)
 }
 
 private func memoryPredicateLabel(_ predicate: String) -> String {

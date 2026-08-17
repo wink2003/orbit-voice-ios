@@ -44,12 +44,22 @@ struct OrbitMemoryAssertion: Decodable, Identifiable, Hashable {
     let observedAt: Date?
     let recordedAt: Date?
     let supersedesId: String?
+    let successor: OrbitMemorySuccessor?
     let sourceType: String?
     let sourceTimestamp: Date?
     let conversationIdentifier: String?
     let sensitivity: String
     let confidence: Double
     let canCorrect: Bool
+}
+
+struct OrbitMemorySuccessor: Decodable, Hashable {
+    let id: String
+    let valueText: String
+    let status: String
+    let validFrom: Date?
+    let validTo: Date?
+    let observedAt: Date?
 }
 
 struct OrbitMemoryRelationship: Decodable, Identifiable, Hashable {
