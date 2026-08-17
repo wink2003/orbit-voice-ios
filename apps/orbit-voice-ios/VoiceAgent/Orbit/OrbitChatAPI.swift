@@ -24,6 +24,16 @@ struct OrbitChatMessage: Decodable, Identifiable {
     let content: String
     let createdAt: Date
     let clientMessageId: String?
+    let actionConfirmation: OrbitActionConfirmation?
+}
+
+struct OrbitActionConfirmation: Decodable, Equatable {
+    let actionId: String
+    let capability: String
+    let status: String
+    let recipient: String
+    let message: String
+    let needsConfirmation: Bool
 }
 
 private struct ChatsResponse: Decodable {

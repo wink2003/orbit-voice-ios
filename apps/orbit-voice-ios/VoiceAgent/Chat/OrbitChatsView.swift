@@ -154,7 +154,13 @@ private struct OrbitConversationView: View {
                             .padding(.top, 24)
                         }
                         ForEach(messages) { message in
-                            MessageBubble(message: message, deliveryFailed: failedMessageID == message.id)
+                            MessageBubble(
+                                message: message,
+                                deliveryFailed: failedMessageID == message.id,
+                                isActionInFlight: isSending,
+                                confirmAction: canConfirm(message) ? { submitConfirmation("Підтверджую") } : nil,
+                                cancelAction: canConfirm(message) ? { submitConfirmation("Скасувати") } : nil
+                            )
                                 .id(message.id)
                         }
                         if isSending {
@@ -295,7 +301,8 @@ private struct OrbitConversationView: View {
             senderPersonId: nil,
             content: text,
             createdAt: .now,
-            clientMessageId: clientMessageID
+            clientMessageId: clientMessageID,
+            actionConfirmation: nil
         )
         draft = ""
         failedMessageID = nil
@@ -331,11 +338,25 @@ private struct OrbitConversationView: View {
         failedMessageID = nil
         return true
     }
+
+    private func canConfirm(_ message: OrbitChatMessage) -> Bool {
+        guard message.senderKind == "orbit", let confirmation = message.actionConfirmation else { return false }
+        return confirmation.status == "proposed" && confirmation.needsConfirmation
+    }
+
+    private func submitConfirmation(_ text: String) {
+        guard !isSending else { return }
+        draft = text
+        send()
+    }
 }
 
 private struct MessageBubble: View {
     let message: OrbitChatMessage
     let deliveryFailed: Bool
+    let isActionInFlight: Bool
+    let confirmAction: (() -> Void)?
+    let cancelAction: (() -> Void)?
     @AppStorage("orbit.chat.showTimestamps") private var showTimestamp = false
     @AppStorage("orbit.chat.compact") private var compactMessages = false
 
@@ -359,6 +380,16 @@ private struct MessageBubble: View {
                         .font(.caption2)
                         .foregroundStyle(message.senderKind == "person" ? .white.opacity(0.75) : .secondary)
                 }
+                if let confirmation = message.actionConfirmation,
+                   confirmation.status == "proposed",
+                   confirmation.needsConfirmation {
+                    ActionConfirmationCard(
+                        confirmation: confirmation,
+                        isActionInFlight: isActionInFlight,
+                        confirmAction: confirmAction,
+                        cancelAction: cancelAction
+                    )
+                }
             }
             .padding(.horizontal, 13)
             .padding(.vertical, compactMessages ? 7 : 10)
@@ -378,6 +409,37 @@ private struct MessageBubble: View {
         }
     }
 
+}
+
+private struct ActionConfirmationCard: View {
+    let confirmation: OrbitActionConfirmation
+    let isActionInFlight: Bool
+    let confirmAction: (() -> Void)?
+    let cancelAction: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("WhatsApp", systemImage: "message.fill")
+                .font(.subheadline.weight(.semibold))
+            Text("Кому: \(confirmation.recipient)")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text(confirmation.message)
+                .font(.footnote)
+                .lineLimit(4)
+            HStack(spacing: 10) {
+                Button("Скасувати", action: { cancelAction?() })
+                    .buttonStyle(.bordered)
+                Button("Підтвердити", action: { confirmAction?() })
+                    .buttonStyle(.borderedProminent)
+            }
+            .disabled(isActionInFlight || confirmAction == nil || cancelAction == nil)
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Підтвердження надсилання WhatsApp для \(confirmation.recipient)")
+    }
 }
 
 private struct SelectableMarkdownText: UIViewRepresentable, Equatable {
