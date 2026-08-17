@@ -300,6 +300,9 @@ private struct CalendarEventEditor: View {
 }
 
 struct OrbitToolsView: View {
+    @State private var integrations: OrbitIntegrationStatus?
+    @State private var statusUnavailable = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -311,15 +314,47 @@ struct OrbitToolsView: View {
                 Section("Інтеграції") {
                     Label("Пам’ять Orbit — активна", systemImage: "brain.head.profile")
                     Label("Telegram — керується Orbit", systemImage: "paperplane")
-                    Label("WhatsApp — не підключено", systemImage: "message.badge")
-                        .foregroundStyle(.secondary)
+                    whatsappStatus
                 }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Інструменти")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
+            .task { await loadStatus() }
         }
+    }
+
+    @ViewBuilder
+    private var whatsappStatus: some View {
+        if let whatsapp = integrations?.whatsapp {
+            Label(whatsAppStatusLabel(whatsapp), systemImage: "message.badge")
+                .foregroundStyle(whatsapp.state == "not_configured" ? .secondary : .primary)
+        } else if statusUnavailable {
+            Label("WhatsApp — стан недоступний", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.secondary)
+        } else {
+            Label("WhatsApp — перевірка…", systemImage: "message.badge")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func loadStatus() async {
+        do {
+            integrations = try await MainProductAPI.shared.integrationStatus()
+            statusUnavailable = false
+        } catch {
+            statusUnavailable = true
+        }
+    }
+}
+
+private func whatsAppStatusLabel(_ status: OrbitWhatsAppIntegrationStatus) -> String {
+    switch status.state {
+    case "provider_accepted": "WhatsApp — підключено"
+    case "inbound_verified": "WhatsApp — підключено, надсилання потребує підтвердження"
+    case "configured": "WhatsApp — налаштовано"
+    default: "WhatsApp — потребує налаштування"
     }
 }
 
@@ -387,6 +422,14 @@ struct MemoryCenterView: View {
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Знайти в пам’яті")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        MemoryImportsView()
+                    } label: {
+                        Image(systemName: "tray.full")
+                    }
+                    .accessibilityLabel("Імпорти пам’яті")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Toggle("Показувати історію", isOn: $showHistory)
@@ -433,6 +476,133 @@ struct MemoryCenterView: View {
             self.error = error
         }
     }
+}
+
+private struct MemoryImportsView: View {
+    @State private var batches: [OrbitMemoryImportBatch] = []
+    @State private var isLoading = true
+    @State private var error: Error?
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Завантажую імпорти…")
+            } else if let error {
+                ContentUnavailableView {
+                    Label("Імпорти тимчасово недоступні", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(error.localizedDescription)
+                } actions: {
+                    Button("Повторити") { Task { await load() } }
+                }
+            } else if batches.isEmpty {
+                ContentUnavailableView {
+                    Label("Імпортів ще немає", systemImage: "tray")
+                } description: {
+                    Text("Коли експорт ChatGPT буде безпечно проаналізовано, тут з’являться його стан і підсумок. Дані не додаються до пам’яті без окремого підтвердження.")
+                }
+            } else {
+                List(batches) { batch in
+                    NavigationLink {
+                        MemoryImportDetailView(batch: batch)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Label("ChatGPT", systemImage: "sparkles")
+                                Spacer()
+                                Text(memoryImportStatusLabel(batch))
+                                    .font(.caption)
+                                    .foregroundStyle(memoryImportStatusColor(batch))
+                            }
+                            Text(memoryDateTime(batch.startedAt))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            Text(memoryImportSummary(batch))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 3)
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+        }
+        .navigationTitle("Імпорти")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            batches = try await MainProductAPI.shared.memoryImports()
+            error = nil
+        } catch {
+            self.error = error
+        }
+    }
+}
+
+private struct MemoryImportDetailView: View {
+    let batch: OrbitMemoryImportBatch
+
+    var body: some View {
+        List {
+            Section("Джерело") {
+                LabeledContent("Імпорт", value: "ChatGPT")
+                LabeledContent("Стан", value: memoryImportStatusLabel(batch))
+                LabeledContent("Початок", value: memoryDateTime(batch.startedAt))
+                if let completedAt = batch.completedAt { LabeledContent("Завершено", value: memoryDateTime(completedAt)) }
+            }
+            Section("Підсумок") {
+                LabeledContent("Розмов проаналізовано", value: String(batch.conversations))
+                LabeledContent("Кандидатів у пам’ять", value: String(batch.candidates))
+                LabeledContent("Додано або оновлено", value: String(batch.operationsCreated))
+                if batch.duplicatesSkipped > 0 { LabeledContent("Дублікати пропущено", value: String(batch.duplicatesSkipped)) }
+                if batch.credentialRejected > 0 { LabeledContent("Дані доступу не імпортовано", value: String(batch.credentialRejected)) }
+                if batch.needsReview > 0 { LabeledContent("Потребує перевірки", value: String(batch.needsReview)) }
+            }
+            Section {
+                Text("Orbit зберігає лише підсумок імпорту та походження пам’яті. Сирий архів не показується в застосунку.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Імпорт ChatGPT")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private func memoryImportStatusLabel(_ batch: OrbitMemoryImportBatch) -> String {
+    switch batch.phase {
+    case "analysis": "Аналіз"
+    case "ready": "Готово до імпорту"
+    case "applying": "Імпортується"
+    case "completed": "Завершено"
+    case "failed": "Помилка"
+    default:
+        switch batch.status {
+        case "completed": "Завершено"
+        case "failed": "Помилка"
+        default: "Очікує"
+        }
+    }
+}
+
+private func memoryImportStatusColor(_ batch: OrbitMemoryImportBatch) -> Color {
+    switch batch.phase {
+    case "completed": .green
+    case "failed": .red
+    case "ready", "analysis", "applying": .orange
+    default: .secondary
+    }
+}
+
+private func memoryImportSummary(_ batch: OrbitMemoryImportBatch) -> String {
+    if batch.phase == "completed" { return "\(batch.operationsCreated) змін у пам’яті · \(batch.duplicatesSkipped) дублікатів пропущено" }
+    return "\(batch.conversations) розмов · \(batch.candidates) кандидатів у пам’ять"
 }
 
 private struct MemoryAssertionRow: View {

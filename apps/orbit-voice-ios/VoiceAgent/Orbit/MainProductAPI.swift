@@ -95,10 +95,38 @@ struct OrbitMemoryCenterResponse: Decodable {
     let profile: OrbitMemoryProfile
 }
 
+struct OrbitIntegrationStatus: Decodable {
+    let whatsapp: OrbitWhatsAppIntegrationStatus
+}
+
+struct OrbitWhatsAppIntegrationStatus: Decodable {
+    let state: String
+    let inboundVerified: Bool
+    let outboundProviderAccepted: Bool
+    let requiresConfirmation: Bool
+}
+
 struct OrbitMemoryProfile: Decodable {
     let personId: String
     let displayName: String
 }
+
+struct OrbitMemoryImportBatch: Decodable, Identifiable {
+    let id: String
+    let sourceType: String
+    let status: String
+    let phase: String
+    let startedAt: Date
+    let completedAt: Date?
+    let conversations: Int
+    let candidates: Int
+    let operationsCreated: Int
+    let duplicatesSkipped: Int
+    let credentialRejected: Int
+    let needsReview: Int
+}
+
+private struct MemoryImportsResponse: Decodable { let batches: [OrbitMemoryImportBatch] }
 
 private struct FamilyMessagesResponse: Decodable { let messages: [OrbitFamilyMessage] }
 private struct CalendarResponse: Decodable { let events: [OrbitCalendarEvent] }
@@ -179,6 +207,15 @@ final class MainProductAPI {
     func correctMemoryAssertion(id: String, correction: String) async throws {
         let body = try JSONEncoder().encode(MemoryCorrection(correction: correction))
         let _: MemoryCorrectionResponse = try await request(path: "/api/memory/assertions/\(id)/correct", method: "POST", body: body)
+    }
+
+    func memoryImports(limit: Int = 40) async throws -> [OrbitMemoryImportBatch] {
+        let response: MemoryImportsResponse = try await request(path: "/api/memory/imports?limit=\(min(max(limit, 1), 80))")
+        return response.batches
+    }
+
+    func integrationStatus() async throws -> OrbitIntegrationStatus {
+        try await request(path: "/api/integrations/status")
     }
 
     private struct SendFamilyMessage: Encodable { let content: String; let clientMessageId: String }

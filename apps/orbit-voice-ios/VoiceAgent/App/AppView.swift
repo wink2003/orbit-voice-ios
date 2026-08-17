@@ -63,13 +63,19 @@ struct AppView: View {
     @ViewBuilder
     private func errors() -> some View {
         if let error = session.error {
-            ErrorView(error: error) { session.dismissError() }
+            ErrorView(error: error) {
+                Task { await OrbitRuntime.shared.endVoiceSession() }
+                session.dismissError()
+            }
         }
         if let agentError = session.agent.error {
             ErrorView(error: agentError) { Task { await OrbitRuntime.shared.endVoiceSession() } }
         }
         if let mediaError = localMedia.error {
-            ErrorView(error: mediaError) { localMedia.dismissError() }
+            ErrorView(error: mediaError) {
+                Task { await OrbitRuntime.shared.endVoiceSession() }
+                localMedia.dismissError()
+            }
         }
     }
 
