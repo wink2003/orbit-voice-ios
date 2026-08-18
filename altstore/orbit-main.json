@@ -15,11 +15,11 @@
       "versions": [
         {
           "version": "1.1",
-          "buildVersion": "18",
+      "buildVersion": "19",
           "date": "2026-08-18",
           "localizedDescription": "Голосова сесія тепер повністю повертає аудіо іншим застосункам після завершення. Додано чесний статус WhatsApp та історію імпортів памʼяті.",
-          "downloadURL": "https://voice.orbit.opik.net/altstore/Orbit-Voice-v18.ipa",
-          "size": 18896121,
+      "downloadURL": "https://voice.orbit.opik.net/altstore/Orbit-Voice-v19.ipa",
+      "size": 18998086,
           "minOSVersion": "18.0"
         }
       ]
