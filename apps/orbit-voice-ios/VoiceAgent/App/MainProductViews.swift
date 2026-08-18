@@ -512,7 +512,7 @@ private struct OrbitContactEditor: View {
         do {
             let saved = if let existing { try await MainProductAPI.shared.updateContact(id: existing.id, payload) } else { try await MainProductAPI.shared.createContact(payload) }
             onSaved(saved); dismiss()
-        } catch { error = error }
+        } catch { self.error = error }
     }
 }
 
