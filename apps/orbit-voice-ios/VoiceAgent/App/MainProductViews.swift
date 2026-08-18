@@ -316,6 +316,13 @@ struct OrbitToolsView: View {
                     Label("Telegram — керується Orbit", systemImage: "paperplane")
                     whatsappStatus
                 }
+                Section("Контакти") {
+                    NavigationLink { OrbitContactsView() } label: {
+                        Label("Контакти Orbit", systemImage: "person.crop.circle.badge.plus")
+                    }
+                    Text("Єдина адресна книга Orbit для явних WhatsApp і Telegram-ідентичностей.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Інструменти")
@@ -347,6 +354,221 @@ struct OrbitToolsView: View {
             statusUnavailable = true
         }
     }
+}
+
+struct OrbitContactsView: View {
+    @State private var contacts: [OrbitContact] = []
+    @State private var query = ""
+    @State private var isLoading = true
+    @State private var error: Error?
+    @State private var editor: OrbitContact?
+    @State private var showingEditor = false
+
+    var body: some View {
+        List {
+            if isLoading && contacts.isEmpty {
+                ProgressView("Завантажую контакти…")
+            } else if contacts.isEmpty {
+                ContentUnavailableView {
+                    Label(query.isEmpty ? "Контактів ще немає" : "Нічого не знайдено", systemImage: "person.2")
+                } description: {
+                    Text(query.isEmpty ? "Додайте контакт, щоб швидко знаходити його в Orbit." : "Спробуйте інше ім’я, номер або username.")
+                }
+            } else {
+                ForEach(contacts) { contact in
+                    NavigationLink {
+                        OrbitContactDetailView(contact: contact) { updated in
+                            replace(updated)
+                        } onArchive: {
+                            contacts.removeAll { $0.id == contact.id }
+                        }
+                    } label: { OrbitContactRow(contact: contact) }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Контакти")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "Знайти контакт")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { editor = nil; showingEditor = true } label: { Image(systemName: "plus") }
+            }
+        }
+        .task { await load() }
+        .refreshable { await load() }
+        .onChange(of: query) { _, _ in Task { await load() } }
+        .sheet(isPresented: $showingEditor) {
+            NavigationStack {
+                OrbitContactEditor(contact: editor) { saved in
+                    replace(saved)
+                    showingEditor = false
+                }
+            }
+        }
+        .alert("Контакти недоступні", isPresented: .constant(error != nil)) {
+            Button("Гаразд") { error = nil }
+        } message: { Text(error?.localizedDescription ?? "Спробуйте ще раз.") }
+    }
+
+    private func load() async {
+        do { contacts = try await MainProductAPI.shared.contacts(query: query); error = nil }
+        catch { self.error = error }
+        isLoading = false
+    }
+    private func replace(_ contact: OrbitContact) {
+        if let index = contacts.firstIndex(where: { $0.id == contact.id }) { contacts[index] = contact }
+        else { contacts.append(contact); contacts.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending } }
+    }
+}
+
+private struct OrbitContactRow: View {
+    let contact: OrbitContact
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(String(contact.displayName.prefix(1)).uppercased())
+                .font(.headline).foregroundStyle(.white).frame(width: 40, height: 40)
+                .background(Color.indigo, in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(contact.displayName).font(.headline)
+                if let nickname = contact.nickname, !nickname.isEmpty { Text(nickname).font(.caption).foregroundStyle(.secondary) }
+                HStack(spacing: 10) {
+                    if contact.whatsappNumber != nil { Label("WhatsApp", systemImage: "message.fill") }
+                    if contact.telegramPeer != nil { Label("Telegram", systemImage: "paperplane.fill") }
+                }.font(.caption2).foregroundStyle(.secondary)
+            }
+        }.padding(.vertical, 3)
+    }
+}
+
+private struct OrbitContactEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let existing: OrbitContact?
+    let onSaved: (OrbitContact) -> Void
+    @State private var name: String
+    @State private var nickname: String
+    @State private var note: String
+    @State private var whatsapp: String
+    @State private var telegram: String
+    @State private var visibility: String
+    @State private var targetPersonId: String
+    @State private var profiles: [OrbitFamilyProfile] = []
+    @State private var saving = false
+    @State private var error: Error?
+
+    init(contact: OrbitContact?, onSaved: @escaping (OrbitContact) -> Void) {
+        existing = contact; self.onSaved = onSaved
+        _name = State(initialValue: contact?.displayName ?? "")
+        _nickname = State(initialValue: contact?.nickname ?? "")
+        _note = State(initialValue: contact?.note ?? "")
+        _whatsapp = State(initialValue: contact?.whatsappNumber.map { "+\($0)" } ?? "")
+        _telegram = State(initialValue: contact?.telegramUsername ?? contact?.telegramPeer ?? "")
+        _visibility = State(initialValue: contact?.visibility ?? "private")
+        _targetPersonId = State(initialValue: contact?.targetPersonId ?? "")
+    }
+
+    var body: some View {
+        Form {
+            Section("Контакт") {
+                TextField("Ім’я", text: $name)
+                TextField("Псевдонім", text: $nickname)
+                TextField("Нотатка", text: $note, axis: .vertical).lineLimit(2...5)
+            }
+            Section("Канали") {
+                TextField("WhatsApp · +380…", text: $whatsapp).keyboardType(.phonePad)
+                TextField("Telegram username або відомий peer", text: $telegram).textInputAutocapitalization(.never)
+                Text("Orbit надсилає лише через явно збережену ідентичність. Це не змінює телефонну книгу Telegram.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("Видимість") {
+                Picker("Контакт", selection: $visibility) {
+                    Text("Особистий").tag("private")
+                    Text("Спільний для родини").tag("family_shared")
+                }
+                .pickerStyle(.segmented)
+            }
+            Section("Явний профіль Orbit") {
+                Picker("Пов’язати з профілем", selection: $targetPersonId) {
+                    Text("Не пов’язувати").tag("")
+                    ForEach(profiles) { profile in Text(profile.displayName).tag(profile.personId) }
+                }
+                Text("Це лише явна позначка профілю Orbit і не визначається за ім’ям чи номером.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle(existing == nil ? "Новий контакт" : "Редагувати контакт")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("Зберегти") { Task { await save() } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || saving) }
+        }
+        .task { profiles = (try? await MainProductAPI.shared.familyProfiles()) ?? [] }
+        .alert("Не вдалося зберегти", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error?.localizedDescription ?? "Перевірте дані.") }
+    }
+
+    private func save() async {
+        saving = true; defer { saving = false }
+        let payload = MainProductAPI.OrbitContactPayload(displayName: name.trimmingCharacters(in: .whitespacesAndNewlines), nickname: nickname.nilIfBlank, note: note.nilIfBlank, whatsappNumber: whatsapp.nilIfBlank, telegramPeer: telegram.nilIfBlank, telegramUsername: telegram.nilIfBlank, targetPersonId: targetPersonId.nilIfBlank, visibility: visibility)
+        do {
+            let saved = if let existing { try await MainProductAPI.shared.updateContact(id: existing.id, payload) } else { try await MainProductAPI.shared.createContact(payload) }
+            onSaved(saved); dismiss()
+        } catch { error = error }
+    }
+}
+
+private struct OrbitContactDetailView: View {
+    let contact: OrbitContact
+    let onUpdated: (OrbitContact) -> Void
+    let onArchive: () -> Void
+    @State private var current: OrbitContact
+    @State private var showingEditor = false
+    @State private var showingArchive = false
+    @State private var archiveError: Error?
+
+    init(contact: OrbitContact, onUpdated: @escaping (OrbitContact) -> Void, onArchive: @escaping () -> Void) {
+        self.contact = contact; self.onUpdated = onUpdated; self.onArchive = onArchive
+        _current = State(initialValue: contact)
+    }
+
+    var body: some View {
+        List {
+            Section {
+                OrbitContactRow(contact: current)
+                if let note = current.note, !note.isEmpty { Text(note).font(.subheadline).foregroundStyle(.secondary) }
+            }
+            Section("Написати через Orbit") {
+                if current.whatsappNumber != nil {
+                    NavigationLink { OrbitChatsView(contactPrompt: "Напиши \(current.displayName) у WhatsApp: ") } label: { Label("Написати в WhatsApp", systemImage: "message.fill") }
+                }
+                if current.telegramPeer != nil {
+                    NavigationLink { OrbitChatsView(contactPrompt: "Напиши \(current.displayName) у Telegram: ") } label: { Label("Написати в Telegram", systemImage: "paperplane.fill") }
+                }
+            }
+            Section {
+                Button("Редагувати") { showingEditor = true }
+                Button("Архівувати контакт", role: .destructive) { showingArchive = true }
+            }
+        }
+        .navigationTitle(current.displayName)
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingEditor) { NavigationStack { OrbitContactEditor(contact: current) { current = $0; onUpdated($0) } } }
+        .confirmationDialog("Архівувати контакт?", isPresented: $showingArchive) {
+            Button("Архівувати", role: .destructive) {
+                Task {
+                    do { try await MainProductAPI.shared.archiveContact(id: current.id); onArchive() }
+                    catch { archiveError = error }
+                }
+            }
+            Button("Скасувати", role: .cancel) {}
+        } message: { Text("Історія повідомлень не видаляється. Контакт просто зникне зі списку.") }
+        .alert("Не вдалося архівувати", isPresented: .constant(archiveError != nil)) {
+            Button("Гаразд") { archiveError = nil }
+        } message: { Text(archiveError?.localizedDescription ?? "Спробуйте ще раз.") }
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? { trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self }
 }
 
 private func whatsAppStatusLabel(_ status: OrbitWhatsAppIntegrationStatus) -> String {

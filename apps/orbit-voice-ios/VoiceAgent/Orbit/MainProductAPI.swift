@@ -99,6 +99,22 @@ struct OrbitIntegrationStatus: Decodable {
     let whatsapp: OrbitWhatsAppIntegrationStatus
 }
 
+struct OrbitContact: Codable, Identifiable, Hashable {
+    let id: String
+    var displayName: String
+    var nickname: String?
+    var note: String?
+    var whatsappNumber: String?
+    var telegramPeer: String?
+    var telegramUsername: String?
+    var telegramIdentityType: String?
+    var targetPersonId: String?
+    var visibility: String
+    let isActive: Bool
+    let createdAt: Date?
+    let updatedAt: Date?
+}
+
 struct OrbitWhatsAppIntegrationStatus: Decodable {
     let state: String
     let inboundVerified: Bool
@@ -127,6 +143,8 @@ struct OrbitMemoryImportBatch: Decodable, Identifiable {
 }
 
 private struct MemoryImportsResponse: Decodable { let batches: [OrbitMemoryImportBatch] }
+private struct ContactsResponse: Decodable { let contacts: [OrbitContact] }
+private struct ContactResponse: Decodable { let contact: OrbitContact }
 
 private struct FamilyMessagesResponse: Decodable { let messages: [OrbitFamilyMessage] }
 private struct CalendarResponse: Decodable { let events: [OrbitCalendarEvent] }
@@ -218,12 +236,46 @@ final class MainProductAPI {
         try await request(path: "/api/integrations/status")
     }
 
+    func contacts(query: String = "") async throws -> [OrbitContact] {
+        var path = "/api/contacts"
+        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            path += "?q=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+        }
+        return try await request(path: path, as: ContactsResponse.self).contacts
+    }
+
+    func createContact(_ payload: OrbitContactPayload) async throws -> OrbitContact {
+        let body = try encoder.encode(payload)
+        return try await request(path: "/api/contacts", method: "POST", body: body, as: ContactResponse.self).contact
+    }
+
+    func updateContact(id: String, _ payload: OrbitContactPayload) async throws -> OrbitContact {
+        let body = try encoder.encode(payload)
+        return try await request(path: "/api/contacts/\(id)", method: "PATCH", body: body, as: ContactResponse.self).contact
+    }
+
+    func archiveContact(id: String) async throws {
+        struct ArchiveResponse: Decodable { let id: String; let archived: Bool }
+        _ = try await request(path: "/api/contacts/\(id)/archive", method: "POST", body: nil, as: ArchiveResponse.self)
+    }
+
     private struct SendFamilyMessage: Encodable { let content: String; let clientMessageId: String }
     private struct CalendarEventPayload: Encodable { let title: String; let notes: String; let startsAt: Date; let endsAt: Date; let allDay: Bool }
     private struct MemoryCorrection: Encodable { let correction: String }
     private struct MemoryCorrectionResponse: Decodable { let idempotent: Bool; let confirmed: Bool }
 
-    private func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil) async throws -> T {
+    struct OrbitContactPayload: Encodable {
+        let displayName: String
+        let nickname: String?
+        let note: String?
+        let whatsappNumber: String?
+        let telegramPeer: String?
+        let telegramUsername: String?
+        let targetPersonId: String?
+        let visibility: String
+    }
+
+    private func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, as: T.Type = T.self) async throws -> T {
         guard let token = KeychainStore.readDeviceToken() else { throw OrbitChatAPIError.notPaired }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
@@ -234,9 +286,20 @@ final class MainProductAPI {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
         guard (200 ..< 300).contains(http.statusCode) else {
-            let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-            throw OrbitChatAPIError.requestFailed(message ?? "Orbit тимчасово недоступний.")
+            let code = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
+            throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
         }
         do { return try decoder.decode(T.self, from: data) } catch { throw OrbitChatAPIError.invalidResponse }
+    }
+
+    private static func userFacingError(_ code: String?) -> String {
+        switch code {
+        case "contact_identity_already_linked": "Ця ідентичність уже прив’язана до іншого контакту."
+        case "invalid_whatsapp_number": "Вкажіть WhatsApp номер у міжнародному форматі, наприклад +380971234567."
+        case "invalid_telegram_identity": "Перевірте Telegram username або відомий peer."
+        case "contact_profile_not_found": "Обраний профіль Orbit недоступний."
+        case "contact_not_found": "Контакт більше недоступний."
+        default: "Orbit тимчасово недоступний. Спробуйте ще раз."
+        }
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct OrbitChatsView: View {
+    var contactPrompt: String? = nil
     @State private var profile: OrbitProfile?
     @State private var chats: [OrbitConversation] = []
     @State private var selectedChat: OrbitConversation?
@@ -85,7 +86,7 @@ struct OrbitChatsView: View {
                 }
             }
             .navigationDestination(item: $selectedChat) { chat in
-                OrbitConversationView(conversation: chat)
+                OrbitConversationView(conversation: chat, initialDraft: contactPrompt)
             }
             .task { await load() }
             .refreshable { await load() }
@@ -118,6 +119,7 @@ struct OrbitChatsView: View {
 
 private struct OrbitConversationView: View {
     let conversation: OrbitConversation
+    let initialDraft: String?
     @State private var messages: [OrbitChatMessage] = []
     @State private var draft = ""
     @State private var isSending = false
@@ -128,6 +130,12 @@ private struct OrbitConversationView: View {
     @State private var didInitialLoad = false
     @State private var failedMessageID: String?
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
+
+    init(conversation: OrbitConversation, initialDraft: String? = nil) {
+        self.conversation = conversation
+        self.initialDraft = initialDraft
+        _draft = State(initialValue: initialDraft ?? "")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
