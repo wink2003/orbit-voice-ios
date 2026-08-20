@@ -34,6 +34,7 @@ struct OrbitActionConfirmation: Decodable, Equatable {
     let recipient: String
     let message: String
     let needsConfirmation: Bool
+    let channel: String?
 }
 
 private struct ChatsResponse: Decodable {

@@ -436,6 +436,10 @@ private struct OrbitContactRow: View {
                     if contact.whatsappNumber != nil { Label("WhatsApp", systemImage: "message.fill") }
                     if contact.telegramPeer != nil { Label("Telegram", systemImage: "paperplane.fill") }
                 }.font(.caption2).foregroundStyle(.secondary)
+                if let channel = contact.defaultMessagingChannel, !channel.isEmpty {
+                    Text("За замовчуванням: \(channel == "whatsapp" ? "WhatsApp" : channel == "telegram" ? "Telegram" : channel)")
+                        .font(.caption2).foregroundStyle(.tint)
+                }
             }
         }.padding(.vertical, 3)
     }
@@ -452,6 +456,7 @@ private struct OrbitContactEditor: View {
     @State private var telegram: String
     @State private var visibility: String
     @State private var targetPersonId: String
+    @State private var defaultChannel: String
     @State private var profiles: [OrbitFamilyProfile] = []
     @State private var saving = false
     @State private var error: Error?
@@ -465,6 +470,7 @@ private struct OrbitContactEditor: View {
         _telegram = State(initialValue: contact?.telegramUsername ?? contact?.telegramPeer ?? "")
         _visibility = State(initialValue: contact?.visibility ?? "private")
         _targetPersonId = State(initialValue: contact?.targetPersonId ?? "")
+        _defaultChannel = State(initialValue: contact?.defaultMessagingChannel ?? "")
     }
 
     var body: some View {
@@ -479,6 +485,15 @@ private struct OrbitContactEditor: View {
                 TextField("Telegram username або відомий peer", text: $telegram).textInputAutocapitalization(.never)
                 Text("Orbit надсилає лише через явно збережену ідентичність. Це не змінює телефонну книгу Telegram.")
                     .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("Канал за замовчуванням") {
+                Picker("Надсилати через", selection: $defaultChannel) {
+                    Text("Не обрано").tag("")
+                    if !whatsapp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Text("WhatsApp").tag("whatsapp") }
+                    if !telegram.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Text("Telegram").tag("telegram") }
+                }
+                .onChange(of: whatsapp) { _, value in if value.nilIfBlank == nil && defaultChannel == "whatsapp" { defaultChannel = "" } }
+                .onChange(of: telegram) { _, value in if value.nilIfBlank == nil && defaultChannel == "telegram" { defaultChannel = "" } }
             }
             Section("Видимість") {
                 Picker("Контакт", selection: $visibility) {
@@ -508,7 +523,7 @@ private struct OrbitContactEditor: View {
 
     private func save() async {
         saving = true; defer { saving = false }
-        let payload = MainProductAPI.OrbitContactPayload(displayName: name.trimmingCharacters(in: .whitespacesAndNewlines), nickname: nickname.nilIfBlank, note: note.nilIfBlank, whatsappNumber: whatsapp.nilIfBlank, telegramPeer: telegram.nilIfBlank, telegramUsername: telegram.nilIfBlank, targetPersonId: targetPersonId.nilIfBlank, visibility: visibility)
+        let payload = MainProductAPI.OrbitContactPayload(displayName: name.trimmingCharacters(in: .whitespacesAndNewlines), nickname: nickname.nilIfBlank, note: note.nilIfBlank, whatsappNumber: whatsapp.nilIfBlank, telegramPeer: telegram.nilIfBlank, telegramUsername: telegram.nilIfBlank, targetPersonId: targetPersonId.nilIfBlank, visibility: visibility, defaultMessagingChannel: defaultChannel.nilIfBlank)
         do {
             let saved = if let existing { try await MainProductAPI.shared.updateContact(id: existing.id, payload) } else { try await MainProductAPI.shared.createContact(payload) }
             onSaved(saved); dismiss()
@@ -537,6 +552,9 @@ private struct OrbitContactDetailView: View {
                 if let note = current.note, !note.isEmpty { Text(note).font(.subheadline).foregroundStyle(.secondary) }
             }
             Section("Написати через Orbit") {
+                if current.defaultMessagingChannel != nil || current.whatsappNumber != nil || current.telegramPeer != nil {
+                    NavigationLink { OrbitChatsView(contactPrompt: "Напиши \(current.displayName): ") } label: { Label("Написати повідомлення", systemImage: "paperplane.fill") }
+                }
                 if current.whatsappNumber != nil {
                     NavigationLink { OrbitChatsView(contactPrompt: "Напиши \(current.displayName) у WhatsApp: ") } label: { Label("Написати в WhatsApp", systemImage: "message.fill") }
                 }

@@ -110,6 +110,8 @@ struct OrbitContact: Codable, Identifiable, Hashable {
     var telegramIdentityType: String?
     var targetPersonId: String?
     var visibility: String
+    var defaultMessagingChannel: String?
+    var availableMessagingChannels: [String]?
     let isActive: Bool
     let createdAt: Date?
     let updatedAt: Date?
@@ -273,6 +275,7 @@ final class MainProductAPI {
         let telegramUsername: String?
         let targetPersonId: String?
         let visibility: String
+        let defaultMessagingChannel: String?
     }
 
     private func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, as: T.Type = T.self) async throws -> T {

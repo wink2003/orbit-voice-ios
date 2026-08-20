@@ -427,12 +427,12 @@ private struct ActionConfirmationCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("WhatsApp", systemImage: "message.fill")
+            Label(confirmation.channel == "telegram" ? "Telegram" : confirmation.channel == "whatsapp" ? "WhatsApp" : "Повідомлення", systemImage: confirmation.channel == "telegram" ? "paperplane.fill" : "message.fill")
                 .font(.subheadline.weight(.semibold))
-            Text("Кому: \(confirmation.recipient)")
+            Text("Отримувач: \(confirmation.recipient)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            Text(confirmation.message)
+            Text("Текст повідомлення: \(confirmation.message)")
                 .font(.footnote)
                 .lineLimit(4)
             HStack(spacing: 10) {
@@ -446,7 +446,7 @@ private struct ActionConfirmationCard: View {
         .padding(10)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Підтвердження надсилання WhatsApp для \(confirmation.recipient)")
+        .accessibilityLabel("Підтвердження надсилання повідомлення для \(confirmation.recipient)")
     }
 }
 
