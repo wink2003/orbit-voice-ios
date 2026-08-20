@@ -12,6 +12,7 @@ final class OrbitRuntime: NSObject {
     let session: Session
     let localMedia: LocalMedia
     let audioOptions: AudioOptions
+    private let realtimeDiagnostics = OrbitRealtimeDiagnostics()
     private var voiceAudioWasActivated = false
 
     private override init() {
@@ -30,6 +31,7 @@ final class OrbitRuntime: NSObject {
         audioOptions = AudioOptions(localMedia: localMedia)
         super.init()
         session.room.add(delegate: self)
+        session.room.add(delegate: realtimeDiagnostics)
 
         // Main Orbit must be a quiet citizen until the person explicitly
         // starts Voice. Configuring LiveKit's engine as available here can

@@ -223,6 +223,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     @Published private(set) var lastError: String?
 
     private let runtime = OrbitRuntime.shared
+    private let realtimeDiagnostics = OrbitRealtimeDiagnostics()
     private let liveActivity = OrbitMiniLiveActivityManager.shared
     private let logger = OrbitMiniDiagnosticLogger.shared
     private var audioInterrupted = false
@@ -238,6 +239,7 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     private override init() {
         super.init()
         runtime.session.room.add(delegate: self)
+        runtime.session.room.add(delegate: realtimeDiagnostics)
         NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: AVAudioSession.sharedInstance(),
