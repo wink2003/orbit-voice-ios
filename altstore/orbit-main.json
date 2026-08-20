@@ -13,7 +13,7 @@
       "subtitle": "Голосовий сімейний AI-помічник",
       "localizedDescription": "Orbit — приватний сімейний AI-помічник для чату, голосу, родинних профілів, повідомлень і календаря.",
       "versions": [
-        {"version":"1.1","buildVersion":"25","date":"2026-08-20","localizedDescription":"Діагностична збірка Voice: privacy-safe телеметрія узгоджених аудіокодеків для контрольного тесту мобільної мережі.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Voice-v25.ipa","size":19085554,"minOSVersion":"18.0"}
+        {"version":"1.1","buildVersion":"25","date":"2026-08-20","localizedDescription":"Діагностична збірка Voice: privacy-safe телеметрія узгоджених аудіокодеків для контрольного тесту мобільної мережі.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Voice-v25-codec.ipa","size":19085554,"minOSVersion":"18.0"}
       ]
     },
     {
