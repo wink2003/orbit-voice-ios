@@ -6,16 +6,16 @@ import Network
 // Compact diagnostics for the explicit Wi-Fi/cellular comparison only. No
 // PCM, transcript, room name, participant identity, or ICE address is read.
 final class OrbitRealtimeDiagnostics: NSObject, @unchecked Sendable {
-    private let monitor = NWPathMonitor()
-    private let monitorQueue = DispatchQueue(label: "net.opik.orbit.mini.realtime-path")
-    private let lock = NSLock()
-    private var network = "unknown"
-    private var reconnectCount = 0
-    private var interruptionCount = 0
-    private var lastSampleAt: [String: TimeInterval] = [:]
-    private var directions: [ObjectIdentifier: String] = [:]
-    private var attachedTracks = Set<ObjectIdentifier>()
-    private var interruptionObserver: NSObjectProtocol?
+    private nonisolated(unsafe) let monitor = NWPathMonitor()
+    private nonisolated(unsafe) let monitorQueue = DispatchQueue(label: "net.opik.orbit.mini.realtime-path")
+    private nonisolated(unsafe) let lock = NSLock()
+    private nonisolated(unsafe) var network = "unknown"
+    private nonisolated(unsafe) var reconnectCount = 0
+    private nonisolated(unsafe) var interruptionCount = 0
+    private nonisolated(unsafe) var lastSampleAt: [String: TimeInterval] = [:]
+    private nonisolated(unsafe) var directions: [ObjectIdentifier: String] = [:]
+    private nonisolated(unsafe) var attachedTracks = Set<ObjectIdentifier>()
+    private nonisolated(unsafe) var interruptionObserver: NSObjectProtocol?
 
     override init() {
         super.init()
@@ -33,8 +33,8 @@ final class OrbitRealtimeDiagnostics: NSObject, @unchecked Sendable {
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
     }
 
-    private func snapshot() -> (String, Int, Int) { lock.lock(); defer { lock.unlock() }; return (network, reconnectCount, interruptionCount) }
-    private func audioRoute() -> String {
+    private nonisolated func snapshot() -> (String, Int, Int) { lock.lock(); defer { lock.unlock() }; return (network, reconnectCount, interruptionCount) }
+    private nonisolated func audioRoute() -> String {
         switch AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType {
         case .builtInSpeaker: return "speaker"
         case .builtInReceiver: return "receiver"
@@ -44,45 +44,45 @@ final class OrbitRealtimeDiagnostics: NSObject, @unchecked Sendable {
         default: return "other"
         }
     }
-    private func recordInterruption() {
+    private nonisolated func recordInterruption() {
         lock.lock(); interruptionCount += 1; let values = (network, reconnectCount, interruptionCount); lock.unlock()
         emit(["event": "interruption", "network": values.0, "reconnectCount": values.1, "interruptionCount": values.2, "audioRoute": audioRoute()])
     }
-    private func emit(_ payload: [String: Any]) {
+    private nonisolated func emit(_ payload: [String: Any]) {
         guard let token = KeychainStore.readDeviceToken(), let data = try? JSONSerialization.data(withJSONObject: payload), let url = URL(string: "https://voice.orbit.opik.net/api/realtime/diagnostics") else { return }
         var request = URLRequest(url: url); request.httpMethod = "POST"; request.timeoutInterval = 3
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = data
         Task { _ = try? await URLSession.shared.data(for: request) }
     }
-    private func attach(_ track: Track, direction: String) {
+    private nonisolated func attach(_ track: Track, direction: String) {
         let identifier = ObjectIdentifier(track)
         lock.lock(); let isNew = attachedTracks.insert(identifier).inserted; directions[identifier] = direction; lock.unlock()
         guard isNew else { return }
         track.add(delegate: self)
         Task { await track.set(reportStatistics: true) }
     }
-    private func shouldEmit(direction: String) -> Bool {
+    private nonisolated func shouldEmit(direction: String) -> Bool {
         lock.lock(); defer { lock.unlock() }; let now = Date().timeIntervalSince1970
         guard now - (lastSampleAt[direction] ?? 0) >= 5 else { return false }; lastSampleAt[direction] = now; return true
     }
 }
 
 extension OrbitRealtimeDiagnostics: RoomDelegate {
-    func room(_: Room, didUpdateConnectionState state: ConnectionState, from _: ConnectionState) {
+    nonisolated func room(_: Room, didUpdateConnectionState state: ConnectionState, from _: ConnectionState) {
         lock.lock(); if state == .reconnecting { reconnectCount += 1 }; let values = (network, reconnectCount, interruptionCount); lock.unlock()
         emit(["event": "connection", "network": values.0, "state": String(describing: state), "reconnectCount": values.1, "interruptionCount": values.2, "audioRoute": audioRoute()])
     }
-    func room(_: Room, participant _: LocalParticipant, didPublishTrack publication: LocalTrackPublication) { if let track = publication.track as? LocalAudioTrack { attach(track, direction: "uplink") } }
-    func room(_: Room, participant _: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) { if let track = publication.track as? RemoteAudioTrack { attach(track, direction: "downlink") } }
-    func room(_: Room, participant _: Participant, didUpdateConnectionQuality quality: ConnectionQuality) {
+    nonisolated func room(_: Room, participant _: LocalParticipant, didPublishTrack publication: LocalTrackPublication) { if let track = publication.track as? LocalAudioTrack { attach(track, direction: "uplink") } }
+    nonisolated func room(_: Room, participant _: RemoteParticipant, didSubscribeTrack publication: RemoteTrackPublication) { if let track = publication.track as? RemoteAudioTrack { attach(track, direction: "downlink") } }
+    nonisolated func room(_: Room, participant _: Participant, didUpdateConnectionQuality quality: ConnectionQuality) {
         let values = snapshot()
         emit(["event": "quality", "network": values.0, "quality": String(describing: quality), "reconnectCount": values.1, "interruptionCount": values.2, "audioRoute": audioRoute()])
     }
 }
 
 extension OrbitRealtimeDiagnostics: TrackDelegate {
-    func track(_ track: Track, didUpdateStatistics statistics: TrackStatistics, simulcastStatistics _: [VideoCodec: TrackStatistics]) {
+    nonisolated func track(_ track: Track, didUpdateStatistics statistics: TrackStatistics, simulcastStatistics _: [VideoCodec: TrackStatistics]) {
         let identifier = ObjectIdentifier(track); lock.lock(); let direction = directions[identifier]; lock.unlock()
         guard let direction, shouldEmit(direction: direction) else { return }
         let values = snapshot(); let local = statistics.localIceCandidate; let remote = statistics.remoteIceCandidate
