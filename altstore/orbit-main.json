@@ -13,7 +13,7 @@
       "subtitle": "Голосовий сімейний AI-помічник",
       "localizedDescription": "Orbit — приватний сімейний AI-помічник для чату, голосу, родинних профілів, повідомлень і календаря.",
       "versions": [
-        {"version":"1.1","buildVersion":"22","date":"2026-08-20","localizedDescription":"Додано приватну діагностику мережі та аудіотранспорту для перевірки якості Voice через Wi‑Fi і мобільний інтернет.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Voice-v22.ipa","size":19068587,"minOSVersion":"18.0"}
+        {"version":"1.1","buildVersion":"23","date":"2026-08-20","localizedDescription":"Стабілізаційне оновлення: відновлено надійний запуск Voice, додано безпечну діагностику мережі та новий стартовий екран Голосу.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Voice-v23.ipa","size":19072496,"minOSVersion":"18.0"}
       ]
     },
     {
@@ -27,7 +27,7 @@
     {
       "name":"Orbit Mini","bundleIdentifier":"net.opik.orbit.mini","developerName":"Orbit Family","iconURL":"https://voice.orbit.opik.net/altstore/orbit-mini-icon.png","subtitle":"Hands-free voice remote for Orbit","localizedDescription":"A lightweight hands-free voice client for the existing Orbit family assistant. It keeps the same Orbit AI, family memory, profiles, and voice session while you stay in Maps, Safari, or another app.",
       "versions":[
-        {"version":"1.0","buildVersion":"16","date":"2026-08-20","localizedDescription":"Додано приватну діагностику мережі та аудіотранспорту для перевірки якості Voice через Wi‑Fi і мобільний інтернет.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Mini-v16.ipa","size":12309270,"minOSVersion":"18.0"},
+        {"version":"1.0","buildVersion":"17","date":"2026-08-20","localizedDescription":"Стабілізаційне оновлення Voice з приватною діагностикою мережі та новим візуальним стилем Orbit Mini.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Mini-v17.ipa","size":12310895,"minOSVersion":"18.0"},
         {"version":"1.0","buildVersion":"3","date":"2026-08-11","localizedDescription":"Voice UX update: quieter conversation banners by default, explicit full-color Orbit sphere loading in Live Activities, state-transition animation identity, and Siri audio-session readiness recovery.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Mini-v1.ipa","size":12248023,"minOSVersion":"18.0"}
       ]
     },
