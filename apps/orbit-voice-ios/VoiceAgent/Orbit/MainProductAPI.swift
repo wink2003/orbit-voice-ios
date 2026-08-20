@@ -27,8 +27,34 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     var allDay: Bool
     let sourceType: String
     let sourceIdentifier: String?
-    let createdAt: Date
-    let updatedAt: Date
+    let sourceName: String?
+    let sourceColor: String?
+    let createdAt: Date?
+    let updatedAt: Date?
+}
+
+struct OrbitCalendarConnection: Decodable, Identifiable, Hashable {
+    let id: String
+    let provider: String
+    let accountLabel: String
+    let status: String
+    let lastVerifiedAt: Date?
+    let defaultWritableSourceId: String?
+}
+
+struct OrbitCalendarConnectionResult: Decodable, Hashable {
+    let connection: OrbitCalendarConnection
+    let calendars: Int
+}
+
+struct OrbitCalendarSource: Decodable, Identifiable, Hashable {
+    let id: String
+    let connectionId: String
+    let displayName: String
+    let color: String?
+    let writable: Bool
+    var selected: Bool
+    let isDefaultWritable: Bool
 }
 
 struct OrbitMemoryAssertion: Decodable, Identifiable, Hashable {
@@ -150,6 +176,10 @@ private struct ContactResponse: Decodable { let contact: OrbitContact }
 
 private struct FamilyMessagesResponse: Decodable { let messages: [OrbitFamilyMessage] }
 private struct CalendarResponse: Decodable { let events: [OrbitCalendarEvent] }
+private struct CalendarConnectionsResponse: Decodable { let connections: [OrbitCalendarConnection] }
+private struct CalendarSourcesResponse: Decodable { let sources: [OrbitCalendarSource] }
+private struct CalendarSourceResponse: Decodable { let source: OrbitCalendarSource }
+private struct CalendarConnectionResultResponse: Decodable { let connection: OrbitCalendarConnection; let calendars: Int }
 private struct MessageResponse: Decodable { let message: OrbitFamilyMessage }
 private struct EventResponse: Decodable { let event: OrbitCalendarEvent }
 
@@ -189,6 +219,48 @@ final class MainProductAPI {
         let path = "/api/family/calendar?from=\(formatter.string(from: from).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&to=\(formatter.string(from: to).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
         let response: CalendarResponse = try await request(path: path)
         return response.events
+    }
+
+    func calendarConnections() async throws -> [OrbitCalendarConnection] {
+        try await request(path: "/api/calendar/connections", as: CalendarConnectionsResponse.self).connections
+    }
+
+    func connectICloudCalendar(accountLabel: String, username: String, appSpecificPassword: String) async throws -> OrbitCalendarConnectionResult {
+        struct Payload: Encodable {
+            let accountLabel: String
+            let username: String
+            let appSpecificPassword: String
+        }
+        let body = try encoder.encode(Payload(accountLabel: accountLabel, username: username, appSpecificPassword: appSpecificPassword))
+        let response: CalendarConnectionResultResponse = try await request(path: "/api/calendar/connections", method: "POST", body: body)
+        return OrbitCalendarConnectionResult(connection: response.connection, calendars: response.calendars)
+    }
+
+    func refreshCalendarConnection(id: String) async throws {
+        struct Response: Decodable { let connectionId: String; let calendars: Int }
+        let _: Response = try await request(path: "/api/calendar/connections/\(id)/refresh", method: "POST", body: nil)
+    }
+
+    func disconnectCalendarConnection(id: String) async throws {
+        struct Response: Decodable { let disconnected: Bool }
+        let _: Response = try await request(path: "/api/calendar/connections/\(id)", method: "DELETE", body: nil)
+    }
+
+    func calendarSources() async throws -> [OrbitCalendarSource] {
+        try await request(path: "/api/calendar/sources", as: CalendarSourcesResponse.self).sources
+    }
+
+    func updateCalendarSource(id: String, selected: Bool) async throws -> OrbitCalendarSource {
+        struct Payload: Encodable { let selected: Bool }
+        let body = try encoder.encode(Payload(selected: selected))
+        return try await request(path: "/api/calendar/sources/\(id)", method: "PATCH", body: body, as: CalendarSourceResponse.self).source
+    }
+
+    func setDefaultWritableCalendar(sourceId: String) async throws {
+        struct Payload: Encodable { let sourceId: String }
+        let body = try encoder.encode(Payload(sourceId: sourceId))
+        struct Response: Decodable { let defaultWritableSourceId: String }
+        _ = try await request(path: "/api/calendar/default-writable-source", method: "PUT", body: body, as: Response.self)
     }
 
     func createCalendarEvent(title: String, notes: String, startsAt: Date, endsAt: Date, allDay: Bool) async throws -> OrbitCalendarEvent {
@@ -302,6 +374,11 @@ final class MainProductAPI {
         case "invalid_telegram_identity": "Перевірте Telegram username або відомий peer."
         case "contact_profile_not_found": "Обраний профіль Orbit недоступний."
         case "contact_not_found": "Контакт більше недоступний."
+        case "invalid_credentials": "Не вдалося увійти в iCloud. Перевірте Apple ID та пароль для програми."
+        case "network_error", "service_unavailable": "Не вдалося підключитися до iCloud. Спробуйте ще раз."
+        case "principal_discovery_failed", "calendar_home_discovery_failed", "collection_discovery_failed", "invalid_response", "unsupported_redirect": "Не вдалося отримати список календарів iCloud."
+        case "calendar_connection_rate_limited": "Забагато спроб. Спробуйте ще раз трохи пізніше."
+        case "invalid_calendar_connection": "Перевірте назву, Apple ID і пароль для програми."
         default: "Orbit тимчасово недоступний. Спробуйте ще раз."
         }
     }

@@ -7,8 +7,7 @@ struct FamilyHubView: View {
     @State private var error: Error?
 
     var body: some View {
-        NavigationStack {
-            List {
+        List {
                 Section {
                     if let error {
                         VStack(alignment: .leading, spacing: 8) {
@@ -65,14 +64,13 @@ struct FamilyHubView: View {
                     Label("Приватна інформація доступна лише відповідно до налаштувань доступу.", systemImage: "lock.fill")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle("Сім’я")
-            .navigationBarTitleDisplayMode(.inline)
-            .refreshable { await load() }
-            .task { await load() }
-            .overlay { if isLoading { ProgressView() } }
         }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Сім’я")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load() }
+        .task { await load() }
+        .overlay { if isLoading { ProgressView() } }
     }
 
     private func load() async {
@@ -219,6 +217,8 @@ struct OrbitCalendarView: View {
     private func load() async { do { events = try await MainProductAPI.shared.calendarEvents() } catch let caught { error = caught } }
 
     private func calendarRow(_ event: OrbitCalendarEvent) -> some View {
+        Group {
+        if event.sourceType == "orbit_family" {
         Button { editingEvent = event; showingEditor = true } label: {
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
@@ -230,7 +230,7 @@ struct OrbitCalendarView: View {
                 if !event.notes.isEmpty {
                     Text(event.notes).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
                 }
-                Label(event.sourceType == "external" ? "Зовнішній календар" : "Сімейний Orbit", systemImage: "calendar.badge.checkmark")
+                Label(event.sourceName ?? (event.sourceType == "external" ? "iCloud" : "Сімейний Orbit"), systemImage: "calendar.badge.checkmark")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
         }
@@ -239,6 +239,14 @@ struct OrbitCalendarView: View {
             Button(role: .destructive) { deleteCandidate = event } label: {
                 Label("Видалити", systemImage: "trash")
             }
+        }
+        } else {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack { Text(event.title).font(.headline); Spacer(); Text(event.startsAt, style: .date).font(.caption).foregroundStyle(.secondary) }
+                Text(event.allDay ? "Увесь день" : event.startsAt.formatted(date: .omitted, time: .shortened)).font(.subheadline).foregroundStyle(.secondary)
+                Label(event.sourceName ?? "iCloud", systemImage: "calendar.badge.checkmark").font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
         }
     }
 
@@ -290,12 +298,160 @@ private struct CalendarEventEditor: View {
     }
     private func save() async {
         saving = true; defer { saving = false }
-        if let existing { await onSave(OrbitCalendarEvent(id: existing.id, familyId: existing.familyId, ownerPersonId: existing.ownerPersonId, title: title, notes: notes, startsAt: startsAt, endsAt: endsAt, allDay: allDay, sourceType: existing.sourceType, sourceIdentifier: existing.sourceIdentifier, createdAt: existing.createdAt, updatedAt: existing.updatedAt)) }
+        if let existing { await onSave(OrbitCalendarEvent(id: existing.id, familyId: existing.familyId, ownerPersonId: existing.ownerPersonId, title: title, notes: notes, startsAt: startsAt, endsAt: endsAt, allDay: allDay, sourceType: existing.sourceType, sourceIdentifier: existing.sourceIdentifier, sourceName: existing.sourceName, sourceColor: existing.sourceColor, createdAt: existing.createdAt, updatedAt: existing.updatedAt)) }
         else {
             do { _ = try await MainProductAPI.shared.createCalendarEvent(title: title, notes: notes, startsAt: startsAt, endsAt: endsAt, allDay: allDay) }
             catch { return }
         }
         dismiss()
+    }
+}
+
+struct CalendarSettingsView: View {
+    @State private var connections: [OrbitCalendarConnection] = []
+    @State private var sources: [OrbitCalendarSource] = []
+    @State private var error: Error?
+    @State private var showingConnect = false
+    @State private var disconnectCandidate: OrbitCalendarConnection?
+
+    var body: some View {
+        List {
+            Section("iCloud Calendar") {
+                if connections.isEmpty {
+                    LabeledContent("Стан", value: "Не підключено")
+                    Text("Підключіть iCloud, щоб вибрати календарі для Orbit. Дані входу не зберігаються на iPhone.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("Підключити iCloud") { showingConnect = true }
+                } else {
+                    ForEach(connections) { connection in
+                        VStack(alignment: .leading, spacing: 8) {
+                            LabeledContent(connection.accountLabel, value: calendarConnectionStatus(connection.status))
+                            HStack {
+                                Button("Оновити") { Task { await refresh(connection) } }
+                                Button("Відключити", role: .destructive) { disconnectCandidate = connection }
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+            }
+            if !sources.isEmpty {
+                Section("Календарі для перегляду") {
+                    ForEach($sources) { $source in
+                        Toggle(isOn: Binding(get: { source.selected }, set: { enabled in Task { await update(source.id, enabled) } })) {
+                            HStack(spacing: 8) {
+                                Circle().fill(source.color.flatMap(Color.init(hex:)) ?? .blue).frame(width: 9, height: 9)
+                                Text(source.displayName)
+                                if !source.writable { Image(systemName: "eye").foregroundStyle(.secondary) }
+                            }
+                        }
+                    }
+                }
+                let writable = sources.filter { $0.selected && $0.writable }
+                if !writable.isEmpty {
+                    Section("Календар для нових подій") {
+                        ForEach(writable) { source in
+                            Button { Task { await setDefault(source.id) } } label: {
+                                HStack { Text(source.displayName); Spacer(); if source.isDefaultWritable { Image(systemName: "checkmark").foregroundStyle(.tint) } }
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                }
+            }
+            Section("Google Calendar") {
+                Label("Підтримка буде додана пізніше", systemImage: "clock")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Календар")
+        .task { await load() }
+        .refreshable { await load() }
+        .sheet(isPresented: $showingConnect) {
+            ICloudConnectionView { await load() }
+        }
+        .confirmationDialog("Відключити iCloud?", item: $disconnectCandidate, titleVisibility: .visible) { connection in
+            Button("Відключити", role: .destructive) { Task { await disconnect(connection) } }
+            Button("Скасувати", role: .cancel) {}
+        } message: { _ in Text("Orbit перестане читати календарі цього підключення. Дані входу буде видалено із сервера Orbit.") }
+        .alert("Календар недоступний", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error.map(calendarErrorText) ?? "Спробуйте ще раз пізніше.") }
+    }
+
+    private func load() async {
+        do { async let c = MainProductAPI.shared.calendarConnections(); async let s = MainProductAPI.shared.calendarSources(); connections = try await c; sources = try await s }
+        catch { self.error = error }
+    }
+    private func update(_ id: String, _ selected: Bool) async { do { let updated = try await MainProductAPI.shared.updateCalendarSource(id: id, selected: selected); if let index = sources.firstIndex(where: { $0.id == id }) { sources[index] = updated } } catch { self.error = error } }
+    private func setDefault(_ id: String) async { do { try await MainProductAPI.shared.setDefaultWritableCalendar(sourceId: id); await load() } catch { self.error = error } }
+    private func refresh(_ connection: OrbitCalendarConnection) async { do { try await MainProductAPI.shared.refreshCalendarConnection(id: connection.id); await load() } catch { self.error = error } }
+    private func disconnect(_ connection: OrbitCalendarConnection) async { do { try await MainProductAPI.shared.disconnectCalendarConnection(id: connection.id); await load() } catch { self.error = error } }
+}
+
+private struct ICloudConnectionView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var accountLabel = "iCloud"
+    @State private var username = ""
+    @State private var password = ""
+    @State private var submitting = false
+    @State private var error: Error?
+    let onConnected: () async -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("iCloud Calendar") {
+                    TextField("Назва", text: $accountLabel)
+                    TextField("Apple ID", text: $username)
+                        .textInputAutocapitalization(.never)
+                        .textContentType(.username)
+                        .keyboardType(.emailAddress)
+                    SecureField("Пароль для програми", text: $password)
+                        .textContentType(.password)
+                    Text("Використовуйте пароль для програми Apple, а не пароль Apple ID.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if let error {
+                    Text(calendarErrorText(error)).font(.footnote).foregroundStyle(.red)
+                }
+            }
+            .navigationTitle("Підключити iCloud")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { clearAndDismiss() }.disabled(submitting) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(submitting ? "Підключення…" : "Підключити") { Task { await connect() } }
+                        .disabled(submitting || accountLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func connect() async {
+        submitting = true
+        defer { password = ""; submitting = false }
+        do {
+            _ = try await MainProductAPI.shared.connectICloudCalendar(accountLabel: accountLabel.trimmingCharacters(in: .whitespacesAndNewlines), username: username.trimmingCharacters(in: .whitespacesAndNewlines), appSpecificPassword: password)
+            await onConnected()
+            dismiss()
+        } catch { self.error = error }
+    }
+
+    private func clearAndDismiss() { password = ""; dismiss() }
+}
+
+private func calendarErrorText(_ error: Error) -> String {
+    if case let OrbitChatAPIError.requestFailed(message) = error { return message }
+    return "Не вдалося підключитися до iCloud. Спробуйте ще раз."
+}
+
+private func calendarConnectionStatus(_ status: String) -> String {
+    switch status { case "verified": "Підключено"; case "authentication_error": "Потрібне повторне підключення"; case "sync_error": "Помилка синхронізації"; default: "Налаштовується" }
+}
+
+private extension Color {
+    init?(hex: String) {
+        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard value.count >= 6, let number = UInt64(value.prefix(6), radix: 16) else { return nil }
+        self.init(.sRGB, red: Double((number >> 16) & 0xff) / 255, green: Double((number >> 8) & 0xff) / 255, blue: Double(number & 0xff) / 255)
     }
 }
 
@@ -1094,6 +1250,21 @@ struct OrbitSettingsView: View {
                 Section("Профіль") {
                     Label(authentication.displayName ?? "Активний профіль", systemImage: "person.crop.circle")
                     Button("Змінити профіль на цьому iPhone", role: .destructive) { showsChangeUserConfirmation = true }
+                }
+                Section("Родина") {
+                    NavigationLink { FamilyHubView() } label: {
+                        Label("Сім’я", systemImage: "person.3")
+                    }
+                    Text("Профілі, спільний чат і родинні можливості Orbit.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("Календар") {
+                    NavigationLink { OrbitCalendarView() } label: {
+                        Label("Календар Orbit", systemImage: "calendar")
+                    }
+                    NavigationLink { CalendarSettingsView() } label: {
+                        Label("Підключення календарів", systemImage: "calendar.badge.clock")
+                    }
                 }
                 Section("Голос") {
                     Button { showingAudio = true } label: { LabeledContent("Обробка мікрофона", value: audioOptions.voiceProcessingModeLabel) }
