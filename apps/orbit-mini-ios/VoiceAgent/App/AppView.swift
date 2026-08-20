@@ -78,31 +78,36 @@ struct AppView: View {
     }
 
     private var sphere: some View {
-        orbitSphereImage
-            .resizable()
-            .scaledToFit()
-            .frame(maxWidth: 310)
-            .clipShape(RoundedRectangle(cornerRadius: 58, style: .continuous))
-            .shadow(color: glowColor.opacity(0.5), radius: 30)
-            .scaleEffect(voiceState == .speaking ? 1.04 : 1)
+        ZStack {
+            Circle().fill(miniAccent.opacity(0.10)).frame(width: 278, height: 278)
+            Circle().stroke(miniAccent.opacity(0.26), lineWidth: 1).frame(width: 232, height: 232)
+                .rotationEffect(.degrees(voiceState == .listening || voiceState == .speaking ? 16 : 0))
+            Circle().stroke(Color.mint.opacity(0.32), lineWidth: 7).frame(width: 202, height: 202)
+                .trim(from: 0.12, to: voiceState == .speaking ? 0.88 : 0.68)
+                .rotationEffect(.degrees(-90))
+            Circle()
+                .fill(LinearGradient(colors: [Color.teal, Color.cyan.opacity(0.85), Color.indigo.opacity(0.88)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 164, height: 164)
+                .shadow(color: miniAccent.opacity(0.52), radius: 30)
+                .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 1))
+                .scaleEffect(voiceState == .speaking ? 1.07 : voiceState == .listening ? 1.03 : 1)
+            Image(systemName: voiceState == .speaking ? "speaker.wave.2.fill" : "waveform")
+                .font(.system(size: 48, weight: .medium))
+                .foregroundStyle(.white)
+        }
+            .frame(height: 286)
             .animation(.easeInOut(duration: 0.35), value: voiceState)
             .accessibilityHidden(true)
     }
 
-    private var orbitSphereImage: Image {
-        if let url = Bundle.main.url(forResource: "OrbitSphere", withExtension: "jpg"),
-           let image = UIImage(contentsOfFile: url.path) {
-            return Image(uiImage: image)
-        }
-        return Image("OrbitSphere")
-    }
-
-    private var glowColor: Color {
+    // Mini deliberately uses its existing deep-navy / teal companion palette;
+    // Main retains the indigo Orbit palette. The icons remain untouched.
+    private var miniAccent: Color {
         switch voiceState {
-        case .listening: .cyan
-        case .thinking: .orange
-        case .speaking: .yellow
-        case nil, .ended: .clear
+        case .listening: .teal
+        case .thinking: .mint
+        case .speaking: .cyan
+        case nil, .ended: .teal
         }
     }
 

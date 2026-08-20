@@ -230,7 +230,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     private var intentStartTask: Task<Void, Never>?
     private var audioSignalWaiters: [UUID: OrbitMiniAudioSignalWaiter] = [:]
     private var lifecycleSignalWaiters: [UUID: OrbitMiniLifecycleSignalWaiter] = [:]
-    private var audioHandoff: OrbitMiniAudioHandoffStateMachine?
     private var activeStartID: String?
     private var lastStartupError: String?
     private var didLifecycleTimeout = false
@@ -374,10 +373,9 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         // AppIntent adds only the lifecycle gate above; Session's own
         // PreConnectAudioBuffer is the sole microphone/ADM owner.
         if source == "app-intent" {
-            guard await performAppIntentAudioHandoff(startID: startID) else {
+            guard await waitForAppIntentForeground(startID: startID) else {
                 isStarting = false
                 activeStartID = nil
-                audioHandoff = nil
                 lastError = didLifecycleTimeout
                     ? "Orbit Mini не отримав активний стан після Siri. Закрийте Siri та спробуйте ще раз."
                     : lastStartupError ?? "Мікрофон ще зайнятий системою. Спробуйте ще раз."
@@ -398,7 +396,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
             : await startDirectSession(startID: startID, source: source)
         isStarting = false
         activeStartID = nil
-        audioHandoff = nil
         if sessionReady {
             await liveActivity.begin(userName: runtime.authentication.displayName ?? "Orbit")
         } else {
@@ -443,8 +440,6 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
     func terminateSession(reason: String) async {
         intentStartTask?.cancel()
         intentStartTask = nil
-        audioHandoff?.handle(.cancel)
-        audioHandoff = nil
         activeStartID = nil
         guard !isTerminating else { return }
         isTerminating = true
@@ -546,68 +541,26 @@ private extension OrbitMiniVoiceCoordinator {
         }
     }
 
-    /// Voice Siri and manually run Shortcuts can invoke an AppIntent while Mini
-    /// is visible but inactive. This waits for lifecycle and any observed
-    /// interruption, then hands directly to the normal Session.start path.
-    func performAppIntentAudioHandoff(startID: String) async -> Bool {
-        var machine = OrbitMiniAudioHandoffStateMachine()
-        machine.handle(.requested(
-            appIsActive: isUsableForegroundActive,
-            interruptionActive: audioInterrupted
-        ))
-        audioHandoff = machine
-        logger.notice("audio handoff begin id=\(startID) phase=\(String(describing: machine.phase))")
-
-        while !Task.isCancelled, !isTerminating {
-            guard let current = audioHandoff else { return false }
-            logger.notice("audio handoff state id=\(startID) phase=\(String(describing: current.phase))")
-
-            switch current.phase {
-            case .waitingForForeground:
-                let result = await waitForUsableForegroundActive(timeout: .seconds(20))
-                switch result {
-                case let .active(trigger):
-                    logger.notice("lifecycle wait accepted trigger=\(trigger) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription)")
-                    mutateAudioHandoff(.appBecameActive)
-                case .timedOut:
-                    didLifecycleTimeout = true
-                    lastStartupError = "Lifecycle timeout: application/scene did not become foreground-active"
-                    logger.error("lifecycle wait timeout id=\(startID) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription) sessionStarts=0")
-                    mutateAudioHandoff(.lifecycleWaitExpired)
-                case .cancelled:
-                    mutateAudioHandoff(.cancel)
-                }
-
-            case .waitingForAudioRelease:
-                let signalled = await waitForAudioSignalOrTimeout(reason: "interruption-release", timeout: .milliseconds(900))
-                if !signalled { mutateAudioHandoff(.audioReleaseWaitExpired) }
-
-            case .readyForSession:
-                guard isUsableForegroundActive else {
-                    logger.notice("Session.start prevented before active id=\(startID) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription)")
-                    mutateAudioHandoff(.appBecameInactive)
-                    continue
-                }
-                logger.notice("audio handoff ready for Session.start id=\(startID) engineRunning=\(AudioManager.shared.isEngineRunning)")
-                return true
-
-            case .lifecycleTimedOut:
-                logger.error("audio handoff lifecycle timeout id=\(startID) sessionStarts=0")
-                return false
-
-            case .cancelled, .idle:
+    /// Siri/AppIntent may arrive while Mini is visible but not yet active.
+    /// This is a single bounded lifecycle gate, not a scene-return state
+    /// machine: only UIKit's active signal permits the normal Session.start.
+    func waitForAppIntentForeground(startID: String) async -> Bool {
+        let result = await waitForUsableForegroundActive(timeout: .seconds(20))
+        guard case let .active(trigger) = result else {
+            if case .timedOut = result { didLifecycleTimeout = true }
+            lastStartupError = "Lifecycle timeout: application/scene did not become foreground-active"
+            logger.error("lifecycle wait failed id=\(startID) result=\(String(describing: result)) sessionStarts=0")
+            return false
+        }
+        logger.notice("lifecycle wait accepted id=\(startID) trigger=\(trigger)")
+        if audioInterrupted {
+            let released = await waitForAudioSignalOrTimeout(reason: "interruption-release", timeout: .milliseconds(900))
+            guard released, !audioInterrupted else {
+                lastStartupError = "Мікрофон ще зайнятий системою. Спробуйте ще раз."
                 return false
             }
         }
-
-        mutateAudioHandoff(.cancel)
-        return false
-    }
-
-    func mutateAudioHandoff(_ event: OrbitMiniAudioHandoffStateMachine.Event) {
-        guard var machine = audioHandoff else { return }
-        machine.handle(event)
-        audioHandoff = machine
+        return isUsableForegroundActive && !Task.isCancelled && !isTerminating
     }
 
     func installSessionPCMDiagnostics(source: String, startID: String) {
@@ -733,11 +686,6 @@ private extension OrbitMiniVoiceCoordinator {
         return result
     }
 
-    func signalAudioHandoff(_ event: OrbitMiniAudioHandoffStateMachine.Event, reason: String) {
-        mutateAudioHandoff(event)
-        signalAudioWaiters(reason: reason)
-    }
-
     func signalAudioWaiters(reason: String) {
         guard !audioSignalWaiters.isEmpty else { return }
         logger.notice("audio handoff notification reason=\(reason)")
@@ -752,12 +700,11 @@ private extension OrbitMiniVoiceCoordinator {
         case .began:
             audioInterrupted = true
             logger.notice("AVAudioSession interruption began")
-            mutateAudioHandoff(.interruptionBegan)
         case .ended:
             audioInterrupted = false
             let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
             logger.notice("AVAudioSession interruption ended shouldResume=\(options.contains(.shouldResume))")
-            signalAudioHandoff(.interruptionEnded, reason: "interruption-ended")
+            signalAudioWaiters(reason: "interruption-ended")
         @unknown default:
             break
         }
@@ -785,7 +732,6 @@ private extension OrbitMiniVoiceCoordinator {
     func reconcileLifecycleActivation(trigger: String) {
         logger.notice("lifecycle activation signal trigger=\(trigger) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription) usableActive=\(self.isUsableForegroundActive)")
         guard isUsableForegroundActive else { return }
-        mutateAudioHandoff(.appBecameActive)
         let waiters = lifecycleSignalWaiters
         lifecycleSignalWaiters.removeAll()
         waiters.values.forEach { $0.resume(.active(trigger: trigger)) }
@@ -793,7 +739,6 @@ private extension OrbitMiniVoiceCoordinator {
 
     func handleLifecycleBecameInactive(trigger: String) {
         logger.notice("lifecycle inactive signal trigger=\(trigger) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription)")
-        mutateAudioHandoff(.appBecameInactive)
     }
 
     func handleMediaServicesReset() {

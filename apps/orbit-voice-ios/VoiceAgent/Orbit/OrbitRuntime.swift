@@ -12,7 +12,9 @@ final class OrbitRuntime: NSObject {
     let session: Session
     let localMedia: LocalMedia
     let audioOptions: AudioOptions
-    private let realtimeDiagnostics = OrbitRealtimeDiagnostics()
+    // Diagnostics are deliberately lazy and optional. A failed or unavailable
+    // observer must never participate in paired-auth or ordinary app launch.
+    private var realtimeDiagnostics: OrbitRealtimeDiagnostics?
     private var voiceAudioWasActivated = false
 
     private override init() {
@@ -31,7 +33,6 @@ final class OrbitRuntime: NSObject {
         audioOptions = AudioOptions(localMedia: localMedia)
         super.init()
         session.room.add(delegate: self)
-        session.room.add(delegate: realtimeDiagnostics)
 
         // Main Orbit must be a quiet citizen until the person explicitly
         // starts Voice. Configuring LiveKit's engine as available here can
@@ -44,8 +45,16 @@ final class OrbitRuntime: NSObject {
     /// request. No Main screen should call `session.start()` directly.
     func startVoiceSession() async {
         configureAudioForVoiceStart()
+        installRealtimeDiagnosticsIfNeeded()
         voiceAudioWasActivated = true
         await session.start()
+    }
+
+    private func installRealtimeDiagnosticsIfNeeded() {
+        guard realtimeDiagnostics == nil else { return }
+        let diagnostics = OrbitRealtimeDiagnostics()
+        realtimeDiagnostics = diagnostics
+        session.room.add(delegate: diagnostics)
     }
 
     /// Releases Main Orbit's LiveKit audio ownership after a normal stop.

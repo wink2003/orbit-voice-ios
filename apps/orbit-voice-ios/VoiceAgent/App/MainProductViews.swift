@@ -420,6 +420,13 @@ private struct ICloudConnectionView: View {
                 if let error {
                     Text(calendarErrorText(error)).font(.footnote).foregroundStyle(.red)
                 }
+                if submitting {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Перевіряємо підключення…")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             .navigationTitle("Підключити iCloud")
             .toolbar {
@@ -1263,6 +1270,13 @@ struct OrbitSettingsView: View {
                         Label("Сім’я", systemImage: "person.3")
                     }
                     Text("Профілі, спільний чат і родинні можливості Orbit.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("Контакти") {
+                    NavigationLink { OrbitContactsView() } label: {
+                        Label("Контакти Orbit", systemImage: "person.crop.circle.badge.plus")
+                    }
+                    Text("Канали WhatsApp, Telegram і майбутній Viber та канал за замовчуванням для кожного контакту.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Календар") {
