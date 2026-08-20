@@ -28,4 +28,13 @@ struct OrbitCodecFmtpParser {
         }
         return result.isEmpty ? nil : result
     }
+
+    nonisolated static func parseRedPayloads(_ line: String?) -> [UInt]? {
+        guard let line, !line.isEmpty else { return nil }
+        let parts = line.split(separator: "/", omittingEmptySubsequences: false)
+        guard !parts.isEmpty, parts.count <= 8 else { return nil }
+        let values = parts.compactMap { UInt($0) }
+        guard values.count == parts.count, values.allSatisfy({ $0 <= 127 }) else { return nil }
+        return values
+    }
 }

@@ -81,6 +81,9 @@ final class OrbitRealtimeDiagnostics: NSObject, @unchecked Sendable {
             if let payloadType = codec.payloadType { entry["payloadType"] = payloadType }
             if let clockRate = codec.clockRate { entry["clockRate"] = clockRate }
             if let channels = codec.channels { entry["channels"] = channels }
+            if mime == "audio/red", let redPayloads = OrbitCodecFmtpParser.parseRedPayloads(codec.sdpFmtpLine) {
+                entry["redPayloads"] = redPayloads
+            }
             if let fmtp = OrbitCodecFmtpParser.parse(codec.sdpFmtpLine) { entry["fmtp"] = fmtp }
             return entry
         }

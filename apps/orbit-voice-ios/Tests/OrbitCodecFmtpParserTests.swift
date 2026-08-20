@@ -9,6 +9,8 @@ enum OrbitCodecFmtpParserTests {
         expect(parsed?["useinbandfec"] == "1", "FEC is retained")
         expect(parsed?["spropStereo"] == "0", "sprop-stereo is normalized")
         expect(parsed?["unknown"] == nil, "unknown keys are omitted")
+        expect(OrbitCodecFmtpParser.parseRedPayloads("111/111") == [111, 111], "RED mapping is retained")
+        expect(OrbitCodecFmtpParser.parseRedPayloads("111/999") == nil, "invalid RED mapping fails closed")
         expect(OrbitCodecFmtpParser.parse(nil) == nil, "absent fmtp is safe")
         expect(OrbitCodecFmtpParser.parse("usedtx=1;broken") == nil, "malformed fmtp fails closed")
         expect(OrbitCodecFmtpParser.parse("a=1;secret=token") == nil, "non-whitelisted fmtp emits nothing")
