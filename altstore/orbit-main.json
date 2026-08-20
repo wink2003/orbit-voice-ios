@@ -15,11 +15,11 @@
       "versions": [
         {
           "version": "1.1",
-      "buildVersion": "20",
+      "buildVersion": "21",
           "date": "2026-08-20",
-          "localizedDescription": "Додано налаштування каналу повідомлень контакту та єдиний підтверджуваний UX для WhatsApp і Telegram.",
-      "downloadURL": "https://voice.orbit.opik.net/altstore/Orbit-Voice-v20.ipa",
-      "size": 19007646,
+          "localizedDescription": "Оновлено Voice, перенесено Сімʼю до Налаштувань і додано безпечне підключення iCloud Calendar з вибором календарів.",
+      "downloadURL": "https://voice.orbit.opik.net/altstore/Orbit-Voice-v21.ipa",
+      "size": 19046614,
           "minOSVersion": "18.0"
         }
       ]
