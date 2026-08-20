@@ -370,10 +370,17 @@ struct CalendarSettingsView: View {
         .sheet(isPresented: $showingConnect) {
             ICloudConnectionView { await load() }
         }
-        .confirmationDialog("Відключити iCloud?", item: $disconnectCandidate, titleVisibility: .visible) { connection in
-            Button("Відключити", role: .destructive) { Task { await disconnect(connection) } }
+        .confirmationDialog("Відключити iCloud?", isPresented: Binding(
+            get: { disconnectCandidate != nil },
+            set: { if !$0 { disconnectCandidate = nil } }
+        ), titleVisibility: .visible) {
+            Button("Відключити", role: .destructive) {
+                guard let connection = disconnectCandidate else { return }
+                disconnectCandidate = nil
+                Task { await disconnect(connection) }
+            }
             Button("Скасувати", role: .cancel) {}
-        } message: { _ in Text("Orbit перестане читати календарі цього підключення. Дані входу буде видалено із сервера Orbit.") }
+        } message: { Text("Orbit перестане читати календарі цього підключення. Дані входу буде видалено із сервера Orbit.") }
         .alert("Календар недоступний", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error.map(calendarErrorText) ?? "Спробуйте ще раз пізніше.") }
     }
 
