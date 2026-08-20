@@ -54,6 +54,15 @@ jobs:
             exit "$status"
           fi
 
+      - name: Test codec fmtp privacy parser
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/OrbitCodecFmtpParser.swift \
+            apps/orbit-voice-ios/Tests/OrbitCodecFmtpParserTests.swift \
+            -o "$RUNNER_TEMP/orbit-codec-fmtp-tests"
+          "$RUNNER_TEMP/orbit-codec-fmtp-tests"
+
       - name: Package IPA for AltStore
         run: |
           set -euo pipefail

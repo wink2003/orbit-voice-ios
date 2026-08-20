@@ -66,6 +66,25 @@ final class OrbitRealtimeDiagnostics: NSObject, @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }; let now = Date().timeIntervalSince1970
         guard now - (lastSampleAt[direction] ?? 0) >= 5 else { return false }; lastSampleAt[direction] = now; return true
     }
+
+    private nonisolated func safeAudioCodecs(_ statistics: TrackStatistics, direction: String) -> [[String: Any]] {
+        let codecIDs: Set<String> = if direction == "uplink" {
+            Set(statistics.outboundRtpStream.compactMap(\.codecId))
+        } else {
+            Set(statistics.inboundRtpStream.compactMap(\.codecId))
+        }
+        let codecs = codecIDs.isEmpty ? statistics.codec : statistics.codec.filter { codecIDs.contains($0.id) }
+        return codecs.compactMap { codec in
+            guard let mime = codec.mimeType?.lowercased(), mime.hasPrefix("audio/"), mime.count <= 64,
+                  mime.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "/.+-_".contains($0)) }) else { return nil }
+            var entry: [String: Any] = ["mimeType": mime]
+            if let payloadType = codec.payloadType { entry["payloadType"] = payloadType }
+            if let clockRate = codec.clockRate { entry["clockRate"] = clockRate }
+            if let channels = codec.channels { entry["channels"] = channels }
+            if let fmtp = OrbitCodecFmtpParser.parse(codec.sdpFmtpLine) { entry["fmtp"] = fmtp }
+            return entry
+        }
+    }
 }
 
 extension OrbitRealtimeDiagnostics: RoomDelegate {
@@ -88,6 +107,8 @@ extension OrbitRealtimeDiagnostics: TrackDelegate {
         let values = snapshot(); let local = statistics.localIceCandidate; let remote = statistics.remoteIceCandidate
         let pair = statistics.iceCandidatePair.first(where: { $0.nominated == true }) ?? statistics.iceCandidatePair.first
         var payload: [String: Any] = ["event": "audio_stats", "network": values.0, "direction": direction, "localCandidateType": local?.candidateType.map { String(describing: $0) } ?? "", "remoteCandidateType": remote?.candidateType.map { String(describing: $0) } ?? "", "transportProtocol": local?.protocol ?? remote?.protocol ?? "", "rttMs": (pair?.currentRoundTripTime ?? 0) * 1000, "reconnectCount": values.1, "interruptionCount": values.2, "audioRoute": audioRoute()]
+        let codecs = safeAudioCodecs(statistics, direction: direction)
+        if !codecs.isEmpty { payload["codecs"] = codecs }
         if direction == "uplink", let sent = statistics.outboundRtpStream.first {
             let remoteInbound = statistics.remoteInboundRtpStream.first
             payload["packets"] = sent.packetsSent ?? 0; payload["bitrateBps"] = sent.bps; payload["packetsLost"] = remoteInbound?.packetsLost ?? 0; payload["lossFraction"] = remoteInbound?.fractionLost ?? 0; payload["jitterMs"] = (remoteInbound?.jitter ?? 0) * 1000; payload["rttMs"] = (remoteInbound?.roundTripTime ?? pair?.currentRoundTripTime ?? 0) * 1000

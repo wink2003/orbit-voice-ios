@@ -8,13 +8,6 @@ import AVFoundation
 final class OrbitRuntime: NSObject {
     static let shared = OrbitRuntime()
 
-    /// Main 1.1 (24) is a one-build cellular-path diagnostic. It intentionally
-    /// restricts ICE to the already-configured relay candidates so the next
-    /// physical session can compare the degraded direct cellular path with
-    /// existing embedded TURN/UDP. Remove this option after that comparison;
-    /// it is not a permanent transport preference.
-    private static let relayDiagnosticConnectOptions = ConnectOptions(iceTransportPolicy: .relay)
-
     let authentication: OrbitAuthentication
     let session: Session
     let localMedia: LocalMedia
@@ -30,7 +23,6 @@ final class OrbitRuntime: NSObject {
         let session = Session(
             tokenSource: OrbitTokenSource(),
             options: SessionOptions(room: Room(
-                connectOptions: Self.relayDiagnosticConnectOptions,
                 roomOptions: RoomOptions(
                     defaultScreenShareCaptureOptions: ScreenShareCaptureOptions(useBroadcastExtension: true)
                 )
