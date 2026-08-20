@@ -13,7 +13,7 @@ struct OrbitCodecFmtpParser {
 
     /// Parses only approved scalar codec parameters. Raw fmtp/SDP never
     /// leaves this process. A malformed token invalidates the whole result.
-    static func parse(_ line: String?) -> [String: String]? {
+    nonisolated static func parse(_ line: String?) -> [String: String]? {
         guard let line, !line.isEmpty else { return nil }
         var result: [String: String] = [:]
         for rawToken in line.split(separator: ";", omittingEmptySubsequences: false) {
