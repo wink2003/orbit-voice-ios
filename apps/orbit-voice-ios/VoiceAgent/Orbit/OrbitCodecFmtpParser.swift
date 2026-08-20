@@ -1,7 +1,7 @@
 import Foundation
 
 struct OrbitCodecFmtpParser {
-    private static let allowedKeys: [String: String] = [
+    private nonisolated static let allowedKeys: [String: String] = [
         "useinbandfec": "useinbandfec",
         "usedtx": "usedtx",
         "minptime": "minptime",
