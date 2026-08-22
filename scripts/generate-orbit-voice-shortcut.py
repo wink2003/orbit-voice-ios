@@ -57,7 +57,10 @@ def generate() -> dict:
                         "BundleIdentifier": MINI_BUNDLE_ID,
                         "Name": "Orbit Mini",
                     },
-                    "ShowWhenRun": False,
+                    # AppIntent metadata says openAppWhenRun=true.  Shortcuts
+                    # serializes that property as OpenWhenRun (not
+                    # ShowWhenRun, which is a different action convention).
+                    "OpenWhenRun": True,
                     "UUID": start_intent_uuid,
                 },
             },
