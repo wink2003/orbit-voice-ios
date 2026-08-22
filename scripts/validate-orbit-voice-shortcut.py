@@ -30,6 +30,8 @@ def main() -> None:
         "BundleIdentifier": MINI_BUNDLE_ID,
         "Name": "Orbit Mini",
     }
+    assert actions[1]["WFWorkflowActionParameters"]["OpenWhenRun"] is True
+    assert "ShowWhenRun" not in actions[1]["WFWorkflowActionParameters"]
     # Keep this validator intentionally strict: no arbitrary URLs, secrets, or
     # private runtime state can enter the generated artifact.
     blob = repr(data)
