@@ -1,0 +1,43 @@
+name: Build Orbit Voice Shortcut
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout release repository
+        uses: actions/checkout@v4
+
+      - name: Generate and validate unsigned shortcut
+        run: |
+          set -euo pipefail
+          rm -rf artifacts/orbit-voice-shortcut
+          mkdir -p artifacts/orbit-voice-shortcut
+          python3 scripts/generate-orbit-voice-shortcut.py \
+            --output "artifacts/orbit-voice-shortcut/Orbit Voice.unsigned.shortcut"
+          python3 scripts/validate-orbit-voice-shortcut.py \
+            "artifacts/orbit-voice-shortcut/Orbit Voice.unsigned.shortcut"
+
+      - name: Verify Apple signing CLI and sign for anyone
+        run: |
+          set -euo pipefail
+          shortcuts help sign | tee artifacts/orbit-voice-shortcut/sign-help.txt
+          grep -Eq -- '--mode' artifacts/orbit-voice-shortcut/sign-help.txt
+          grep -Eq -- 'anyone' artifacts/orbit-voice-shortcut/sign-help.txt
+          shortcuts sign \
+            --mode anyone \
+            --input "artifacts/orbit-voice-shortcut/Orbit Voice.unsigned.shortcut" \
+            --output "artifacts/orbit-voice-shortcut/Orbit Voice.shortcut"
+          test -s "artifacts/orbit-voice-shortcut/Orbit Voice.shortcut"
+
+      - name: Publish signed Shortcut artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-Voice-Shortcut
+          path: artifacts/orbit-voice-shortcut/Orbit Voice.shortcut
+          if-no-files-found: error
