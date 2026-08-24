@@ -14,10 +14,19 @@ struct OrbitTokenSource: EndpointTokenSource {
 
 @MainActor
 final class OrbitAuthentication: ObservableObject {
+    enum FamilyProfilesLoadState: Equatable {
+        case idle
+        case loading
+        case loaded
+        case empty
+        case unavailable
+    }
+
     @Published private(set) var isPaired = KeychainStore.readDeviceToken() != nil
     @Published private(set) var displayName = UserDefaults.standard.string(forKey: "orbit.displayName")
     @Published private(set) var personId = UserDefaults.standard.string(forKey: "orbit.personId")
     @Published private(set) var familyProfiles: [FamilyProfile] = []
+    @Published private(set) var familyProfilesLoadState: FamilyProfilesLoadState = .idle
 
     struct PairingResponse: Decodable {
         struct Profile: Decodable {
@@ -38,6 +47,11 @@ final class OrbitAuthentication: ObservableObject {
 
     struct APIError: Decodable {
         let error: String
+    }
+
+    var selectedFamilyProfile: FamilyProfile? {
+        guard let personId else { return nil }
+        return familyProfiles.first(where: { $0.personId == personId })
     }
 
     func pair(code: String) async throws {
@@ -72,18 +86,57 @@ final class OrbitAuthentication: ObservableObject {
     }
 
     func loadFamilyProfiles() async {
-        guard let token = KeychainStore.readDeviceToken() else { return }
+        guard let token = KeychainStore.readDeviceToken() else {
+            familyProfiles = []
+            familyProfilesLoadState = .idle
+            return
+        }
+        familyProfilesLoadState = .loading
         var request = URLRequest(url: URL(string: "https://voice.orbit.opik.net/api/family/profiles")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else { return }
+            guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
+                familyProfiles = []
+                familyProfilesLoadState = .unavailable
+                return
+            }
             familyProfiles = try JSONDecoder().decode([FamilyProfile].self, from: data)
-        } catch { }
+            guard !familyProfiles.isEmpty else {
+                familyProfilesLoadState = .empty
+                return
+            }
+
+            let availablePersonIDs = familyProfiles.map(\.personId)
+            guard let resolvedPersonID = OrbitFamilyProfileSelectionPolicy.resolvedPersonID(
+                persistedPersonID: personId,
+                availablePersonIDs: availablePersonIDs
+            ), let resolvedProfile = familyProfiles.first(where: { $0.personId == resolvedPersonID }) else {
+                familyProfilesLoadState = .empty
+                return
+            }
+
+            if resolvedPersonID == personId {
+                // A persisted ID is authoritative only while it is still a
+                // valid profile in the current family response.
+                persist(resolvedProfile)
+                familyProfilesLoadState = .loaded
+                return
+            }
+
+            // The API's family-profile order is the existing deterministic
+            // family model. Never synthesize an assistant/product profile.
+            try await selectProfile(resolvedProfile)
+            familyProfilesLoadState = .loaded
+        } catch {
+            familyProfiles = []
+            familyProfilesLoadState = .unavailable
+        }
     }
 
     func selectProfile(_ profile: FamilyProfile) async throws {
         guard let token = KeychainStore.readDeviceToken() else { throw PairingFailure.message("Спершу активуйте цей iPhone.") }
+        guard familyProfiles.contains(profile) else { throw PairingFailure.message("Виберіть профіль із цього списку.") }
         var request = URLRequest(url: URL(string: "https://voice.orbit.opik.net/api/devices/active-profile")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -94,6 +147,11 @@ final class OrbitAuthentication: ObservableObject {
             let message = (try? JSONDecoder().decode(APIError.self, from: data).error) ?? "Не вдалося змінити користувача."
             throw PairingFailure.message(message)
         }
+        persist(profile)
+        familyProfilesLoadState = .loaded
+    }
+
+    private func persist(_ profile: FamilyProfile) {
         UserDefaults.standard.set(profile.displayName, forKey: "orbit.displayName")
         UserDefaults.standard.set(profile.personId, forKey: "orbit.personId")
         displayName = profile.displayName
@@ -107,6 +165,7 @@ final class OrbitAuthentication: ObservableObject {
         displayName = nil
         personId = nil
         familyProfiles = []
+        familyProfilesLoadState = .idle
         isPaired = false
     }
 }

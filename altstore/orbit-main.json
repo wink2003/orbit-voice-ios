@@ -5,36 +5,8 @@
   "website": "https://voice.orbit.opik.net",
   "identifier": "net.opik.orbit.altstore",
   "apps": [
-    {
-      "name": "Orbit",
-      "bundleIdentifier": "net.opik.orbit.voice",
-      "developerName": "Orbit Family",
-      "iconURL": "https://voice.orbit.opik.net/altstore/orbit-icon-v18.jpg",
-      "subtitle": "Голосовий сімейний AI-помічник",
-      "localizedDescription": "Orbit — приватний сімейний AI-помічник для чату, голосу, родинних профілів, повідомлень і календаря.",
-      "versions": [
-        {"version":"1.1","buildVersion":"25","date":"2026-08-20","localizedDescription":"Діагностична збірка Voice: privacy-safe телеметрія узгоджених аудіокодеків для контрольного тесту мобільної мережі.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Voice-v25-codec.ipa","size":19085554,"minOSVersion":"18.0"}
-      ]
-    },
-    {
-      "name":"Orbit CallKit","bundleIdentifier":"net.opik.orbit.callkit","developerName":"Orbit Family","iconURL":"https://voice.orbit.opik.net/altstore/orbit-icon.png","subtitle":"System voice call for Siri and the lock screen","localizedDescription":"A separate strict CallKit edition of Orbit. Siri starts it in the background, it uses the native iPhone call lifecycle, and it never falls back to the full-screen direct connection.",
-      "versions":[{"version":"1.0","buildVersion":"6","date":"2026-08-09","localizedDescription":"Siri and Shortcuts now launch Orbit through the iOS background audio process. The installed app name is Orbit, enabling the commands Start Orbit and Stop Orbit.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-CallKit-v6.ipa","size":11541562,"minOSVersion":"18.0"}]
-    },
-    {
-      "name":"Orbit Voice","bundleIdentifier":"net.opik.orbit.voice.phase1","developerName":"Orbit Family","iconURL":"https://voice.orbit.opik.net/altstore/orbit-icon.png","subtitle":"Окремий голосовий клієнт Orbit","localizedDescription":"Легкий окремий застосунок для багатокрокових голосових розмов з існуючим Orbit backend.",
-      "versions":[{"version":"1.0","buildVersion":"3","date":"2026-08-10","size":88012,"downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Voice-v3.ipa","minOSVersion":"18.0"}]
-    },
-    {
-      "name":"Orbit Mini","bundleIdentifier":"net.opik.orbit.mini","developerName":"Orbit Family","iconURL":"https://voice.orbit.opik.net/altstore/orbit-mini-icon.png","subtitle":"Hands-free voice remote for Orbit","localizedDescription":"A lightweight hands-free voice client for the existing Orbit family assistant. It keeps the same Orbit AI, family memory, profiles, and voice session while you stay in Maps, Safari, or another app.",
-      "versions":[
-        {"version":"1.0","buildVersion":"17","date":"2026-08-20","localizedDescription":"Стабілізаційне оновлення Voice з приватною діагностикою мережі та новим візуальним стилем Orbit Mini.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Mini-v17.ipa","size":12310895,"minOSVersion":"18.0"},
-        {"version":"1.0","buildVersion":"3","date":"2026-08-11","localizedDescription":"Voice UX update: quieter conversation banners by default, explicit full-color Orbit sphere loading in Live Activities, state-transition animation identity, and Siri audio-session readiness recovery.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Mini-v1.ipa","size":12248023,"minOSVersion":"18.0"}
-      ]
-    },
-    {
-      "name":"Orbit Voice Probe","bundleIdentifier":"net.opik.orbit.voice.backgroundprobe","developerName":"Orbit Family","iconURL":"https://voice.orbit.opik.net/altstore/orbit-icon.png","subtitle":"Background microphone capability experiment","localizedDescription":"A separate diagnostic probe that tests whether iOS permits microphone buffers to be received after an App Intent launches in the background.",
-      "versions":[{"version":"2.2","buildVersion":"13","date":"2026-08-11","localizedDescription":"Fixes the WidgetKit extension metadata so SideStore can preserve the embedded widget without the legacy principal-class restriction.","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Voice-Background-Probe-v13.ipa","size":184000,"minOSVersion":"26.0"}]
-    }
+    {"name":"Orbit","bundleIdentifier":"net.opik.orbit.voice","developerName":"Orbit Family","iconURL":"https://voice.orbit.opik.net/altstore/orbit-icon-v18.jpg","versions":[{"version":"1.1","buildVersion":"25","date":"2026-08-20","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Voice-v25-codec.ipa","size":19085554,"minOSVersion":"18.0"}]},
+    {"name":"Orbit Mini","bundleIdentifier":"net.opik.orbit.mini","developerName":"Orbit Family","iconURL":"https://voice.orbit.opik.net/altstore/orbit-mini-icon.png","versions":[{"version":"1.0","buildVersion":"17","date":"2026-08-20","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Mini-v17.ipa","size":12310895,"minOSVersion":"18.0"},{"version":"1.0","buildVersion":"3","date":"2026-08-11","downloadURL":"https://voice.orbit.opik.net/altstore/Orbit-Mini-v1.ipa","size":12248023,"minOSVersion":"18.0"}]}
   ],
   "news": []
 }

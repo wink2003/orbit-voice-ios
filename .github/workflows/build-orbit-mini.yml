@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test Siri audio handoff state machine
+      - name: Test Mini lifecycle and profile-selection policies
         run: |
           set -euo pipefail
           xcrun swiftc \
@@ -25,6 +25,11 @@ jobs:
             apps/orbit-mini-ios/Tests/OrbitMiniAudioHandoffStateMachineTests.swift \
             -o "$RUNNER_TEMP/orbit-mini-audio-handoff-tests"
           "$RUNNER_TEMP/orbit-mini-audio-handoff-tests"
+          xcrun swiftc \
+            apps/orbit-mini-ios/VoiceAgent/Orbit/OrbitFamilyProfileSelectionPolicy.swift \
+            apps/orbit-mini-ios/Tests/OrbitMiniProfileSelectionTests.swift \
+            -o "$RUNNER_TEMP/orbit-mini-profile-selection-tests"
+          "$RUNNER_TEMP/orbit-mini-profile-selection-tests"
 
       - name: Build Orbit Mini and WidgetKit extension
         run: |

@@ -30,9 +30,14 @@ struct OrbitMiniSettingsView: View {
         NavigationStack {
             Form {
                 Section("Користувач") {
-                    Picker("Користувач за замовчуванням", selection: profileSelection) {
-                        ForEach(authentication.familyProfiles) { profile in
-                            Text(profile.displayName).tag(profile.personId)
+                    if authentication.familyProfiles.isEmpty {
+                        Text(authentication.familyProfilesLoadState == .loading ? "Завантаження профілів…" : "Профілі недоступні")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Користувач за замовчуванням", selection: profileSelection) {
+                            ForEach(authentication.familyProfiles) { profile in
+                                Text(profile.displayName).tag(profile.personId)
+                            }
                         }
                     }
                 }

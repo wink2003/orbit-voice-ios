@@ -148,9 +148,20 @@ struct AppView: View {
 
     private var activeUser: some View {
         Menu {
-            ForEach(authentication.familyProfiles) { profile in
-                Button(profile.displayName) {
-                    Task { try? await authentication.selectProfile(profile) }
+            switch authentication.familyProfilesLoadState {
+            case .loaded:
+                ForEach(authentication.familyProfiles) { profile in
+                    Button(profile.displayName) {
+                        Task { try? await authentication.selectProfile(profile) }
+                    }
+                }
+            case .loading, .idle:
+                Text("Завантаження профілів…")
+            case .empty:
+                Text("Сімейні профілі відсутні")
+            case .unavailable:
+                Button("Спробувати ще раз") {
+                    Task { await authentication.loadFamilyProfiles() }
                 }
             }
         } label: {
@@ -160,7 +171,7 @@ struct AppView: View {
                     Text("Говорить")
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.55))
-                    Text(authentication.displayName ?? "Orbit")
+                    Text(profileLabel)
                         .font(.subheadline.weight(.semibold))
                 }
                 Spacer()
@@ -171,6 +182,22 @@ struct AppView: View {
             .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
         }
         .foregroundStyle(.white)
-        .disabled(coordinator.session.isConnected)
+        .disabled(coordinator.session.isConnected || authentication.familyProfilesLoadState == .loading)
+    }
+
+    private var profileLabel: String {
+        if let profile = authentication.selectedFamilyProfile {
+            return profile.displayName
+        }
+        switch authentication.familyProfilesLoadState {
+        case .idle, .loading:
+            return "Завантаження профілю…"
+        case .empty:
+            return "Профілі відсутні"
+        case .unavailable:
+            return "Профіль недоступний"
+        case .loaded:
+            return "Виберіть профіль"
+        }
     }
 }
