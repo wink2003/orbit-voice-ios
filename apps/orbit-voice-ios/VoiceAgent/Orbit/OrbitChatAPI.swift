@@ -80,8 +80,9 @@ final class OrbitChatAPI {
         return (response.profile, response.chats)
     }
 
-    func messages(in conversation: OrbitConversation) async throws -> [OrbitChatMessage] {
-        let response: MessagesResponse = try await request(path: "/api/chats/\(conversation.id)/messages?limit=100")
+    func messages(in conversation: OrbitConversation, limit: Int = 100) async throws -> [OrbitChatMessage] {
+        let boundedLimit = min(max(limit, 1), 120)
+        let response: MessagesResponse = try await request(path: "/api/chats/\(conversation.id)/messages?limit=\(boundedLimit)")
         return response.messages
     }
 
