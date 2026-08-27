@@ -760,11 +760,16 @@ private extension String {
 }
 
 private func whatsAppStatusLabel(_ status: OrbitWhatsAppIntegrationStatus) -> String {
+    if status.state == "linked" || status.outboundProviderAccepted {
+        return "WhatsApp — підключено, надсилання потребує підтвердження"
+    }
+    if status.inboundVerified { return "WhatsApp — вхідні повідомлення перевірені" }
     switch status.state {
-    case "provider_accepted": "WhatsApp — підключено"
-    case "inbound_verified": "WhatsApp — підключено, надсилання потребує підтвердження"
-    case "configured": "WhatsApp — налаштовано"
-    default: "WhatsApp — потребує налаштування"
+    case "configured": return "WhatsApp — налаштовано"
+    case "link_required": return "WhatsApp — потрібно підключити пристрій"
+    case "connecting": return "WhatsApp — підключається"
+    case "unavailable": return "WhatsApp — тимчасово недоступний"
+    default: return "WhatsApp — потребує налаштування"
     }
 }
 

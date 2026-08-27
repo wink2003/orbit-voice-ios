@@ -1,8 +1,7 @@
+import Foundation
 import SwiftUI
 
 struct OrbitDashboardView: View {
-    let openVoice: () -> Void
-
     @State private var state = DashboardState()
     @State private var isLoading = true
     @State private var lastUpdated: Date?
@@ -15,16 +14,15 @@ struct OrbitDashboardView: View {
                     nowSection
                     familySection
                     activitySection
-                    memoryAndActions
+                    memorySection
                     integrationsSection
-                    quickActions
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
+                .safeAreaPadding(.bottom, 16)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Orbit")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { Task { await load() } } label: {
@@ -40,14 +38,11 @@ struct OrbitDashboardView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(greeting)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(greetingWithProfile)
                 .font(.title2.weight(.bold))
-            Text(statusLine)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
             if let lastUpdated {
-                Text("Оновлено \(lastUpdated.formatted(date: .omitted, time: .shortened))")
+                Text("Оновлено \(dashboardTime(lastUpdated))")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -141,7 +136,7 @@ struct OrbitDashboardView: View {
                                 HStack(alignment: .firstTextBaseline) {
                                     Text(activity.title).font(.subheadline.weight(.semibold)).lineLimit(1)
                                     Spacer(minLength: 8)
-                                    Text(activity.date, style: .relative).font(.caption2).foregroundStyle(.tertiary)
+                                    Text(dashboardRelativeTime(activity.date)).font(.caption2).foregroundStyle(.tertiary)
                                 }
                                 Text(activity.detail).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
                             }
@@ -152,23 +147,15 @@ struct OrbitDashboardView: View {
         }
     }
 
-    private var memoryAndActions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 16) {
-                memorySection.frame(maxWidth: .infinity)
-                actionsSection.frame(maxWidth: .infinity)
-            }
-            VStack(spacing: 22) {
-                memorySection
-                actionsSection
-            }
-        }
-    }
-
     private var memorySection: some View {
         DashboardSection(title: "Пам’ять", subtitle: "Актуальний контекст Orbit") {
-            if isLoading && state.memories.isEmpty {
+            if isLoading && state.memoryLoadState != .loaded {
                 DashboardSkeleton(rows: 2)
+            } else if state.memoryLoadState == .failed {
+                NavigationLink { MemoryCenterView() } label: {
+                    calmEmpty("Пам’ять тимчасово недоступна", detail: "Відкрийте Центр пам’яті або повторіть оновлення пізніше.", icon: "exclamationmark.triangle")
+                }
+                .buttonStyle(.plain)
             } else if state.memories.isEmpty {
                 NavigationLink { MemoryCenterView() } label: {
                     calmEmpty("Пам’ять ще порожня", detail: "Відкрийте Центр пам’яті, щоб переглянути або знайти контекст.", icon: "brain.head.profile")
@@ -195,31 +182,6 @@ struct OrbitDashboardView: View {
         }
     }
 
-    private var actionsSection: some View {
-        DashboardSection(title: "Дії", subtitle: "Підтвердження завжди залишаються в чаті") {
-            if isLoading && state.pendingActions.isEmpty {
-                DashboardSkeleton(rows: 1)
-            } else if state.pendingActions.isEmpty {
-                calmEmpty("Немає дій на підтвердження", detail: "Orbit не виконує важливих дій без вашого підтвердження.", icon: "checkmark.shield")
-            } else {
-                ForEach(state.pendingActions) { action in
-                    NavigationLink { OrbitChatsView() } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Label(action.channelTitle, systemImage: action.channelIcon)
-                                .font(.caption.weight(.semibold)).foregroundStyle(.orange)
-                            Text(action.recipient).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                            Text(action.message).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
-                            Text("Відкрити чат для підтвердження").font(.caption).foregroundStyle(.tint)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
     @ViewBuilder private var integrationsSection: some View {
         DashboardSection(title: "Інтеграції", subtitle: "Лише реальний поточний стан") {
             if isLoading && state.integration == nil && state.calendarConnections == nil {
@@ -227,7 +189,7 @@ struct OrbitDashboardView: View {
             } else {
                 if let integration = state.integration {
                     NavigationLink { OrbitToolsView() } label: {
-                        integrationRow(title: dashboardWhatsAppStatus(integration.whatsapp), icon: "message.fill", tint: integration.whatsapp.state == "not_configured" ? .secondary : .green)
+                        integrationRow(title: dashboardWhatsAppStatus(integration.whatsapp), icon: "message.fill", tint: dashboardWhatsAppTint(integration.whatsapp))
                     }
                     .buttonStyle(.plain)
                 }
@@ -242,31 +204,6 @@ struct OrbitDashboardView: View {
                 }
             }
         }
-    }
-
-    private var quickActions: some View {
-        DashboardSection(title: "Швидкий перехід", subtitle: nil) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) { quickActionLinks }
-                VStack(spacing: 10) { quickActionLinks }
-            }
-        }
-    }
-
-    @ViewBuilder private var quickActionLinks: some View {
-        NavigationLink { OrbitChatsView() } label: { quickAction("Чат", icon: "message.fill") }
-        Button(action: openVoice) { quickAction("Голос", icon: "waveform") }
-            .buttonStyle(.plain)
-        NavigationLink { MemoryCenterView() } label: { quickAction("Пам’ять", icon: "brain.head.profile") }
-        NavigationLink { OrbitCalendarView() } label: { quickAction("Календар", icon: "calendar") }
-    }
-
-    private func quickAction(_ title: String, icon: String) -> some View {
-        Label(title, systemImage: icon)
-            .font(.subheadline.weight(.semibold))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func integrationRow(title: String, icon: String, tint: Color) -> some View {
@@ -297,9 +234,20 @@ struct OrbitDashboardView: View {
         }
     }
 
-    private var statusLine: String {
-        if let profile = state.profile?.displayName { return "Ваш сімейний контекст для \(profile)." }
-        return "Ваш сімейний контекст Orbit."
+    private var greetingWithProfile: String {
+        guard let name = state.profile?.displayName.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return greeting }
+        return "\(greeting), \(name)"
+    }
+
+    private func dashboardTime(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private func dashboardRelativeTime(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "uk_UA")
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: .now)
     }
 
     private func profileContext(_ profile: OrbitFamilyProfile) -> String {
@@ -341,7 +289,12 @@ struct OrbitDashboardView: View {
         if case let .success(value) = await profilesResult { next.profiles = value }
         if case let .success(value) = await familyMessagesResult { next.familyMessages = value }
         if case let .success(value) = await eventsResult { next.events = value }
-        if case let .success(value) = await memoryResult { next.memories = value.assertions }
+        if case let .success(value) = await memoryResult {
+            next.memories = value.assertions
+            next.memoryLoadState = .loaded
+        } else {
+            next.memoryLoadState = .failed
+        }
         if case let .success(value) = await importsResult { next.imports = value }
         if case let .success(value) = await integrationResult { next.integration = value }
         if case let .success(value) = await calendarConnectionsResult { next.calendarConnections = value }
@@ -451,6 +404,7 @@ private struct DashboardState {
     var familyMessages: [OrbitFamilyMessage] = []
     var events: [OrbitCalendarEvent] = []
     var memories: [OrbitMemoryAssertion] = []
+    var memoryLoadState: DashboardLoadState = .idle
     var imports: [OrbitMemoryImportBatch] = []
     var integration: OrbitIntegrationStatus?
     var calendarConnections: [OrbitCalendarConnection]?
@@ -460,7 +414,16 @@ private struct DashboardState {
     var hasContent: Bool { !profiles.isEmpty || !chats.isEmpty || !familyMessages.isEmpty || !events.isEmpty || !memories.isEmpty }
 
     var nowItems: [DashboardNowItem] {
-        var items = pendingActions.map { DashboardNowItem(id: "action-\($0.id)", title: "Потрібне підтвердження", detail: "\($0.recipient) · \($0.channelTitle)", icon: "checkmark.shield", tint: .orange, destination: .chat) }
+        var items = pendingActions.map {
+            DashboardNowItem(
+                id: "action-\($0.id)",
+                title: "Потрібне підтвердження",
+                detail: "\($0.channelTitle) → \($0.recipient)\n«\($0.message)»",
+                icon: $0.channelIcon,
+                tint: .orange,
+                destination: .chat
+            )
+        }
         if let event = events.filter({ $0.startsAt >= .now }).sorted(by: { $0.startsAt < $1.startsAt }).first {
             items.append(DashboardNowItem(id: "event-\(event.id)", title: event.title, detail: dashboardEventTime(event), icon: "calendar", tint: .blue, destination: .family))
         }
@@ -470,6 +433,8 @@ private struct DashboardState {
         return items
     }
 }
+
+private enum DashboardLoadState: Equatable { case idle, loaded, failed }
 
 private struct DashboardNowItem: Identifiable {
     let id: String; let title: String; let detail: String; let icon: String; let tint: Color; let destination: DashboardDestination
@@ -491,11 +456,25 @@ private struct DashboardPendingAction: Identifiable {
 }
 
 private func dashboardWhatsAppStatus(_ status: OrbitWhatsAppIntegrationStatus) -> String {
+    if status.state == "linked" || status.outboundProviderAccepted {
+        return "WhatsApp — підключено, надсилання потребує підтвердження"
+    }
+    if status.inboundVerified { return "WhatsApp — вхідні повідомлення перевірені" }
     switch status.state {
-    case "provider_accepted": "WhatsApp — підключено"
-    case "inbound_verified": "WhatsApp — підключено, надсилання потребує підтвердження"
-    case "configured": "WhatsApp — налаштовано"
-    default: "WhatsApp — потребує налаштування"
+    case "configured": return "WhatsApp — налаштовано"
+    case "link_required": return "WhatsApp — потрібно підключити пристрій"
+    case "connecting": return "WhatsApp — підключається"
+    case "unavailable": return "WhatsApp — тимчасово недоступний"
+    default: return "WhatsApp — потребує налаштування"
+    }
+}
+
+private func dashboardWhatsAppTint(_ status: OrbitWhatsAppIntegrationStatus) -> Color {
+    if status.state == "linked" || status.outboundProviderAccepted || status.inboundVerified { return .green }
+    switch status.state {
+    case "configured": return .blue
+    case "not_configured": return .secondary
+    default: return .orange
     }
 }
 

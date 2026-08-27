@@ -4,13 +4,13 @@ import SwiftUI
 struct AppView: View {
     @Namespace private var namespace
     @AppStorage("orbit.appearance") private var appearance = "system"
-    // A fresh launch opens the family overview. Selecting the Voice tab does
-    // not start a session; Voice remains an explicit, manual action.
-    @State private var selectedTab = "dashboard"
+    // Selecting Voice is navigation only. A session remains an explicit,
+    // manual action from MainVoiceHomeView's start control.
+    @State private var selectedTab = "voice"
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            OrbitDashboardView { selectedTab = "voice" }
+            OrbitDashboardView()
                 .tabItem { Label("Огляд", systemImage: "rectangle.3.group.fill") }
                 .tag("dashboard")
             OrbitChatsView()
