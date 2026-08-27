@@ -116,7 +116,8 @@ struct OrbitDashboardView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
         }
-        .frame(width: 154, minHeight: 132, alignment: .leading)
+        .frame(width: 154, alignment: .leading)
+        .frame(minHeight: 132, alignment: .leading)
         .padding(14)
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
@@ -289,7 +290,11 @@ struct OrbitDashboardView: View {
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: .now)
-        switch hour { case 5..<12: "Доброго ранку"; case 12..<18: "Добрий день"; default: "Добрий вечір" }
+        switch hour {
+        case 5..<12: return "Доброго ранку"
+        case 12..<18: return "Добрий день"
+        default: return "Добрий вечір"
+        }
     }
 
     private var statusLine: String {
@@ -504,4 +509,3 @@ private func dashboardEventTime(_ event: OrbitCalendarEvent) -> String {
     if event.allDay { return event.startsAt.formatted(date: .abbreviated, time: .omitted) }
     return event.startsAt.formatted(date: .abbreviated, time: .shortened)
 }
-
