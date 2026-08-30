@@ -2,6 +2,7 @@ import LiveKit
 import SwiftUI
 
 struct AppView: View {
+    @EnvironmentObject private var authentication: OrbitAuthentication
     @Namespace private var namespace
     @AppStorage("orbit.appearance") private var appearance = "system"
     // Selecting Voice is navigation only. A session remains an explicit,
@@ -10,9 +11,11 @@ struct AppView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            OrbitDashboardView()
-                .tabItem { Label("Огляд", systemImage: "rectangle.3.group.fill") }
-                .tag("dashboard")
+            if authentication.canViewServerOverview {
+                OrbitDashboardView(isSelected: selectedTab == "overview")
+                    .tabItem { Label("Огляд", systemImage: "rectangle.3.group.fill") }
+                    .tag("overview")
+            }
             OrbitChatsView()
                 .tabItem { Label("Чат", systemImage: "message") }
                 .tag("chat")
@@ -28,6 +31,7 @@ struct AppView: View {
         }
         .environment(\.namespace, namespace)
         .preferredColorScheme(preferredColorScheme)
+        .task { await authentication.refreshIdentity() }
     }
 
     private var preferredColorScheme: ColorScheme? {

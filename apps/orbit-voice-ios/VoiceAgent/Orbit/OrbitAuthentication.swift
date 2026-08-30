@@ -16,10 +16,14 @@ struct OrbitTokenSource: EndpointTokenSource {
 final class OrbitAuthentication: ObservableObject {
     @Published private(set) var isPaired = KeychainStore.readDeviceToken() != nil
     @Published private(set) var displayName = UserDefaults.standard.string(forKey: "orbit.displayName")
+    @Published private(set) var personId: String?
+    @Published private(set) var identityResolved = false
+    var canViewServerOverview: Bool { identityResolved && personId == "oleksandr" }
 
     struct PairingResponse: Decodable {
         struct Profile: Decodable {
             let displayName: String
+            let personId: String
         }
         let deviceToken: String
         let profile: Profile
@@ -54,13 +58,28 @@ final class OrbitAuthentication: ObservableObject {
         try KeychainStore.saveDeviceToken(result.deviceToken)
         UserDefaults.standard.set(result.profile.displayName, forKey: "orbit.displayName")
         displayName = result.profile.displayName
+        personId = result.profile.personId
+        identityResolved = true
         isPaired = true
+    }
+
+    func refreshIdentity() async {
+        guard isPaired, let token = KeychainStore.readDeviceToken(), let url = URL(string: "https://voice.orbit.opik.net/api/me") else { identityResolved = true; return }
+        struct Response: Decodable { struct Profile: Decodable { let personId: String }; let profile: Profile }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        defer { identityResolved = true }
+        guard let (data, response) = try? await URLSession.shared.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200,
+              let value = try? JSONDecoder().decode(Response.self, from: data) else { return }
+        personId = value.profile.personId
     }
 
     func forgetDevice() {
         KeychainStore.removeDeviceToken()
         UserDefaults.standard.removeObject(forKey: "orbit.displayName")
         displayName = nil
+        personId = nil
+        identityResolved = false
         isPaired = false
     }
 }
