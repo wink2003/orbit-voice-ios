@@ -104,14 +104,14 @@ struct CacheCleanupResult: Decodable {
         isLoading = true; error = nil; result = nil
         defer { isLoading = false }
         do { proposal = try await request(path: "cache-cleanup/proposals", method: "POST", decode: CacheCleanupProposal.self) }
-        catch { error = "Не вдалося підготувати очищення кешу." }
+        catch { self.error = "Не вдалося підготувати очищення кешу." }
     }
     func confirm() async {
         guard let proposal, !isLoading else { return }
         isLoading = true; error = nil
         defer { isLoading = false }
         do { result = try await request(path: "cache-cleanup/proposals/\(proposal.actionId)/confirm", method: "POST", decode: CacheCleanupResult.self) }
-        catch { error = "Не вдалося очистити кеш." }
+        catch { self.error = "Не вдалося очистити кеш." }
     }
     func cancel() async {
         guard let proposal else { return }
