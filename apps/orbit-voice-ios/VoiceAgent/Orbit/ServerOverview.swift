@@ -63,6 +63,6 @@ struct ServerOverviewDetail: Decodable {
     private func request() async {
         guard let token = KeychainStore.readDeviceToken(), let url = URL(string: "https://voice.orbit.opik.net/api/server/overview/\(section.rawValue)") else { error = "Не вдалося підключитися до Orbit."; return }
         var request = URLRequest(url: url); request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        do { let (data, response) = try await URLSession.shared.data(for: request); guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }; let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601; detail = try decoder.decode(ServerOverviewDetail.self, from: data) } catch { error = "Не вдалося завантажити деталі." }
+        do { let (data, response) = try await URLSession.shared.data(for: request); guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }; let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601; detail = try decoder.decode(ServerOverviewDetail.self, from: data) } catch { self.error = "Не вдалося завантажити деталі." }
     }
 }
