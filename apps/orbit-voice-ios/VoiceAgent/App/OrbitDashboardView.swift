@@ -175,13 +175,16 @@ struct CacheCleanupConfirmationView: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 if let result = store.result {
-                    Label(result.status == "completed" ? "Кеш очищено" : "Не вдалося очистити кеш", systemImage: result.status == "completed" ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").font(.title3.weight(.semibold))
-                    if result.status == "completed" {
+                    let completed = result.status == "completed"
+                    let nothingToDo = result.status == "nothing_to_do"
+                    Label(completed ? "Кеш очищено" : nothingToDo ? "Немає кешу для очищення" : "Не вдалося очистити кеш", systemImage: completed ? "checkmark.circle.fill" : nothingToDo ? "checkmark.circle" : "exclamationmark.triangle.fill").font(.title3.weight(.semibold))
+                    if completed {
                         if let value = result.cacheFreedBytes { Text("Звільнено кешу: \(bytes(value))") }
                         if let value = result.rootFreedBytes { Text("Вільного місця стало більше на: \(bytes(value))") }
                         if let value = result.after?.cacheBytes { Text("Кеш збірок зараз: \(bytes(value))") }
                         if let value = result.after?.reclaimableBytes { Text("Можна звільнити: \(bytes(value))") }
-                    } else { Text("Операцію не підтверджено після перевірки стану сервера.").foregroundStyle(.secondary) }
+                    } else if nothingToDo { Text("Свіжа перевірка не знайшла невикористовуваного кешу. Жодної операції очищення не виконано.").foregroundStyle(.secondary) }
+                    else { Text("Операцію не підтверджено після перевірки стану сервера.").foregroundStyle(.secondary) }
                     Spacer()
                     Button("Готово") { store.clearProposal() }.buttonStyle(.borderedProminent)
                 } else if let proposal = store.proposal {

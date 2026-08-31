@@ -90,6 +90,8 @@ struct CacheCleanupResult: Decodable {
     let cacheFreedBytes: Double?
     let rootFreedBytes: Double?
     let containersHealthy: Bool?
+    let commandExitStatus: Int?
+    let verification: String?
     let error: String?
     struct State: Decodable { let cacheBytes: Double?; let reclaimableBytes: Double?; let rootUsedBytes: Double?; let rootAvailableBytes: Double?; let runningContainers: Int? }
 }
