@@ -53,26 +53,68 @@ struct ServerOverviewDetailView: View {
         }
     }
     @ViewBuilder private func storageCard(_ storage: ServerOverviewDetail.Storage) -> some View {
-        detailSection("Сховище: хто займає диск", icon: "externaldrive.fill") {
-            Text("Категорії показані окремо. Зведені та спільні значення не додаються між собою.")
+        detailSection("Сховище", icon: "externaldrive.fill") {
+            Text("Категорії показані окремо; спільні та зведені значення не додаються між собою.")
                 .font(.caption).foregroundStyle(.secondary)
-            if !storage.global.isEmpty {
-                Text("Глобальні категорії").font(.subheadline.weight(.semibold)).padding(.top, 4)
-                ForEach(storage.global) { item in storageItemRow(item) }
-            }
+            storageGlobalSection(storage.global, domain: "docker", title: "Docker", icon: "shippingbox.fill")
+            storageGlobalSection(storage.global, domain: "system", title: "Система", icon: "server.rack")
+            storageGlobalSection(storage.global, domain: "orbit_service", title: "Orbit", icon: "circle.grid.2x2.fill")
             if !storage.services.isEmpty {
-                Text("Orbit-сервіси").font(.subheadline.weight(.semibold)).padding(.top, 8)
-                ForEach(storage.services) { service in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(service.service).font(.subheadline.weight(.medium))
-                        ForEach(service.items) { item in storageItemRow(item) }
+                DisclosureGroup {
+                    ForEach(storage.services) { service in
+                        NavigationLink { StorageServiceDetailView(service: service) } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(service.service).font(.subheadline.weight(.medium))
+                                    Text(storageServiceSummary(service)).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }
+                        }.buttonStyle(.plain)
                     }
-                    .padding(.top, 2)
+                } label: {
+                    Label("Orbit-сервіси", systemImage: "list.bullet.rectangle")
+                        .font(.subheadline.weight(.semibold))
                 }
+                .padding(.top, 4)
             }
             if storage.stale { Text("Дані можуть бути застарілими.").font(.caption).foregroundStyle(.orange) }
             Text("Виміряно: \(Date(timeIntervalSince1970: storage.measuredAt).formatted(date: .abbreviated, time: .shortened)) • збір \(String(format: "%.0f", storage.collectionMs ?? 0)) мс")
                 .font(.caption2).foregroundStyle(.tertiary)
+        }
+    }
+    @ViewBuilder private func storageGlobalSection(_ items: [ServerOverviewDetail.StorageItem], domain: String, title: String, icon: String) -> some View {
+        let matching = items.filter { $0.domain == domain }
+        if !matching.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Label(title, systemImage: icon).font(.subheadline.weight(.semibold)).padding(.top, 4)
+                ForEach(matching) { item in storageCompactRow(item) }
+            }
+        }
+    }
+    private func storageCompactRow(_ item: ServerOverviewDetail.StorageItem) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(storageLabel(item)).font(.subheadline)
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(item.bytes.map(bytes) ?? "Недоступно").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                if let reclaimable = item.reclaimableBytes, reclaimable > 0 { Text("Можна звільнити: \(bytes(reclaimable))").font(.caption2).foregroundStyle(.orange) }
+            }
+        }
+    }
+    private func storageServiceSummary(_ service: ServerOverviewDetail.StorageService) -> String {
+        let available = service.items.filter { $0.bytes != nil }
+        if let persistent = available.first(where: { $0.type == "persistent_data" }), let value = persistent.bytes { return "Постійні дані · \(bytes(value))" }
+        if let writable = available.first(where: { $0.type == "writable_layer" }), let value = writable.bytes { return "Записуваний шар · \(bytes(value))" }
+        return "\(service.items.count) компонентів"
+    }
+    private func storageLabel(_ item: ServerOverviewDetail.StorageItem) -> String {
+        switch item.label {
+        case "Docker build cache": return "Кеш збірок Docker"
+        case "Named volumes": return "Іменовані томи"
+        case "Bind-mounted дані Orbit": return "Підключені дані Orbit"
+        case "Docker-образи": return "Образи Docker"
+        default: return item.label
         }
     }
     @ViewBuilder private func storageItemRow(_ item: ServerOverviewDetail.StorageItem) -> some View {
@@ -96,11 +138,46 @@ struct ServerOverviewDetailView: View {
     }
     private func detailSection<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View { VStack(alignment: .leading, spacing: 10) { Label(title, systemImage: icon).font(.headline); content() }.frame(maxWidth: .infinity, alignment: .leading).padding().background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous)) }
     private func row(_ title: String, _ value: String) -> some View { LabeledContent(title, value: value).font(.subheadline) }
-    private func bytes(_ value: Double) -> String { ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .binary) }
+    private func bytes(_ value: Double) -> String { value <= 0 ? "0 KB" : ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .binary) }
     private func uptime(_ seconds: Double) -> String { let d = Int(seconds); return "\(d / 86400) дн. \((d % 86400) / 3600) год." }
     private func containerRow(_ c: ServerOverviewDetail.Container) -> some View { HStack(spacing: 10) { Image(systemName: c.status == "running" ? "circle.fill" : "circle").foregroundStyle(c.status == "running" ? .green : .orange).font(.caption); VStack(alignment: .leading) { Text(c.name).font(.headline); Text("\(c.service ?? c.project ?? "") • \(c.health ?? c.status)").font(.caption).foregroundStyle(.secondary) }; Spacer(); VStack(alignment: .trailing, spacing: 2) { if let cpu = c.cpuPercent { Text(String(format: "%.2f%% CPU", cpu)).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }; if let memory = c.memoryUsedBytes { Text(bytes(memory)).font(.caption.monospacedDigit()).foregroundStyle(.secondary) } }; Image(systemName: "chevron.right").foregroundStyle(.tertiary) }.padding().background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous)) }
     private func resourceRow(_ c: ServerOverviewDetail.Container, value: String, percent: Double?) -> some View { VStack(alignment: .leading, spacing: 4) { HStack { Text(c.name).font(.subheadline.weight(.medium)); Spacer(); Text(value).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }; if let percent { ProgressView(value: min(max(percent, 0), 100), total: 100).tint(percent > 85 ? .red : .indigo) } } }
     private func resourceSort(_ lhs: Double?, _ rhs: Double?, _ lhsName: String, _ rhsName: String) -> Bool { switch (lhs, rhs) { case let (left?, right?): return left == right ? lhsName < rhsName : left > right; case (_?, nil): return true; case (nil, _?): return false; default: return lhsName < rhsName } }
+}
+
+struct StorageServiceDetailView: View {
+    let service: ServerOverviewDetail.StorageService
+    var body: some View {
+        List {
+            Section("Компоненти сховища") {
+                ForEach(service.items) { item in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(item.label).font(.subheadline)
+                            Spacer()
+                            Text(item.bytes.map(bytes) ?? "Недоступно").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                        Text(semantic(item)).font(.caption).foregroundStyle(.secondary)
+                        if let reclaimable = item.reclaimableBytes, reclaimable > 0 { Text("Можна звільнити: \(bytes(reclaimable))").font(.caption).foregroundStyle(.orange) }
+                        if let note = item.note { Text(note).font(.caption).foregroundStyle(.tertiary) }
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+            Section("Про вимірювання") {
+                Text("Компоненти можуть бути спільними або перетинатися, тому їх не слід підсумовувати без урахування семантики.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle(service.service)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    private func bytes(_ value: Double) -> String { value <= 0 ? "0 KB" : ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .binary) }
+    private func semantic(_ item: ServerOverviewDetail.StorageItem) -> String {
+        let attribution = item.attribution == "shared" ? "Спільне" : item.attribution == "exclusive" ? "Ексклюзивне" : item.attribution == "global" ? "Глобальне" : item.attribution
+        let measurement = item.measurement == "docker_reported" ? "Docker" : item.measurement == "filesystem_measured" ? "Виміряно на диску" : item.measurement
+        return "\(attribution) · \(measurement)\(item.additive ? " · додається" : " · не додається")"
+    }
 }
 
 struct ContainerDetailView: View {
