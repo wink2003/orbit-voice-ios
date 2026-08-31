@@ -71,3 +71,61 @@ struct ServerOverviewDetail: Decodable {
         do { let (data, response) = try await URLSession.shared.data(for: request); guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }; let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601; detail = try decoder.decode(ServerOverviewDetail.self, from: data) } catch { self.error = "Не вдалося завантажити деталі." }
     }
 }
+
+struct CacheCleanupProposal: Decodable, Identifiable {
+    let actionId: String
+    let status: String
+    let operation: String
+    let expiresAt: Date
+    let cacheBytes: Double?
+    let reclaimableBytes: Double
+    var id: String { actionId }
+}
+
+struct CacheCleanupResult: Decodable {
+    let actionId: String
+    let status: String
+    let before: State?
+    let after: State?
+    let cacheFreedBytes: Double?
+    let rootFreedBytes: Double?
+    let containersHealthy: Bool?
+    let error: String?
+    struct State: Decodable { let cacheBytes: Double?; let reclaimableBytes: Double?; let rootUsedBytes: Double?; let rootAvailableBytes: Double?; let runningContainers: Int? }
+}
+
+@MainActor final class CacheCleanupStore: ObservableObject {
+    @Published private(set) var proposal: CacheCleanupProposal?
+    @Published private(set) var result: CacheCleanupResult?
+    @Published private(set) var isLoading = false
+    @Published private(set) var error: String?
+    func propose() async {
+        guard !isLoading else { return }
+        isLoading = true; error = nil; result = nil
+        defer { isLoading = false }
+        do { proposal = try await request(path: "cache-cleanup/proposals", method: "POST", decode: CacheCleanupProposal.self) }
+        catch { error = "Не вдалося підготувати очищення кешу." }
+    }
+    func confirm() async {
+        guard let proposal, !isLoading else { return }
+        isLoading = true; error = nil
+        defer { isLoading = false }
+        do { result = try await request(path: "cache-cleanup/proposals/\(proposal.actionId)/confirm", method: "POST", decode: CacheCleanupResult.self) }
+        catch { error = "Не вдалося очистити кеш." }
+    }
+    func cancel() async {
+        guard let proposal else { return }
+        _ = try? await request(path: "cache-cleanup/proposals/\(proposal.actionId)/cancel", method: "POST", decode: CancelResponse.self)
+        self.proposal = nil
+    }
+    func clearProposal() { proposal = nil }
+    private struct CancelResponse: Decodable { let actionId: String; let status: String }
+    private func request<T: Decodable>(path: String, method: String, decode: T.Type) async throws -> T {
+        guard let token = KeychainStore.readDeviceToken(), let url = URL(string: "https://voice.orbit.opik.net/api/server/overview/\(path)") else { throw URLError(.badURL) }
+        var request = URLRequest(url: url); request.httpMethod = method; request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status) else { throw URLError(.badServerResponse) }
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(T.self, from: data)
+    }
+}

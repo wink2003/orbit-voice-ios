@@ -30,11 +30,16 @@ struct OrbitDashboardView: View {
 struct ServerOverviewDetailView: View {
     let section: ServerOverviewDetailSection
     @StateObject private var store: ServerOverviewDetailStore
+    @StateObject private var cleanupStore = CacheCleanupStore()
     init(section: ServerOverviewDetailSection) { self.section = section; _store = StateObject(wrappedValue: ServerOverviewDetailStore(section: section)) }
     var body: some View {
         ScrollView { Group { if store.isLoading && store.detail == nil { ProgressView("Завантаження…").frame(maxWidth: .infinity, minHeight: 180) } else if let detail = store.detail { detailContent(detail) } else { ContentUnavailableView("Деталі недоступні", systemImage: "exclamationmark.triangle", description: Text(store.error ?? "Спробуйте ще раз.")); Button("Повторити") { store.load(force: true) }.buttonStyle(.borderedProminent) } }.padding(16) }
             .background(Color(uiColor: .systemGroupedBackground)).navigationTitle(section.title).navigationBarTitleDisplayMode(.inline)
             .toolbar { Button { store.load(force: true) } label: { Image(systemName: "arrow.clockwise") }.disabled(store.isLoading) }.refreshable { store.load(force: true) }.task { store.load() }
+            .onChange(of: cleanupStore.result?.actionId) { _, _ in
+                if cleanupStore.result?.status == "completed" { store.load(force: true) }
+            }
+            .sheet(isPresented: Binding(get: { cleanupStore.proposal != nil }, set: { if !$0 { cleanupStore.clearProposal() } })) { CacheCleanupConfirmationView(store: cleanupStore) }
     }
     @ViewBuilder private func detailContent(_ d: ServerOverviewDetail) -> some View {
         switch section {
@@ -57,6 +62,21 @@ struct ServerOverviewDetailView: View {
             Text("Категорії показані окремо; спільні та зведені значення не додаються між собою.")
                 .font(.caption).foregroundStyle(.secondary)
             storageGlobalSection(storage.global, domain: "docker", title: "Docker", icon: "shippingbox.fill")
+            if let cache = storage.global.first(where: { $0.id == "docker-build-cache" }), let reclaimable = cache.reclaimableBytes, reclaimable > 0 {
+                Button { Task { await cleanupStore.propose() } } label: {
+                    Label(cleanupStore.isLoading ? "Підготовка…" : "Очистити кеш збірок", systemImage: "trash.slash")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .disabled(cleanupStore.isLoading)
+            } else if storage.global.contains(where: { $0.id == "docker-build-cache" }) {
+                Text("Немає кешу, який можна безпечно очистити.").font(.caption).foregroundStyle(.secondary)
+            }
+            if let error = cleanupStore.error { Text(error).font(.caption).foregroundStyle(.red) }
+            if let result = cleanupStore.result, result.status == "completed" {
+                Text("Кеш очищено. Звільнено: \(bytes(result.cacheFreedBytes ?? 0)) кешу · \(bytes(result.rootFreedBytes ?? 0)) на диску.").font(.caption).foregroundStyle(.secondary)
+            }
             storageGlobalSection(storage.global, domain: "system", title: "Система", icon: "server.rack")
             storageGlobalSection(storage.global, domain: "orbit_service", title: "Orbit", icon: "circle.grid.2x2.fill")
             if !storage.services.isEmpty {
@@ -147,6 +167,39 @@ struct ServerOverviewDetailView: View {
     private func containerRow(_ c: ServerOverviewDetail.Container) -> some View { HStack(spacing: 10) { Image(systemName: c.status == "running" ? "circle.fill" : "circle").foregroundStyle(c.status == "running" ? .green : .orange).font(.caption); VStack(alignment: .leading) { Text(c.name).font(.headline); Text("\(c.service ?? c.project ?? "") • \(c.health ?? c.status)").font(.caption).foregroundStyle(.secondary) }; Spacer(); VStack(alignment: .trailing, spacing: 2) { if let cpu = c.cpuPercent { Text(String(format: "%.2f%% CPU", cpu)).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }; if let memory = c.memoryUsedBytes { Text(bytes(memory)).font(.caption.monospacedDigit()).foregroundStyle(.secondary) } }; Image(systemName: "chevron.right").foregroundStyle(.tertiary) }.padding().background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous)) }
     private func resourceRow(_ c: ServerOverviewDetail.Container, value: String, percent: Double?) -> some View { VStack(alignment: .leading, spacing: 4) { HStack { Text(c.name).font(.subheadline.weight(.medium)); Spacer(); Text(value).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }; if let percent { ProgressView(value: min(max(percent, 0), 100), total: 100).tint(percent > 85 ? .red : .indigo) } } }
     private func resourceSort(_ lhs: Double?, _ rhs: Double?, _ lhsName: String, _ rhsName: String) -> Bool { switch (lhs, rhs) { case let (left?, right?): return left == right ? lhsName < rhsName : left > right; case (_?, nil): return true; case (nil, _?): return false; default: return lhsName < rhsName } }
+}
+
+struct CacheCleanupConfirmationView: View {
+    @ObservedObject var store: CacheCleanupStore
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                if let result = store.result {
+                    Label(result.status == "completed" ? "Кеш очищено" : "Не вдалося очистити кеш", systemImage: result.status == "completed" ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").font(.title3.weight(.semibold))
+                    if result.status == "completed" {
+                        if let value = result.cacheFreedBytes { Text("Звільнено кешу: \(bytes(value))") }
+                        if let value = result.rootFreedBytes { Text("Вільного місця стало більше на: \(bytes(value))") }
+                        if let value = result.after?.cacheBytes { Text("Кеш збірок зараз: \(bytes(value))") }
+                        if let value = result.after?.reclaimableBytes { Text("Можна звільнити: \(bytes(value))") }
+                    } else { Text("Операцію не підтверджено після перевірки стану сервера.").foregroundStyle(.secondary) }
+                    Spacer()
+                    Button("Готово") { store.clearProposal() }.buttonStyle(.borderedProminent)
+                } else if let proposal = store.proposal {
+                    Text("Буде очищено лише невикористовуваний BuildKit-кеш.").font(.headline)
+                    Text("Контейнери, образи, томи та постійні дані не видаляються.").foregroundStyle(.secondary)
+                    LabeledContent("Поточний кеш", value: bytes(proposal.cacheBytes ?? 0))
+                    LabeledContent("Можна звільнити", value: bytes(proposal.reclaimableBytes))
+                    Spacer()
+                    HStack {
+                        Button("Скасувати") { Task { await store.cancel() } }.buttonStyle(.bordered)
+                        Spacer()
+                        Button("Очистити кеш") { Task { await store.confirm() } }.buttonStyle(.borderedProminent).tint(.red).disabled(store.isLoading)
+                    }
+                }
+            }.padding(20).navigationTitle("Кеш збірок Docker").navigationBarTitleDisplayMode(.inline)
+        }
+    }
+    private func bytes(_ value: Double) -> String { value <= 0 ? "0 KB" : ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .binary) }
 }
 
 struct StorageServiceDetailView: View {
