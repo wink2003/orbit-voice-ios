@@ -47,7 +47,10 @@ struct ServerOverviewDetail: Decodable {
     struct Container: Decodable, Identifiable { let id: String; let name: String; let status: String; let health: String?; let project: String?; let image: String?; let service: String?; let startedAt: String?; let restartPolicy: String?; let cpuPercent: Double?; let memoryUsedBytes: Double?; let memoryHostPercent: Double?; let memoryMetric: String?; let memoryLimitBytes: Double?; let writableLayerBytes: Double?; let diskMetric: String?; let ports: [Port]; let networks: [String]; let mounts: [Mount] }
     struct DockerStorageSemantics: Decodable { let writableLayer: String; let namedVolumes: String; let bindMounts: String; let images: String }
     struct DockerStorage: Decodable { let writableLayerTotalBytes: Double; let containers: [Container]; let semantics: DockerStorageSemantics }
-    let generatedAt: Date; let collectionMs: Double?; let server: Host?; let cpu: CPU?; let memory: Memory?; let disks: [Disk]?; let containers: [Container]?; let dockerStorage: DockerStorage?
+    struct StorageItem: Decodable, Identifiable { let id: String; let domain: String; let type: String; let label: String; let bytes: Double?; let reclaimableBytes: Double?; let attribution: String; let reclaimability: String; let measurement: String; let additive: Bool; let rollup: Bool?; let mountType: String?; let metric: String?; let note: String?; let pathLabel: String? }
+    struct StorageService: Decodable, Identifiable { let service: String; let items: [StorageItem]; var id: String { service } }
+    struct Storage: Decodable { let measuredAt: Double; let collectionMs: Double?; let refreshIntervalSeconds: Double?; let stale: Bool; let global: [StorageItem]; let services: [StorageService] }
+    let generatedAt: Date; let collectionMs: Double?; let server: Host?; let cpu: CPU?; let memory: Memory?; let disks: [Disk]?; let containers: [Container]?; let dockerStorage: DockerStorage?; let storage: Storage?
 }
 
 @MainActor final class ServerOverviewDetailStore: ObservableObject {

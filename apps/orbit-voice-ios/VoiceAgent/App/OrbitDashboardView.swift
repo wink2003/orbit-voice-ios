@@ -43,6 +43,7 @@ struct ServerOverviewDetailView: View {
         case .disk:
             if let disks = d.disks { ForEach(disks, id: \.mount) { disk in detailSection(disk.mount, icon: "internaldrive.fill") { row("Файлова система", disk.filesystem ?? "—"); row("Всього", bytes(disk.totalBytes)); row("Використано", "\(bytes(disk.usedBytes)) (\(String(format: "%.1f", disk.usedPercent))%)"); row("Доступно", bytes(disk.availableBytes)); ProgressView(value: min(max(disk.usedPercent, 0), 100), total: 100).tint(disk.usedPercent > 85 ? .red : .indigo) } } }
             if let storage = d.dockerStorage { detailSection("Docker: записувані шари", icon: "shippingbox.fill") { row("Разом", bytes(storage.writableLayerTotalBytes)); Text("Лише дані, записані всередині файлової системи контейнера. Volumes, bind mounts та спільні образи не додаються.").font(.caption).foregroundStyle(.secondary); ForEach(storage.containers.sorted { resourceSort($0.writableLayerBytes, $1.writableLayerBytes, $0.name, $1.name) }) { container in resourceRow(container, value: bytes(container.writableLayerBytes ?? 0), percent: nil) } } }
+            if let storage = d.storage { storageCard(storage) }
         case .cpu:
             if let cpu = d.cpu { detailSection("CPU", icon: section.icon) { row("Модель", cpu.model ?? "Недоступно"); if let arch = cpu.architecture { row("Архітектура", arch) }; row("Логічні CPU", "\(cpu.logicalCpus) vCPU"); if let usage = cpu.utilizationPercent { row("Навантаження", "\(String(format: "%.1f", usage))%") }; row("Load 1 / 5 / 15", "\(String(format: "%.2f", cpu.loadAverage.one)) / \(String(format: "%.2f", cpu.loadAverage.five)) / \(String(format: "%.2f", cpu.loadAverage.fifteen))"); if cpu.frequency.available, let current = cpu.frequency.currentMhz { row("Частота", "\(String(format: "%.0f", current)) MHz") } else { row("Частота", "Недоступна для VM") } } }
             if let containers = d.containers { detailSection("Використання по контейнерах", icon: "shippingbox.fill") { Text("Поточний відсоток CPU Docker за інтервал вимірювання; не обовʼязково дорівнює навантаженню хоста.").font(.caption).foregroundStyle(.secondary); ForEach(containers.sorted { resourceSort($0.cpuPercent, $1.cpuPercent, $0.name, $1.name) }) { resourceRow($0, value: String(format: "%.2f%%", $0.cpuPercent ?? 0), percent: $0.cpuPercent) } } }
@@ -50,6 +51,48 @@ struct ServerOverviewDetailView: View {
             if let memory = d.memory { detailSection("Памʼять", icon: section.icon) { row("Всього", bytes(memory.totalBytes)); row("Використано", "\(bytes(memory.usedBytes)) (\(String(format: "%.1f", memory.usedPercent))%)"); row("Доступно", bytes(memory.availableBytes)); ProgressView(value: min(max(memory.usedPercent, 0), 100), total: 100).tint(memory.usedPercent > 85 ? .red : .indigo); row("Swap", memory.swapTotalBytes > 0 ? "\(bytes(memory.swapUsedBytes)) із \(bytes(memory.swapTotalBytes))" : "Немає") } }
             if let containers = d.containers { detailSection("Використання по контейнерах", icon: "shippingbox.fill") { Text("Показано Docker Linux working set та частку від усієї памʼяті хоста.").font(.caption).foregroundStyle(.secondary); ForEach(containers.sorted { resourceSort($0.memoryUsedBytes, $1.memoryUsedBytes, $0.name, $1.name) }) { resourceRow($0, value: "\(bytes($0.memoryUsedBytes ?? 0)) • \(String(format: "%.2f", $0.memoryHostPercent ?? 0))% хоста", percent: $0.memoryHostPercent) } } }
         }
+    }
+    @ViewBuilder private func storageCard(_ storage: ServerOverviewDetail.Storage) -> some View {
+        detailSection("Сховище: хто займає диск", icon: "externaldrive.fill") {
+            Text("Категорії показані окремо. Зведені та спільні значення не додаються між собою.")
+                .font(.caption).foregroundStyle(.secondary)
+            if !storage.global.isEmpty {
+                Text("Глобальні категорії").font(.subheadline.weight(.semibold)).padding(.top, 4)
+                ForEach(storage.global) { item in storageItemRow(item) }
+            }
+            if !storage.services.isEmpty {
+                Text("Orbit-сервіси").font(.subheadline.weight(.semibold)).padding(.top, 8)
+                ForEach(storage.services) { service in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(service.service).font(.subheadline.weight(.medium))
+                        ForEach(service.items) { item in storageItemRow(item) }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+            if storage.stale { Text("Дані можуть бути застарілими.").font(.caption).foregroundStyle(.orange) }
+            Text("Виміряно: \(Date(timeIntervalSince1970: storage.measuredAt).formatted(date: .abbreviated, time: .shortened)) • збір \(String(format: "%.0f", storage.collectionMs ?? 0)) мс")
+                .font(.caption2).foregroundStyle(.tertiary)
+        }
+    }
+    @ViewBuilder private func storageItemRow(_ item: ServerOverviewDetail.StorageItem) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(item.label).font(.subheadline)
+                Spacer()
+                Text(item.bytes.map(bytes) ?? "Недоступно").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 6) {
+                Text(storageSemantic(item)).font(.caption2).foregroundStyle(.tertiary)
+                if let reclaimable = item.reclaimableBytes, reclaimable > 0 { Text("Можна звільнити: \(bytes(reclaimable))").font(.caption2).foregroundStyle(.orange) }
+            }
+            if let note = item.note { Text(note).font(.caption2).foregroundStyle(.tertiary) }
+        }
+    }
+    private func storageSemantic(_ item: ServerOverviewDetail.StorageItem) -> String {
+        let attribution = item.attribution == "shared" ? "спільне" : item.attribution == "exclusive" ? "ексклюзивне" : item.attribution == "global" ? "глобальне" : item.attribution
+        let measurement = item.measurement == "docker_reported" ? "Docker" : item.measurement == "filesystem_measured" ? "виміряно на диску" : item.measurement
+        return "\(attribution) • \(measurement)\(item.rollup == true ? " • зведене" : "")"
     }
     private func detailSection<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View { VStack(alignment: .leading, spacing: 10) { Label(title, systemImage: icon).font(.headline); content() }.frame(maxWidth: .infinity, alignment: .leading).padding().background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous)) }
     private func row(_ title: String, _ value: String) -> some View { LabeledContent(title, value: value).font(.subheadline) }
