@@ -104,8 +104,12 @@ struct ServerOverviewDetailView: View {
     }
     private func storageServiceSummary(_ service: ServerOverviewDetail.StorageService) -> String {
         let available = service.items.filter { $0.bytes != nil }
+        let image = available.first(where: { $0.type == "image" })?.bytes.map { "Образ \(bytes($0))" }
+        let writable = available.first(where: { $0.type == "writable_layer" })?.bytes.map { "Шар \(bytes($0))" }
+        if let image, let writable { return "\(image) · \(writable)" }
+        if let image { return image }
+        if let writable { return writable }
         if let persistent = available.first(where: { $0.type == "persistent_data" }), let value = persistent.bytes { return "Постійні дані · \(bytes(value))" }
-        if let writable = available.first(where: { $0.type == "writable_layer" }), let value = writable.bytes { return "Записуваний шар · \(bytes(value))" }
         return "\(service.items.count) компонентів"
     }
     private func storageLabel(_ item: ServerOverviewDetail.StorageItem) -> String {
