@@ -44,8 +44,10 @@ struct ServerOverviewDetail: Decodable {
     struct Memory: Decodable { let totalBytes: Double; let usedBytes: Double; let availableBytes: Double; let usedPercent: Double; let swapTotalBytes: Double; let swapFreeBytes: Double; let swapUsedBytes: Double }
     struct Port: Decodable { let container: String?; let host: String?; let hostIp: String? }
     struct Mount: Decodable { let name: String?; let type: String?; let destination: String? }
-    struct Container: Decodable, Identifiable { let id: String; let name: String; let status: String; let health: String?; let project: String?; let image: String?; let service: String?; let startedAt: String?; let restartPolicy: String?; let ports: [Port]; let networks: [String]; let mounts: [Mount] }
-    let generatedAt: Date; let collectionMs: Double?; let server: Host?; let cpu: CPU?; let memory: Memory?; let disks: [Disk]?; let containers: [Container]?
+    struct Container: Decodable, Identifiable { let id: String; let name: String; let status: String; let health: String?; let project: String?; let image: String?; let service: String?; let startedAt: String?; let restartPolicy: String?; let cpuPercent: Double?; let memoryUsedBytes: Double?; let memoryHostPercent: Double?; let memoryMetric: String?; let memoryLimitBytes: Double?; let writableLayerBytes: Double?; let diskMetric: String?; let ports: [Port]; let networks: [String]; let mounts: [Mount] }
+    struct DockerStorageSemantics: Decodable { let writableLayer: String; let namedVolumes: String; let bindMounts: String; let images: String }
+    struct DockerStorage: Decodable { let writableLayerTotalBytes: Double; let containers: [Container]; let semantics: DockerStorageSemantics }
+    let generatedAt: Date; let collectionMs: Double?; let server: Host?; let cpu: CPU?; let memory: Memory?; let disks: [Disk]?; let containers: [Container]?; let dockerStorage: DockerStorage?
 }
 
 @MainActor final class ServerOverviewDetailStore: ObservableObject {
