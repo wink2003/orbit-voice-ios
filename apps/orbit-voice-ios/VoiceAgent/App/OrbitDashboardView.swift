@@ -78,6 +78,7 @@ struct ServerOverviewDetailView: View {
                 Text("Кеш очищено. Звільнено: \(bytes(result.cacheFreedBytes ?? 0)) кешу · \(bytes(result.rootFreedBytes ?? 0)) на диску.").font(.caption).foregroundStyle(.secondary)
             }
             storageGlobalSection(storage.global, domain: "system", title: "Система", icon: "server.rack")
+            storageGlobalSection(storage.global, domain: "development", title: "Розробка", icon: "hammer.fill")
             storageGlobalSection(storage.global, domain: "orbit_service", title: "Orbit", icon: "circle.grid.2x2.fill")
             if !storage.services.isEmpty {
                 DisclosureGroup {
