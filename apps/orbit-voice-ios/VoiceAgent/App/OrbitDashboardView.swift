@@ -71,43 +71,45 @@ struct ServerOverviewDetailView: View {
                     storageCompactRow(residual)
                     Text("Деталізація нижче входить у цю категорію або перетинається між собою. Ці значення не потрібно додавати повторно.")
                         .font(.caption).foregroundStyle(.secondary)
-                    storageGlobalSection(storage.global, domain: "system", title: "Системні логи", icon: "doc.text.fill", ids: ["system-logs"])
-                    storageGlobalSection(storage.global, domain: "docker", title: "Docker", icon: "shippingbox.fill")
-                    if let cache = storage.global.first(where: { $0.id == "docker-build-cache" }), let reclaimable = cache.reclaimableBytes, reclaimable > 0 {
-                        Button { Task { await cleanupStore.propose() } } label: {
-                            Label(cleanupStore.isLoading ? "Підготовка…" : "Очистити кеш збірок", systemImage: "trash.slash")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.borderedProminent).tint(.orange).disabled(cleanupStore.isLoading)
-                    } else if storage.global.contains(where: { $0.id == "docker-build-cache" }) {
-                        Text("Немає кешу, який можна безпечно очистити.").font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let error = cleanupStore.error { Text(error).font(.caption).foregroundStyle(.red) }
-                    if let result = cleanupStore.result, result.status == "completed" {
-                        Text("Кеш очищено. Звільнено: \(bytes(result.cacheFreedBytes ?? 0)) кешу · \(bytes(result.rootFreedBytes ?? 0)) на диску.").font(.caption).foregroundStyle(.secondary)
-                    }
-                    storageGlobalSection(storage.global, domain: "orbit_service", title: "Orbit", icon: "circle.grid.2x2.fill", ids: ["orbit-persistent-data", "orbit-bind-data", "orbit-project-tree"])
-                    if !storage.services.isEmpty {
-                        DisclosureGroup {
-                            ForEach(storage.services) { service in
-                                NavigationLink { StorageServiceDetailView(service: service) } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(service.service).font(.subheadline.weight(.medium))
-                                            Text(storageServiceSummary(service)).font(.caption).foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                    }
-                                }.buttonStyle(.plain)
+                    VStack(alignment: .leading, spacing: 8) {
+                        storageGlobalSection(storage.global, domain: "system", title: "Системні логи", icon: "doc.text.fill", ids: ["system-logs"])
+                        storageGlobalSection(storage.global, domain: "docker", title: "Docker", icon: "shippingbox.fill")
+                        if let cache = storage.global.first(where: { $0.id == "docker-build-cache" }), let reclaimable = cache.reclaimableBytes, reclaimable > 0 {
+                            Button { Task { await cleanupStore.propose() } } label: {
+                                Label(cleanupStore.isLoading ? "Підготовка…" : "Очистити кеш збірок", systemImage: "trash.slash")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                        } label: {
-                            Label("Orbit-сервіси", systemImage: "list.bullet.rectangle")
-                                .font(.subheadline.weight(.semibold))
+                            .buttonStyle(.borderedProminent).tint(.orange).disabled(cleanupStore.isLoading)
+                        } else if storage.global.contains(where: { $0.id == "docker-build-cache" }) {
+                            Text("Немає кешу, який можна безпечно очистити.").font(.caption).foregroundStyle(.secondary)
                         }
-                        .padding(.top, 4)
+                        if let error = cleanupStore.error { Text(error).font(.caption).foregroundStyle(.red) }
+                        if let result = cleanupStore.result, result.status == "completed" {
+                            Text("Кеш очищено. Звільнено: \(bytes(result.cacheFreedBytes ?? 0)) кешу · \(bytes(result.rootFreedBytes ?? 0)) на диску.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        storageGlobalSection(storage.global, domain: "orbit_service", title: "Orbit", icon: "circle.grid.2x2.fill", ids: ["orbit-persistent-data", "orbit-bind-data", "orbit-project-tree"])
+                        if !storage.services.isEmpty {
+                            DisclosureGroup {
+                                ForEach(storage.services) { service in
+                                    NavigationLink { StorageServiceDetailView(service: service) } label: {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(service.service).font(.subheadline.weight(.medium))
+                                                Text(storageServiceSummary(service)).font(.caption).foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                        }
+                                    }.buttonStyle(.plain)
+                                }
+                            } label: {
+                                Label("Orbit-сервіси", systemImage: "list.bullet.rectangle")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .padding(.top, 4)
+                        }
                     }
+                    .padding(.leading, 10)
                 }
-                .padding(.leading, 10)
             }
             if storage.stale { Text("Дані можуть бути застарілими.").font(.caption).foregroundStyle(.orange) }
             Text("Виміряно: \(Date(timeIntervalSince1970: storage.measuredAt).formatted(date: .abbreviated, time: .shortened)) • збір \(String(format: "%.0f", storage.collectionMs ?? 0)) мс")
