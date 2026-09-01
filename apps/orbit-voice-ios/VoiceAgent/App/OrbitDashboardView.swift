@@ -117,6 +117,7 @@ struct ServerOverviewDetailView: View {
         case "system-files": return 0
         case "system-logs": return 1
         case "system-cache": return 2
+        case "host-storage-residual": return 3
         case "orbit-persistent-data": return 0
         case "orbit-bind-data": return 1
         case "orbit-project-tree": return 2
