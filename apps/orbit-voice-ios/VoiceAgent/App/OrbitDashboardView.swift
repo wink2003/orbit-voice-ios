@@ -104,12 +104,24 @@ struct ServerOverviewDetailView: View {
         }
     }
     @ViewBuilder private func storageGlobalSection(_ items: [ServerOverviewDetail.StorageItem], domain: String, title: String, icon: String) -> some View {
-        let matching = items.filter { $0.domain == domain }
+        let matching = items.filter { $0.domain == domain }.sorted { storagePriority($0) < storagePriority($1) }
         if !matching.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Label(title, systemImage: icon).font(.subheadline.weight(.semibold)).padding(.top, 4)
                 ForEach(matching) { item in storageCompactRow(item) }
             }
+        }
+    }
+    private func storagePriority(_ item: ServerOverviewDetail.StorageItem) -> Int {
+        switch item.id {
+        case "system-files": return 0
+        case "system-logs": return 1
+        case "system-cache": return 2
+        case "orbit-persistent-data": return 0
+        case "orbit-bind-data": return 1
+        case "orbit-project-tree": return 2
+        case "orbit-imports": return 3
+        default: return 10
         }
     }
     private func storageCompactRow(_ item: ServerOverviewDetail.StorageItem) -> some View {
