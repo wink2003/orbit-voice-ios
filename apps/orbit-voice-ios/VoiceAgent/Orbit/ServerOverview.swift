@@ -10,10 +10,27 @@ struct ServerOverview: Decodable {
     let generatedAt: Date; let server: Server; let containers: Containers; let disks: [Disk]; let cpu: CPU; let memory: Memory
 }
 
+struct BackupStatus: Decodable {
+    struct Schedule: Decodable { let frequency: String; let timeUtc: String }
+    struct Local: Decodable { let status: String; let retentionDays: Int; let retentionMode: String }
+    struct Remote: Decodable { let configured: Bool; let status: String; let provider: String }
+    struct Component: Decodable, Identifiable { let id: String; let status: String; let sizeBytes: Double? }
+    let status: String
+    let lastSuccessAt: Date?
+    let ageSeconds: Double?
+    let totalSizeBytes: Double?
+    let schedule: Schedule
+    let local: Local
+    let components: [Component]
+    let remote: Remote
+    let restoreVerified: Bool
+}
+
 @MainActor final class ServerOverviewStore: ObservableObject {
     @Published private(set) var overview: ServerOverview?
     @Published private(set) var isLoading = false
     @Published private(set) var error: String?
+    @Published private(set) var backups: BackupStatus?
     private var lastLoaded: Date?
     private var task: Task<Void, Never>?
     func loadIfNeeded(force: Bool = false) {
@@ -24,7 +41,17 @@ struct ServerOverview: Decodable {
     private func request() async {
         guard let token = KeychainStore.readDeviceToken(), let url = URL(string: "https://voice.orbit.opik.net/api/server/overview") else { error = "Не вдалося підключитися до Orbit."; return }
         var request = URLRequest(url: url); request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        do { let (data, response) = try await URLSession.shared.data(for: request); guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }; let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601; overview = try decoder.decode(ServerOverview.self, from: data); lastLoaded = Date() } catch { self.error = "Не вдалося оновити огляд сервера." }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+            let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+            overview = try decoder.decode(ServerOverview.self, from: data)
+            if let backupURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/backups") {
+                var backupRequest = URLRequest(url: backupURL); backupRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                if let (backupData, backupResponse) = try? await URLSession.shared.data(for: backupRequest), (backupResponse as? HTTPURLResponse)?.statusCode == 200 { backups = try? decoder.decode(BackupStatus.self, from: backupData) }
+            }
+            lastLoaded = Date()
+        } catch { self.error = "Не вдалося оновити огляд сервера." }
     }
 }
 
