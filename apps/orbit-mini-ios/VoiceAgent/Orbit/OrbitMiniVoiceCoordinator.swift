@@ -145,20 +145,45 @@ private final class OrbitMiniSessionPCMObserver: AudioRenderer, @unchecked Senda
     private let startID: String
     private let logger = OrbitMiniDiagnosticLogger.shared
     private var hasLoggedFirstFrame = false
+    private var frameCount = 0
+    private var lastReportAt = ProcessInfo.processInfo.systemUptime
+    private var lastEnergyState: Bool?
 
     init(source: String, startID: String) {
         self.source = source
         self.startID = startID
     }
 
-    func render(pcmBuffer _: AVAudioPCMBuffer) {
-        let shouldLog = lock.withLock {
-            guard !hasLoggedFirstFrame else { return false }
-            hasLoggedFirstFrame = true
-            return true
+    func render(pcmBuffer: AVAudioPCMBuffer) {
+        let samples = Int(pcmBuffer.frameLength)
+        var sumSquares = 0.0
+        var peak = 0.0
+        if samples > 0, let channel = pcmBuffer.floatChannelData?.pointee {
+            for index in 0..<samples {
+                let value = Double(channel[index])
+                sumSquares += value * value
+                peak = max(peak, abs(value))
+            }
         }
-        if shouldLog {
+        let rms = samples > 0 ? sqrt(sumSquares / Double(samples)) : 0
+        let hasEnergy = rms >= 0.003 || peak >= 0.02
+        let now = ProcessInfo.processInfo.systemUptime
+        let event: (first: Bool, report: Bool, frameCount: Int, rms: Double, peak: Double, energy: Bool) = lock.withLock {
+            frameCount += 1
+            let first = !hasLoggedFirstFrame
+            if first { hasLoggedFirstFrame = true }
+            let report = first || lastEnergyState != hasEnergy || now - lastReportAt >= 5
+            if report {
+                lastReportAt = now
+                lastEnergyState = hasEnergy
+            }
+            return (first, report, frameCount, rms, peak, hasEnergy)
+        }
+        if event.first {
             logger.notice("audio capture first PCM source=\(source) id=\(startID) engineRunning=\(AudioManager.shared.isEngineRunning)")
+        }
+        if event.report {
+            logger.notice("audio capture energy source=\(source) id=\(startID) frames=\(event.frameCount) rms=\(String(format: \"%.4f\", event.rms)) peak=\(String(format: \"%.4f\", event.peak)) energy=\(event.energy) route=\(AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType.rawValue ?? \"unknown\")")
         }
     }
 }
@@ -719,10 +744,12 @@ private extension OrbitMiniVoiceCoordinator {
         case .began:
             audioInterrupted = true
             logger.notice("AVAudioSession interruption began")
+            logAudioReadiness()
         case .ended:
             audioInterrupted = false
             let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
             logger.notice("AVAudioSession interruption ended shouldResume=\(options.contains(.shouldResume))")
+            logAudioReadiness()
             signalAudioWaiters(reason: "interruption-ended")
         @unknown default:
             break
@@ -732,6 +759,7 @@ private extension OrbitMiniVoiceCoordinator {
     func handleAudioRouteChange(_ raw: UInt) {
         let reason = AVAudioSession.RouteChangeReason(rawValue: raw)
         logger.notice("AVAudioSession route changed reason=\(String(describing: reason))")
+        logAudioReadiness()
         signalAudioWaiters(reason: "route-changed")
     }
 
@@ -762,6 +790,7 @@ private extension OrbitMiniVoiceCoordinator {
 
     func handleMediaServicesReset() {
         logger.error("AVAudioSession media services were reset")
+        logAudioReadiness()
         signalAudioWaiters(reason: "media-services-reset")
     }
 
