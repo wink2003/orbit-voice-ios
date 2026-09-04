@@ -11,6 +11,8 @@ enum OrbitChatMarkdownFormattingTests {
             OrbitChatMarkdownFormatting.displaySource("- Main Orbit\n- Orbit Core") == "- Main Orbit\n- Orbit Core",
             "Markdown bullets remain separate"
         )
+        let blocks = OrbitChatMarkdownFormatting.preservingWhitespaceSource("### Компоненти\n*   **Orbit Core:** сервіс\n*   **LiveKit:** голос")
+        expect(blocks == "**Компоненти**\n• **Orbit Core:** сервіс\n• **LiveKit:** голос", "headings and bullets remain readable")
         expect(
             OrbitChatMarkdownFormatting.displaySource("**Компоненти Orbit**\nСистема складається з компонентів.").contains("**Компоненти Orbit**  \nСистема"),
             "bold headings remain separated"
@@ -26,6 +28,10 @@ enum OrbitChatMarkdownFormattingTests {
         expect(
             OrbitChatMarkdownFormatting.displaySource("```swift\nlet build = 1.0\n```") == "```swift\nlet build = 1.0\n```",
             "fenced code remains unchanged"
+        )
+        expect(
+            OrbitChatMarkdownFormatting.preservingWhitespaceSource("```swift\nlet build = 1.0\n```") == "```swift\nlet build = 1.0\n```",
+            "fenced code is not rewritten"
         )
         let labels = OrbitChatMarkdownFormatting.displaySource("**Версія:** 1.0\n**Build:** 19")
         expect(!labels.contains("1.0Build"), "label/value blocks do not concatenate")

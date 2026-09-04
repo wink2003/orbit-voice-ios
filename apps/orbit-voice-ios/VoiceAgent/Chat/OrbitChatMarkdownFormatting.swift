@@ -28,6 +28,44 @@ enum OrbitChatMarkdownFormatting {
         return output
     }
 
+    // Full Markdown parsing on iOS may discard block whitespace. Keep inline
+    // emphasis/link parsing, while making the already-authored block markers
+    // displayable and retaining every meaningful line boundary.
+    static func preservingWhitespaceSource(_ content: String) -> String {
+        let source = displaySource(content)
+        let lines = source.components(separatedBy: "\n")
+        var output: [String] = []
+        var inCodeFence = false
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") {
+                output.append(line)
+                inCodeFence.toggle()
+                continue
+            }
+            guard !inCodeFence else {
+                output.append(line)
+                continue
+            }
+            if let heading = line.range(of: "^(\\s*)#{1,6}\\s+(.*)$", options: .regularExpression) {
+                let match = String(line[heading])
+                let title = match.replacingOccurrences(of: "^\\s*#{1,6}\\s+", with: "", options: .regularExpression)
+                output.append("**\(title)**")
+            } else if let bullet = line.range(of: "^(\\s*)[*+-]\\s+(.*)$", options: .regularExpression) {
+                let match = String(line[bullet])
+                let item = match.replacingOccurrences(of: "^\\s*[*+-]\\s+", with: "", options: .regularExpression)
+                output.append("• \(item)")
+            } else if let ordered = line.range(of: "^(\\s*)[0-9]+\\.\\s+(.*)$", options: .regularExpression) {
+                let match = String(line[ordered])
+                let item = match.replacingOccurrences(of: "^\\s*[0-9]+\\.\\s+", with: "", options: .regularExpression)
+                output.append("• \(item)")
+            } else {
+                output.append(line)
+            }
+        }
+        return output.joined(separator: "\n")
+    }
+
     private static func isMarkdownListLine(_ line: String) -> Bool {
         line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("+ ")
             || line.range(of: "^[0-9]+\\.\\s", options: .regularExpression) != nil

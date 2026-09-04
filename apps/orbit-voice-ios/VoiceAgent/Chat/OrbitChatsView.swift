@@ -475,8 +475,8 @@ private struct SelectableMarkdownText: UIViewRepresentable, Equatable {
     func updateUIView(_ view: UITextView, context: Context) {
         guard context.coordinator.content != content || context.coordinator.foregroundColor != foregroundColor else { return }
         let attributed: NSAttributedString
-        let displaySource = OrbitChatMarkdownFormatting.displaySource(content)
-        if let markdown = try? AttributedString(markdown: displaySource, options: .init(interpretedSyntax: .full)) {
+        let displaySource = OrbitChatMarkdownFormatting.preservingWhitespaceSource(content)
+        if let markdown = try? AttributedString(markdown: displaySource, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
             attributed = NSAttributedString(markdown)
         } else {
             attributed = NSAttributedString(string: content)
