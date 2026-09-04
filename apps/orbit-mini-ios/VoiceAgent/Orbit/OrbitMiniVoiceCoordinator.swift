@@ -183,7 +183,7 @@ private final class OrbitMiniSessionPCMObserver: AudioRenderer, @unchecked Senda
             logger.notice("audio capture first PCM source=\(source) id=\(startID) engineRunning=\(AudioManager.shared.isEngineRunning)")
         }
         if event.report {
-            logger.notice("audio capture energy source=\(source) id=\(startID) frames=\(event.frameCount) rms=\(String(format: \"%.4f\", event.rms)) peak=\(String(format: \"%.4f\", event.peak)) energy=\(event.energy) route=\(AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType.rawValue ?? \"unknown\")")
+            logger.notice("audio capture energy source=\(source) id=\(startID) frames=\(event.frameCount) rms=\(String(format: "%.4f", event.rms)) peak=\(String(format: "%.4f", event.peak)) energy=\(event.energy) route=\(AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType.rawValue ?? "unknown")")
         }
     }
 }
