@@ -457,6 +457,12 @@ final class OrbitMiniVoiceCoordinator: NSObject, ObservableObject {
         let disconnectTask = Task { @MainActor in
             logger.notice("LiveKit session.end started")
             await session.end()
+            // Session.end() owns the transport, but the shared LiveKit ADM
+            // can finish tearing down just after the room reports closed.
+            // Quiesce it before allowing a new logical start so an immediate
+            // reconnect cannot inherit a poisoned engine/voice-processing
+            // state (notably on Bluetooth routes).
+            self.resetAudioEngineForNextSession()
             self.logger.notice("LiveKit session.end completed")
         }
 
@@ -532,6 +538,7 @@ private extension OrbitMiniVoiceCoordinator {
     }
 
     func attemptLiveKitStart(number: Int, source: String) async {
+        resetAudioEngineForNextSession()
         logger.notice("LiveKit session.start begin attempt=\(number) source=\(source) app=\(self.applicationStateDescription) scene=\(self.sceneStateDescription) category=\(AVAudioSession.sharedInstance().category.rawValue) mode=\(AVAudioSession.sharedInstance().mode.rawValue) engineAvailability=\(String(describing: AudioManager.shared.engineAvailability)) engineRunningBefore=\(AudioManager.shared.isEngineRunning)")
         await runtime.session.start()
         if runtime.session.isConnected {
@@ -576,6 +583,18 @@ private extension OrbitMiniVoiceCoordinator {
         AudioManager.shared.remove(localAudioRenderer: observer)
         sessionPCMObserver = nil
         logger.notice("audio capture diagnostics detached")
+    }
+
+    /// Re-arm LiveKit's shared ADM between logical sessions. This is a
+    /// lifecycle reset only: Session remains the sole owner of capture and
+    /// no probe or parallel audio engine is created.
+    func resetAudioEngineForNextSession() {
+        AudioManager.shared.audioSession.isAutomaticConfigurationEnabled = true
+        if AudioManager.shared.isEngineRunning {
+            logger.notice("audio engine reset before logical session")
+            try? AudioManager.shared.setEngineAvailability(.none)
+        }
+        try? AudioManager.shared.setEngineAvailability(.default)
     }
 
     func startDirectSession(startID: String, source: String) async -> Bool {
