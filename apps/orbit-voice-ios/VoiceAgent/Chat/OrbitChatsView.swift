@@ -475,14 +475,24 @@ private struct SelectableMarkdownText: UIViewRepresentable, Equatable {
     func updateUIView(_ view: UITextView, context: Context) {
         guard context.coordinator.content != content || context.coordinator.foregroundColor != foregroundColor else { return }
         let attributed: NSAttributedString
-        if let markdown = try? AttributedString(markdown: content, options: .init(interpretedSyntax: .full)) {
+        let displaySource = OrbitChatMarkdownFormatting.displaySource(content)
+        if let markdown = try? AttributedString(markdown: displaySource, options: .init(interpretedSyntax: .full)) {
             attributed = NSAttributedString(markdown)
         } else {
             attributed = NSAttributedString(string: content)
         }
         let mutable = NSMutableAttributedString(attributedString: attributed)
         mutable.addAttribute(.foregroundColor, value: foregroundColor, range: NSRange(location: 0, length: mutable.length))
-        mutable.addAttribute(.font, value: UIFont.preferredFont(forTextStyle: .body), range: NSRange(location: 0, length: mutable.length))
+        let baseFont = UIFont.preferredFont(forTextStyle: .body)
+        mutable.enumerateAttribute(.font, in: NSRange(location: 0, length: mutable.length)) { value, range, _ in
+            let traits = (value as? UIFont)?.fontDescriptor.symbolicTraits ?? []
+            let descriptor = baseFont.fontDescriptor.withSymbolicTraits(traits) ?? baseFont.fontDescriptor
+            mutable.addAttribute(.font, value: UIFont(descriptor: descriptor, size: 0), range: range)
+        }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 2
+        paragraph.paragraphSpacing = 7
+        mutable.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: mutable.length))
         view.attributedText = mutable
         context.coordinator.content = content
         context.coordinator.foregroundColor = foregroundColor

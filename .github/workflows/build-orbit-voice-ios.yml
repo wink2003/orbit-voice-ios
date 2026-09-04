@@ -63,6 +63,15 @@ jobs:
             -o "$RUNNER_TEMP/orbit-codec-fmtp-tests"
           "$RUNNER_TEMP/orbit-codec-fmtp-tests"
 
+      - name: Test Main chat formatting
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Chat/OrbitChatMarkdownFormatting.swift \
+            apps/orbit-voice-ios/Tests/OrbitChatMarkdownFormattingTests.swift \
+            -o "$RUNNER_TEMP/orbit-chat-formatting-tests"
+          "$RUNNER_TEMP/orbit-chat-formatting-tests"
+
       - name: Package IPA for AltStore
         run: |
           set -euo pipefail
