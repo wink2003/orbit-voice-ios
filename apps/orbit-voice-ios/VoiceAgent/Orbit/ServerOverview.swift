@@ -28,17 +28,21 @@ struct BackupStatus: Decodable {
 
 struct OpenRouterStats: Decodable {
     struct Period: Decodable { let cost: Double; let requests: Int; let inputTokens: Int?; let outputTokens: Int? }
-    struct Model: Decodable, Identifiable { let model: String; let cost: Double; var id: String { model } }
+    struct AllTime: Decodable { let cost: Double; let requests: Int; let inputTokens: Int; let outputTokens: Int; let firstRecordedAt: Date?; let lastRecordedAt: Date? }
+    struct Balance: Decodable { let status: String; let type: String?; let amount: Double?; let reason: String? }
+    struct Model: Decodable, Identifiable { let model: String; let requests: Int?; let cost: Double; let inputTokens: Int?; let outputTokens: Int?; var id: String { model } }
     let status: String
     let currency: String?
     let updatedAt: Date?
     let today: Period
     let last7Days: Period
     let last30Days: Period
-    let balance: Double?
+    let allTime: AllTime
+    let balance: Balance
     let balanceStatus: String?
     let balanceReason: String?
     let topModels: [Model]
+    let models90Days: [Model]
     let latestCallAt: Date?
     let source: String?
 }
