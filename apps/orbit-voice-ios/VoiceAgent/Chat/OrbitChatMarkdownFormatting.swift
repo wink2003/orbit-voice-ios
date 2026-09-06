@@ -66,6 +66,24 @@ enum OrbitChatMarkdownFormatting {
         return output.joined(separator: "\n")
     }
 
+    // A few server responses contain a full-line bold heading that can survive
+    // iOS Markdown parsing as literal asterisks. Keep inline emphasis intact,
+    // but provide the renderer with clean heading text to style explicitly.
+    static func strippingLiteralHeadingMarkers(_ source: String) -> String {
+        source.components(separatedBy: "\n").map { line in
+            line.replacingOccurrences(of: "^\\s*\\*\\*(.+)\\*\\*\\s*$", with: "$1", options: .regularExpression)
+        }.joined(separator: "\n")
+    }
+
+    static func literalHeadingTitles(_ source: String) -> [String] {
+        source.components(separatedBy: "\n").compactMap { line in
+            guard let range = line.range(of: "^\\s*\\*\\*(.+)\\*\\*\\s*$", options: .regularExpression) else { return nil }
+            let match = String(line[range])
+            return match.replacingOccurrences(of: "^\\s*\\*\\*", with: "", options: .regularExpression)
+                .replacingOccurrences(of: "\\*\\*\\s*$", with: "", options: .regularExpression)
+        }
+    }
+
     private static func isMarkdownListLine(_ line: String) -> Bool {
         line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("+ ")
             || line.range(of: "^[0-9]+\\.\\s", options: .regularExpression) != nil

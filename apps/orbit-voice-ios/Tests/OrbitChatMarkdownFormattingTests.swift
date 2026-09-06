@@ -13,6 +13,9 @@ enum OrbitChatMarkdownFormattingTests {
         )
         let blocks = OrbitChatMarkdownFormatting.preservingWhitespaceSource("### Компоненти\n*   **Orbit Core:** сервіс\n*   **LiveKit:** голос")
         expect(blocks == "**Компоненти**\n• **Orbit Core:** сервіс\n• **LiveKit:** голос", "headings and bullets remain readable")
+        let literalHeading = "**Компоненти системи**\nОпис нижче"
+        expect(OrbitChatMarkdownFormatting.strippingLiteralHeadingMarkers(literalHeading) == "Компоненти системи\nОпис нижче", "literal heading markers are removed")
+        expect(OrbitChatMarkdownFormatting.literalHeadingTitles(literalHeading) == ["Компоненти системи"], "literal heading title remains styleable")
         expect(
             OrbitChatMarkdownFormatting.displaySource("**Компоненти Orbit**\nСистема складається з компонентів.").contains("**Компоненти Orbit**  \nСистема"),
             "bold headings remain separated"

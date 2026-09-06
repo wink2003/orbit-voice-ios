@@ -476,7 +476,9 @@ private struct SelectableMarkdownText: UIViewRepresentable, Equatable {
         guard context.coordinator.content != content || context.coordinator.foregroundColor != foregroundColor else { return }
         let attributed: NSAttributedString
         let displaySource = OrbitChatMarkdownFormatting.preservingWhitespaceSource(content)
-        if let markdown = try? AttributedString(markdown: displaySource, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+        let cleanSource = OrbitChatMarkdownFormatting.strippingLiteralHeadingMarkers(displaySource)
+        let headingTitles = OrbitChatMarkdownFormatting.literalHeadingTitles(displaySource)
+        if let markdown = try? AttributedString(markdown: cleanSource, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
             attributed = NSAttributedString(markdown)
         } else {
             attributed = NSAttributedString(string: content)
@@ -488,6 +490,15 @@ private struct SelectableMarkdownText: UIViewRepresentable, Equatable {
             let traits = (value as? UIFont)?.fontDescriptor.symbolicTraits ?? []
             let descriptor = baseFont.fontDescriptor.withSymbolicTraits(traits) ?? baseFont.fontDescriptor
             mutable.addAttribute(.font, value: UIFont(descriptor: descriptor, size: 0), range: range)
+        }
+        var searchLocation = 0
+        for title in headingTitles where !title.isEmpty {
+            let searchRange = NSRange(location: searchLocation, length: max(0, mutable.length - searchLocation))
+            let titleRange = (mutable.string as NSString).range(of: title, options: [], range: searchRange)
+            if titleRange.location != NSNotFound {
+                mutable.addAttribute(.font, value: UIFont.preferredFont(forTextStyle: .headline), range: titleRange)
+                searchLocation = NSMaxRange(titleRange)
+            }
         }
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 2

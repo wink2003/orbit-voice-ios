@@ -26,11 +26,29 @@ struct BackupStatus: Decodable {
     let restoreVerified: Bool
 }
 
+struct OpenRouterStats: Decodable {
+    struct Period: Decodable { let cost: Double; let requests: Int; let inputTokens: Int?; let outputTokens: Int? }
+    struct Model: Decodable, Identifiable { let model: String; let cost: Double; var id: String { model } }
+    let status: String
+    let currency: String?
+    let updatedAt: Date?
+    let today: Period
+    let last7Days: Period
+    let last30Days: Period
+    let balance: Double?
+    let balanceStatus: String?
+    let balanceReason: String?
+    let topModels: [Model]
+    let latestCallAt: Date?
+    let source: String?
+}
+
 @MainActor final class ServerOverviewStore: ObservableObject {
     @Published private(set) var overview: ServerOverview?
     @Published private(set) var isLoading = false
     @Published private(set) var error: String?
     @Published private(set) var backups: BackupStatus?
+    @Published private(set) var openRouter: OpenRouterStats?
     private var lastLoaded: Date?
     private var task: Task<Void, Never>?
     func loadIfNeeded(force: Bool = false) {
@@ -49,6 +67,10 @@ struct BackupStatus: Decodable {
             if let backupURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/backups") {
                 var backupRequest = URLRequest(url: backupURL); backupRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 if let (backupData, backupResponse) = try? await URLSession.shared.data(for: backupRequest), (backupResponse as? HTTPURLResponse)?.statusCode == 200 { backups = try? decoder.decode(BackupStatus.self, from: backupData) }
+            }
+            if let statsURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/openrouter") {
+                var statsRequest = URLRequest(url: statsURL); statsRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                if let (statsData, statsResponse) = try? await URLSession.shared.data(for: statsRequest), (statsResponse as? HTTPURLResponse)?.statusCode == 200 { openRouter = try? decoder.decode(OpenRouterStats.self, from: statsData) }
             }
             lastLoaded = Date()
         } catch { self.error = "Не вдалося оновити огляд сервера." }
