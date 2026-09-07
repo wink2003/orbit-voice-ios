@@ -60,7 +60,7 @@ final class InterpreterLabStore: ObservableObject {
     func finishFixtureRecording() {
         guard isRecordingFixture else { return }; isRecordingFixture = false
         do { lastFixture = try InterpreterFixtureStore.save(fixturePCM, format: .canonical); state = .idle }
-        catch { error = error.localizedDescription; state = .failed }
+        catch let failure { error = failure.localizedDescription; state = .failed }
         fixturePCM = Data()
     }
     func replayLastFixture() {
@@ -77,7 +77,7 @@ final class InterpreterLabStore: ObservableObject {
                     accept(frame: InterpreterPCMFrame(data: data.subdata(in: offset..<end), format: .canonical, capturedAtNanoseconds: DispatchTime.now().uptimeNanoseconds))
                 }
                 stop()
-            } catch { error = error.localizedDescription; state = .failed }
+            } catch let failure { error = failure.localizedDescription; state = .failed }
         }
     }
 
@@ -174,8 +174,8 @@ struct InterpreterLabView: View {
             .sheet(isPresented: $showDiagnostics) { diagnostics }
         }
     }
-    private func picker<T: CaseIterable & Identifiable & Hashable, Content: View>(_ title: String, selection: Binding<T>, values: T.AllCases, @ViewBuilder label: @escaping (T) -> Content) -> some View where T.AllCases: RandomAccessCollection {
-        VStack(alignment: .leading, spacing: 7) { Text(title).font(.headline); Picker(title, selection: selection) { ForEach(Array(values), id: \.self) { value in label(value).tag(value) } }.pickerStyle(.segmented).accessibilityLabel(title) }
+    private func picker<T: CaseIterable & Identifiable & Hashable>(_ title: String, selection: Binding<T>, values: T.AllCases, label: @escaping (T) -> String) -> some View where T.AllCases: RandomAccessCollection {
+        VStack(alignment: .leading, spacing: 7) { Text(title).font(.headline); Picker(title, selection: selection) { ForEach(Array(values), id: \.self) { value in Text(label(value)).tag(value) } }.pickerStyle(.segmented).accessibilityLabel(title) }
     }
     private var stateCard: some View { VStack(alignment: .leading, spacing: 6) { Label(store.state.title, systemImage: store.state == .failed ? "exclamationmark.triangle.fill" : "waveform.circle.fill").font(.title3.weight(.semibold)).foregroundStyle(store.state == .failed ? .red : .indigo); if let error = store.error { Text(error).font(.subheadline).foregroundStyle(.red) }; Text("Mic: \(capture.isCapturing ? "active" : "inactive") · Output route: \(capture.routeDescription.isEmpty ? "not active" : capture.routeDescription)").font(.footnote).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading).padding().background(.background, in: RoundedRectangle(cornerRadius: 16)) }
     private func transcriptCard(_ title: String, text: String, empty: String) -> some View { VStack(alignment: .leading, spacing: 8) { Text(title).font(.headline); Text(text.isEmpty ? empty : text).textSelection(.enabled).foregroundStyle(text.isEmpty ? .secondary : .primary).frame(maxWidth: .infinity, minHeight: 46, alignment: .topLeading) }.padding().frame(maxWidth: .infinity, alignment: .leading).background(.background, in: RoundedRectangle(cornerRadius: 16)) }

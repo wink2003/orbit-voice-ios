@@ -55,7 +55,7 @@ struct InterpreterAuthorization: Codable, Sendable, Equatable {
     let endpoint: URL
     let region: String?
     let expiresAt: Date
-    var isExpired: Bool { expiresAt <= Date() }
+    nonisolated var isExpired: Bool { expiresAt <= Date() }
 }
 
 protocol InterpreterAuthProviding: Sendable {
@@ -206,7 +206,9 @@ struct InterpreterQualityScore: Codable, Sendable, Equatable {
 enum InterpreterBenchmarkExporter {
     static func sanitizedJSON(_ records: [InterpreterBenchmarkRecord]) throws -> Data {
         // Records intentionally have no auth/header fields; keep this guard when the schema evolves.
-        let data = try JSONEncoder.prettyPrinted.encode(records)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(records)
         let forbidden = ["authorization", "api_key", "apikey", "bearer", "token"]
         let lower = String(decoding: data, as: UTF8.self).lowercased()
         guard !forbidden.contains(where: lower.contains) else { throw ExportError.containsSensitiveField }
