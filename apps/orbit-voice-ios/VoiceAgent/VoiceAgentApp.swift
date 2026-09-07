@@ -18,30 +18,7 @@ struct VoiceAgentApp: App {
 
     var body: some Scene {
         WindowGroup {
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--orbit-interpreter-lab") {
-                InterpreterLabView()
-            } else {
-            #endif
-            Group {
-                if authentication.isPaired {
-                    AppView()
-                } else {
-                    PairingView()
-                }
-            }
-                .environmentObject(session)
-                .environmentObject(localMedia)
-                .environmentObject(audioOptions)
-                .environmentObject(authentication)
-                .environment(\.voiceEnabled, true)
-                .environment(\.videoEnabled, false)
-                // Persistent conversations live in the native «Чати» tab.
-                // The temporary LiveKit transcript UI is intentionally hidden.
-                .environment(\.textEnabled, false)
-            #if DEBUG
-            }
-            #endif
+            rootContent
         }
         #if os(macOS)
         .defaultSize(width: 900, height: 900)
@@ -51,5 +28,37 @@ struct VoiceAgentApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1500, height: 500)
         #endif
+    }
+
+    @ViewBuilder
+    private var rootContent: some View {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--orbit-interpreter-lab") {
+            InterpreterLabView()
+        } else {
+            mainOrbitContent
+        }
+        #else
+        mainOrbitContent
+        #endif
+    }
+
+    private var mainOrbitContent: some View {
+        Group {
+            if authentication.isPaired {
+                AppView()
+            } else {
+                PairingView()
+            }
+        }
+            .environmentObject(session)
+            .environmentObject(localMedia)
+            .environmentObject(audioOptions)
+            .environmentObject(authentication)
+            .environment(\.voiceEnabled, true)
+            .environment(\.videoEnabled, false)
+            // Persistent conversations live in the native «Чати» tab.
+            // The temporary LiveKit transcript UI is intentionally hidden.
+            .environment(\.textEnabled, false)
     }
 }
