@@ -8,6 +8,9 @@ struct AppView: View {
     @ObservedObject private var session = OrbitMiniVoiceCoordinator.shared.session
     @Environment(\.scenePhase) private var scenePhase
     @State private var settingsShown = false
+#if DEBUG
+    @StateObject private var interpreterTokenProbe = InterpreterTokenProbe()
+#endif
 
     var body: some View {
         ZStack {
@@ -27,6 +30,9 @@ struct AppView: View {
                 }
                 Spacer(minLength: 16)
                 activeUser
+#if DEBUG
+                interpreterTokenProbeSection
+#endif
             }
             .padding(24)
         }
@@ -200,4 +206,57 @@ struct AppView: View {
             return "Виберіть профіль"
         }
     }
+
+#if DEBUG
+    private var interpreterTokenProbeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Azure Token Probe")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+            Button {
+                Task { await interpreterTokenProbe.run() }
+            } label: {
+                HStack {
+                    Image(systemName: "checkmark.shield")
+                    Text("Run token probe")
+                    Spacer()
+                    if case .running = interpreterTokenProbe.outcome {
+                        ProgressView().tint(.white)
+                    }
+                }
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+            }
+            .disabled({ if case .running = interpreterTokenProbe.outcome { return true }; return false }())
+            .foregroundStyle(.white)
+            .accessibilityHint("Виконує лише перевірку автентифікації Azure без аудіо")
+
+            switch interpreterTokenProbe.outcome {
+            case .idle:
+                EmptyView()
+            case .running:
+                Text("Перевірка…")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.6))
+            case let .success(result):
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PASS · azure · uk-UA → de-DE")
+                    Text("region: \(result.region)")
+                    Text("expiresAt: \(result.expiresAt)")
+                    Text("tokenPresent: yes")
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.green)
+                .textSelection(.enabled)
+            case let .failure(code):
+                Text("FAIL · \(code)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.red.opacity(0.9))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+#endif
 }
