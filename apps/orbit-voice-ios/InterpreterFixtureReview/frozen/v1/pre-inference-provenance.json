@@ -1,0 +1,66 @@
+{
+  "provenanceSchemaVersion": 1,
+  "status": "FROZEN_PRE_INFERENCE_V1",
+  "createdAtUtc": "2026-09-07T12:24:25Z",
+  "userApprovalContext": "Explicit approval of interpreter-fixtures-proposed-v1.json in the freeze task before provider inference.",
+  "repository": "/home/ubuntu/Documents/Codex/2026-08-27/orbit-voice-ios-dashboard-ci",
+  "branch": "codex/interpreter-phase1-build-gate",
+  "head": "8ff6658a3bd9f9a02272736002e532d65e9b1f3c",
+  "sourceArtifacts": {
+    "originalDraft": {
+      "path": "apps/orbit-voice-ios/VoiceAgent/InterpreterLab/interpreter-fixtures-draft.json",
+      "sha256": "68cd1ff30c08865bc87f970fcb42bb19626d3fbdfc92b3f3b6bd5078b56471a5"
+    },
+    "proposedManifest": {
+      "path": "apps/orbit-voice-ios/InterpreterFixtureReview/interpreter-fixtures-proposed-v1.json",
+      "sha256": "96b93b1e48d10b6089816a8ff1bb38b6bc39a7710d915e0171fe3f89d903311e"
+    },
+    "reviewDiff": {
+      "path": "apps/orbit-voice-ios/InterpreterFixtureReview/interpreter-fixtures-diff.json",
+      "sha256": "f03f555ca338f08cf01b02dbdc3edac9f4387e9632a2aa0f94d15997d4769594"
+    },
+    "humanReview": {
+      "path": "apps/orbit-voice-ios/InterpreterFixtureReview/interpreter-fixtures-review.md",
+      "sha256": "50a15b294e512e4533d926357f3251ce6cdd8ac06ca699cb9ca1fa284666880b"
+    },
+    "frozenManifest": {
+      "path": "apps/orbit-voice-ios/InterpreterFixtureReview/frozen/v1/interpreter-fixtures-v1.json",
+      "sha256": "2c34f2f15e4972196ef25b4d79c0c43a62a0485a8dbdc8c49dceebab54890582"
+    },
+    "scoringPolicy": {
+      "path": "apps/orbit-voice-ios/InterpreterFixtureReview/frozen/v1/interpreter-scoring-policy-v1.json",
+      "sha256": "834afbd28a19d1595c1c98181fe409d660a8c6d48959656d5876773b5b8b22f8"
+    }
+  },
+  "datasetSummary": {
+    "fixtureCount": 30,
+    "directionCounts": {
+      "ukrainianToGerman": 15,
+      "germanToUkrainian": 15
+    },
+    "riskCounts": {
+      "LOW": 6,
+      "MEDIUM": 8,
+      "HIGH": 16
+    },
+    "blockerCount": 0,
+    "approvedRevisions": {
+      "minor": 3,
+      "major": 6
+    }
+  },
+  "preInferenceEvidence": {
+    "azureInterpreterProviderCalls": 0,
+    "geminiInterpreterProviderCalls": 0,
+    "externalTranslationOrJudgeCalls": 0,
+    "providerCredentialsEmbeddedInIOS": false,
+    "realProviderOutputInBenchmarkArtifacts": false,
+    "physicalIPhoneInterpreterTesting": false,
+    "nativeBuildStatus": "CODE_BUILD_VERIFIED",
+    "nativeBuildReference": "macos-26 / Xcode 26.6; Debug simulator PASS; Release simulator compile PASS; commit 8ff6658 lineage"
+  },
+  "hashMethod": {
+    "individual": "SHA256 of exact UTF-8 file bytes.",
+    "combined": "SHA256 of UTF-8 bytes of manifest_sha256 + newline + scoring_policy_sha256 + newline + provenance_sha256. The provenance hash is computed from this record before any combined hash is recorded elsewhere; this avoids circularity."
+  }
+}

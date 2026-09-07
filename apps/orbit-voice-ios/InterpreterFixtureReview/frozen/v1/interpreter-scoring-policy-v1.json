@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "status": "FROZEN_PRE_INFERENCE_V1",
+  "scoringBasis": "semantic_not_literal",
+  "authorityHierarchy": [
+    "critical_semantic_facts",
+    "severe_failure_rules",
+    "final_intended_meaning",
+    "natural_valid_paraphrases",
+    "reference_translation_as_example"
+  ],
+  "referenceIsExactStringOracle": false,
+  "allowedParaphrasePrinciple": "Accept natural target-language wording, word order, register, articles, pronouns, and equivalent time expressions when critical meaning is preserved.",
+  "severeFailures": [
+    "positive_negative_reversal",
+    "omitted_critical_negation",
+    "MUST_MUST_NOT_reversal",
+    "SHOULD_SHOULD_NOT_reversal",
+    "NOT_X_BUT_Y_resolves_to_X",
+    "prohibited_action_becomes_required",
+    "required_action_becomes_prohibited",
+    "material_numeric_or_dosage_change",
+    "material_date_or_time_change_in_high_risk_fixture",
+    "before_after_until_relation_reversal",
+    "superseded_value_becomes_final_actionable_value",
+    "critical_person_document_or_place_identity_change"
+  ],
+  "relativeDatePolicy": {
+    "rule": "relative_temporal_semantics",
+    "expressions": ["tomorrow", "завтра", "morgen", "next week", "наступного тижня"],
+    "requiredMeaning": "Preserve the temporal relation to the utterance context.",
+    "absoluteAnchor": "If needed, store separately in run metadata; never mutate the frozen fixture semantics."
+  },
+  "dateTimeNormalization": {
+    "absoluteDates": "Normalize to ISO calendar dates when explicitly defined.",
+    "times": "Normalize exact times such as 14:30, 17:00, and before 15:00.",
+    "eveningFive": "After five in the evening means AFTER_17_00.",
+    "literalSimilarityRequired": false
+  },
+  "numberSemantics": {
+    "rule": "Score underlying numeric value independently from punctuation or typography.",
+    "examples": {
+      "15": 15,
+      "50": 50,
+      "1,5": 1.5,
+      "38,7": 38.7,
+      "German 1.500": 1500
+    },
+    "typographicPunctuationAloneIsNotFailure": true
+  },
+  "negationPolarity": {
+    "required": [
+      "preserve_positive_negative_polarity",
+      "preserve_MUST_MUST_NOT",
+      "preserve_SHOULD_SHOULD_NOT",
+      "preserve_NOT_X_BUT_Y_final_value",
+      "preserve_prohibited_required_action_relation"
+    ]
+  },
+  "selfCorrection": {
+    "rule": "The corrected final value is actionable; the abandoned value is superseded.",
+    "severeIf": "The abandoned value becomes the final actionable meaning.",
+    "examples": [
+      {"superseded": "Thursday", "final": "Friday"},
+      {"superseded": "Wednesday", "final": "Thursday at 17:00"}
+    ]
+  },
+  "medicalFictional": {
+    "fictionalOnly": true,
+    "containsFamilyOrPatientData": false,
+    "isMedicalAdvice": false,
+    "critical": ["quantity", "unit", "time", "polarity"],
+    "materialDosageOrQuantityChange": "SEVERE_FAIL"
+  },
+  "namesAndTransliteration": {
+    "identityBased": true,
+    "reasonableTransliterationVariationAccepted": true,
+    "failure": "Identity materially changed or becomes ambiguous."
+  },
+  "codeSwitch": {
+    "semanticIdentityRequired": true,
+    "foreignTermMayBePreserved": true,
+    "naturalTargetEquivalentMayBeAcceptedWhenDocumented": true,
+    "malformedScriptCorruptionAccepted": false
+  }
+}
