@@ -106,7 +106,7 @@ actor MockInterpreterProvider: InterpreterProvider {
         stream = AsyncStream { continuation = $0 }
         self.continuation = continuation
     }
-    func events() -> AsyncStream<InterpreterEvent> { stream }
+    nonisolated func events() -> AsyncStream<InterpreterEvent> { stream }
     func prepare(authorization: InterpreterAuthorization) async throws {
         guard authorization.provider == kind else { throw InterpreterAuthError.unavailable }
         guard !authorization.isExpired else { throw InterpreterAuthError.expired }
@@ -121,7 +121,7 @@ actor MockInterpreterProvider: InterpreterProvider {
 /// Integration gates intentionally remain stubs until dedicated short-lived credentials are approved.
 actor AzureSpeechTranslationAdapter: InterpreterProvider {
     let kind: InterpreterProviderKind = .azure
-    func events() -> AsyncStream<InterpreterEvent> { AsyncStream { $0.yield(.error("Azure SDK integration is credential-gated in Phase 1.")); $0.finish() } }
+    nonisolated func events() -> AsyncStream<InterpreterEvent> { AsyncStream { $0.yield(.error("Azure SDK integration is credential-gated in Phase 1.")); $0.finish() } }
     func prepare(authorization: InterpreterAuthorization) async throws { throw InterpreterAuthError.unavailable }
     func start(direction: InterpreterDirection) async throws {}
     func accept(audio: InterpreterPCMFrame) async throws {}
@@ -131,7 +131,7 @@ actor AzureSpeechTranslationAdapter: InterpreterProvider {
 
 actor GeminiLiveTranslationAdapter: InterpreterProvider {
     let kind: InterpreterProviderKind = .gemini
-    func events() -> AsyncStream<InterpreterEvent> { AsyncStream { $0.yield(.error("Gemini Live connection is credential-gated in Phase 1.")); $0.finish() } }
+    nonisolated func events() -> AsyncStream<InterpreterEvent> { AsyncStream { $0.yield(.error("Gemini Live connection is credential-gated in Phase 1.")); $0.finish() } }
     func prepare(authorization: InterpreterAuthorization) async throws { throw InterpreterAuthError.unavailable }
     func start(direction: InterpreterDirection) async throws {}
     func accept(audio: InterpreterPCMFrame) async throws {}
