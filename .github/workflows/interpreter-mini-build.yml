@@ -1,0 +1,62 @@
+name: Orbit Mini Interpreter Token Probe Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "codex/interpreter-mini-token-probe"
+    paths:
+      - "apps/orbit-mini-ios/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inspect Mini project
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -list -project apps/orbit-mini-ios/OrbitMini.xcodeproj
+
+      - name: Test token probe request policy
+        run: |
+          set -euo pipefail
+          xcrun swiftc -D DEBUG \
+            apps/orbit-mini-ios/VoiceAgent/Orbit/InterpreterTokenProbePolicy.swift \
+            apps/orbit-mini-ios/Tests/InterpreterTokenProbePolicyTests.swift \
+            -o "$RUNNER_TEMP/interpreter-token-probe-policy-tests"
+          "$RUNNER_TEMP/interpreter-token-probe-policy-tests"
+
+      - name: Compile Mini Debug without signing
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/orbit-mini-ios/OrbitMini.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-mini-interpreter-debug" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            build
+
+      - name: Compile Mini Release without signing
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/orbit-mini-ios/OrbitMini.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-mini-interpreter-release" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            build

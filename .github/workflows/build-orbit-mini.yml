@@ -3,6 +3,8 @@ name: Build Orbit Mini IPA
 on:
   workflow_dispatch:
   push:
+    branches-ignore:
+      - "codex/interpreter-mini-token-probe"
     paths:
       - "apps/orbit-mini-ios/**"
       - ".github/workflows/build-orbit-mini.yml"
