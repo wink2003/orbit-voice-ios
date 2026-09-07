@@ -18,6 +18,11 @@ struct VoiceAgentApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--orbit-interpreter-lab") {
+                InterpreterLabView()
+            } else {
+            #endif
             Group {
                 if authentication.isPaired {
                     AppView()
@@ -34,6 +39,9 @@ struct VoiceAgentApp: App {
                 // Persistent conversations live in the native «Чати» tab.
                 // The temporary LiveKit transcript UI is intentionally hidden.
                 .environment(\.textEnabled, false)
+            #if DEBUG
+            }
+            #endif
         }
         #if os(macOS)
         .defaultSize(width: 900, height: 900)
