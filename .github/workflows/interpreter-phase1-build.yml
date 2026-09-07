@@ -1,0 +1,60 @@
+name: Orbit Interpreter Phase 1 Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/interpreter-phase1-build-gate
+    paths:
+      - "apps/orbit-voice-ios/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Show Xcode and project configuration
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -list \
+            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj
+
+      - name: Compile Debug for iOS Simulator
+        run: |
+          set -uo pipefail
+          xcodebuild \
+            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-interpreter-debug-derived-data" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM='' \
+            build
+
+      - name: Compile Release for iOS Simulator
+        run: |
+          set -uo pipefail
+          xcodebuild \
+            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-interpreter-release-derived-data" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM='' \
+            build

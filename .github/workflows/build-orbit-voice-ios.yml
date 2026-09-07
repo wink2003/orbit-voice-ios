@@ -3,6 +3,8 @@ name: Build Orbit Voice IPA
 on:
   workflow_dispatch:
   push:
+    branches-ignore:
+      - codex/interpreter-phase1-build-gate
     paths:
       - "apps/orbit-voice-ios/**"
       - ".github/workflows/build-orbit-voice-ios.yml"
