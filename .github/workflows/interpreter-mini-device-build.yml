@@ -2,6 +2,12 @@ name: Orbit Mini Interpreter Token Probe Debug IPA
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "codex/interpreter-mini-token-probe"
+    paths:
+      - "apps/orbit-mini-ios/**"
+      - ".github/workflows/interpreter-mini-device-build.yml"
 
 permissions:
   contents: read
