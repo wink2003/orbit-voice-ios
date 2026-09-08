@@ -8,8 +8,12 @@ struct AppView: View {
     @ObservedObject private var session = OrbitMiniVoiceCoordinator.shared.session
     @Environment(\.scenePhase) private var scenePhase
     @State private var settingsShown = false
+    @State private var mode: MiniMode = .voice
+    @StateObject private var interpreter = OrbitMiniInterpreterCoordinator()
 #if DEBUG
-    @StateObject private var interpreterTokenProbe = InterpreterTokenProbe()
+    @StateObject private var fixtureRecorder = InterpreterFixtureRecorder()
+    @State private var fixtureID = ""
+    @State private var fixtureSource = ""
 #endif
 
     var body: some View {
@@ -18,9 +22,14 @@ struct AppView: View {
             VStack(spacing: 24) {
                 header
                 Spacer(minLength: 12)
-                sphere
-                stateLabel
-                startStopButton
+                modePicker
+                if mode == .voice {
+                    sphere
+                    stateLabel
+                    startStopButton
+                } else {
+                    interpreterView
+                }
                 if let error = coordinator.lastError {
                     Text(error)
                         .font(.footnote)
@@ -30,9 +39,6 @@ struct AppView: View {
                 }
                 Spacer(minLength: 16)
                 activeUser
-#if DEBUG
-                interpreterTokenProbeSection
-#endif
             }
             .padding(24)
         }
@@ -50,6 +56,87 @@ struct AppView: View {
             Task { await coordinator.handleLatestUserMessage() }
         }
         .sheet(isPresented: $settingsShown) { OrbitMiniSettingsView() }
+    }
+
+    private enum MiniMode: String, CaseIterable, Hashable { case voice = "Voice"; case interpreter = "Перекладач" }
+
+    private var modePicker: some View {
+        Picker("Режим", selection: $mode) {
+            ForEach(MiniMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .disabled(coordinator.isVoiceActive || interpreter.isActive)
+        .onChange(of: mode) { _, newMode in
+            if newMode == .voice && interpreter.isActive { Task { await interpreter.stop() } }
+        }
+    }
+
+    private var interpreterView: some View {
+        VStack(spacing: 16) {
+            Text("Orbit Interpreter").font(.title2.weight(.semibold))
+            Picker("Напрямок", selection: $interpreterDirection) {
+                ForEach(InterpreterDirection.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.menu)
+            .disabled(interpreter.isActive)
+            Text(interpreterStatus).font(.subheadline).foregroundStyle(.white.opacity(0.7))
+            if !interpreter.sourceText.isEmpty { transcriptCard(title: "Оригінал", text: interpreter.sourceText) }
+            if !interpreter.translatedText.isEmpty { transcriptCard(title: "Переклад", text: interpreter.translatedText) }
+            Button {
+                Task {
+                    if interpreter.isActive { await interpreter.stop() }
+                    else { await interpreter.start(direction: interpreterDirection) }
+                }
+            } label: {
+                Label(interpreter.isActive ? "Зупинити" : "Почати переклад", systemImage: interpreter.isActive ? "stop.fill" : "mic.fill")
+                    .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 16)
+                    .background(interpreter.isActive ? Color.red.opacity(0.84) : Color.cyan.opacity(0.82), in: Capsule())
+            }
+            .foregroundStyle(.black)
+#if DEBUG
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Fixture recorder (DEBUG only)").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.65))
+                TextField("Frozen fixture ID", text: $fixtureID)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.never)
+                TextField("Source phrase (not uploaded by recorder)", text: $fixtureSource)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button(fixtureRecorder.isRecording ? "Stop recording" : "Record fixture") {
+                        do {
+                            if fixtureRecorder.isRecording { fixtureRecorder.stop() }
+                            else { try fixtureRecorder.start(fixtureID: fixtureID.trimmingCharacters(in: .whitespacesAndNewlines), direction: interpreterDirection, sourceText: fixtureSource) }
+                        } catch { }
+                    }
+                    .disabled(fixtureID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Delete local audio") { fixtureRecorder.deleteLast() }
+                }
+                if let id = fixtureRecorder.lastFixtureID { Text("Saved temporarily: \(id)").font(.caption2) }
+            }
+            .foregroundStyle(.white)
+#endif
+        }
+        .foregroundStyle(.white)
+    }
+
+    @State private var interpreterDirection: InterpreterDirection = .ukrainianToGerman
+
+    private var interpreterStatus: String {
+        switch interpreter.state {
+        case .requestingCredential: return "Підготовка захищеного підключення…"
+        case .listening, .partialSource: return "Слухаю…"
+        case .error(let message): return message
+        default: return "Готовий до перекладу"
+        }
+    }
+
+    private func transcriptCard(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.6))
+            Text(text).font(.body).textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var header: some View {
@@ -147,7 +234,7 @@ struct AppView: View {
             .padding(.vertical, 18)
             .background(coordinator.isVoiceActive ? Color.red.opacity(0.84) : Color.cyan.opacity(0.82), in: Capsule())
         }
-        .disabled(coordinator.isStarting)
+        .disabled(coordinator.isStarting || interpreter.isActive)
         .foregroundStyle(.black)
         .accessibilityHint(coordinator.isVoiceActive ? "Зупиняє голосову сесію" : "Запускає голосову сесію")
     }
@@ -207,56 +294,4 @@ struct AppView: View {
         }
     }
 
-#if DEBUG
-    private var interpreterTokenProbeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Azure Token Probe")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.7))
-            Button {
-                Task { await interpreterTokenProbe.run() }
-            } label: {
-                HStack {
-                    Image(systemName: "checkmark.shield")
-                    Text("Run token probe")
-                    Spacer()
-                    if case .running = interpreterTokenProbe.outcome {
-                        ProgressView().tint(.white)
-                    }
-                }
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-            }
-            .disabled({ if case .running = interpreterTokenProbe.outcome { return true }; return false }())
-            .foregroundStyle(.white)
-            .accessibilityHint("Виконує лише перевірку автентифікації Azure без аудіо")
-
-            switch interpreterTokenProbe.outcome {
-            case .idle:
-                EmptyView()
-            case .running:
-                Text("Перевірка…")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
-            case let .success(result):
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("PASS · azure · uk-UA → de-DE")
-                    Text("region: \(result.region)")
-                    Text("expiresAt: \(result.expiresAt)")
-                    Text("tokenPresent: yes")
-                }
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.green)
-                .textSelection(.enabled)
-            case let .failure(code):
-                Text("FAIL · \(code)")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.red.opacity(0.9))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-#endif
 }

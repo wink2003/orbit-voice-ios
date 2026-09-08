@@ -1,0 +1,6 @@
+platform :ios, '18.0'
+use_frameworks!
+
+target 'VoiceAgent' do
+  pod 'MicrosoftCognitiveServicesSpeech-iOS', '~> 1.43.0'
+end

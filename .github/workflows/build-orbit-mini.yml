@@ -5,6 +5,7 @@ on:
   push:
     branches-ignore:
       - "codex/interpreter-mini-token-probe"
+      - "codex/interpreter-azure-speech-phase2"
     paths:
       - "apps/orbit-mini-ios/**"
       - ".github/workflows/build-orbit-mini.yml"

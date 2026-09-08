@@ -1,0 +1,69 @@
+name: Orbit Mini Azure Interpreter Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "codex/interpreter-azure-speech-phase2"
+    paths:
+      - "apps/orbit-mini-ios/**"
+      - ".github/workflows/interpreter-mini-azure-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install official Azure Speech SDK dependency
+        working-directory: apps/orbit-mini-ios
+        run: |
+          set -euo pipefail
+          pod install
+
+      - name: Inspect project and SDK configuration
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -list -workspace apps/orbit-mini-ios/OrbitMini.xcworkspace
+
+      - name: Test Interpreter policies
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-mini-ios/VoiceAgent/Orbit/InterpreterModels.swift \
+            apps/orbit-mini-ios/Tests/InterpreterModelsTests.swift \
+            -o "$RUNNER_TEMP/interpreter-model-tests"
+          "$RUNNER_TEMP/interpreter-model-tests"
+
+      - name: Compile Mini Debug without signing
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace apps/orbit-mini-ios/OrbitMini.xcworkspace \
+            -scheme VoiceAgent \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-mini-azure-debug" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            build
+
+      - name: Compile Mini Release without signing
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace apps/orbit-mini-ios/OrbitMini.xcworkspace \
+            -scheme VoiceAgent \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-mini-azure-release" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            build
