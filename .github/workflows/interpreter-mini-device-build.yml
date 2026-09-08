@@ -32,9 +32,11 @@ jobs:
             -configuration Debug \
             -sdk iphoneos \
             -showBuildSettings \
+            CURRENT_PROJECT_VERSION=22 \
             | tee "$RUNNER_TEMP/orbit-mini-debug-settings.txt"
           grep -F 'SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG' "$RUNNER_TEMP/orbit-mini-debug-settings.txt"
           grep -F 'PRODUCT_BUNDLE_IDENTIFIER = net.opik.orbit.mini' "$RUNNER_TEMP/orbit-mini-debug-settings.txt"
+          grep -F 'CURRENT_PROJECT_VERSION = 22' "$RUNNER_TEMP/orbit-mini-debug-settings.txt"
 
       - name: Build unsigned Debug device app
         run: |
@@ -47,6 +49,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/orbit-mini-interpreter-debug" \
             -skipPackagePluginValidation \
+            CURRENT_PROJECT_VERSION=22 \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
             build
 
@@ -63,7 +66,7 @@ jobs:
           test -f "$widget/OrbitSphere.jpg"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist" | grep -Fx 'net.opik.orbit.mini'
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist" | grep -Fx '1.0'
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist" | grep -Fx '21'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist" | grep -Fx '22'
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$widget/Info.plist" | grep -Fx 'net.opik.orbit.mini.widget'
           /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$widget/Info.plist" | grep -Fx 'com.apple.widgetkit-extension'
           if /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPrincipalClass' "$widget/Info.plist" 2>/dev/null; then exit 1; fi
