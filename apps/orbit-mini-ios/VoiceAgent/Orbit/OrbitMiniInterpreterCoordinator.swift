@@ -40,13 +40,13 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
     func stop() async {
         guard isActive || recognizer != nil else { return }
         state = .stopping
-        recognizer?.stopContinuousRecognition()
+        try? recognizer?.stopContinuousRecognition()
         cleanup()
         state = .idle
     }
 
     private func configureAndStart(credential: InterpreterCredential) throws {
-        let config = try SPXSpeechTranslationConfiguration(authToken: credential.token, region: credential.region)
+        let config = try SPXSpeechTranslationConfiguration(authorizationToken: credential.token, region: credential.region)
         config.speechRecognitionLanguage = direction.sourceLanguage
         config.addTargetLanguage(direction.targetLanguage)
         let audio = SPXAudioConfiguration()
@@ -54,13 +54,13 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
             speechTranslationConfiguration: config,
             audioConfiguration: audio
         )
-        recognizer.addRecognizingEventHandler { [weak self] _, event in
+        recognizer.addRecognizingEventHandler { [weak self] (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
             Task { @MainActor in
                 self?.sourceText = event.result.text
                 self?.state = .partialSource(event.result.text)
             }
         }
-        recognizer.addRecognizedEventHandler { [weak self] _, event in
+        recognizer.addRecognizedEventHandler { [weak self] (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
             Task { @MainActor in
                 let result = event.result
                 self?.sourceText = result.text
@@ -71,7 +71,7 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
                 }
             }
         }
-        recognizer.addCanceledEventHandler { [weak self] _, _ in
+        recognizer.addCanceledEventHandler { [weak self] (_: SPXTranslationRecognizer, _: SPXTranslationRecognitionCanceledEventArgs) in
             Task { @MainActor in
                 self?.state = .error("Azure Speech session was canceled.")
                 self?.cleanup()
@@ -108,7 +108,7 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
 
     private func stopAfterRefreshFailure() async {
         guard isActive else { return }
-        recognizer?.stopContinuousRecognition()
+        try? recognizer?.stopContinuousRecognition()
         cleanup()
         state = .error("Не вдалося оновити захищений токен перекладу.")
     }
