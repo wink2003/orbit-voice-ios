@@ -1,0 +1,82 @@
+name: Orbit Mini Interpreter Token Probe Debug IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug-ipa:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inspect project and DEBUG configuration
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "3ea101dfb30a4668d8367ea30a6555512d1c05d2"
+          xcodebuild -version
+          xcodebuild -list -project apps/orbit-mini-ios/OrbitMini.xcodeproj
+          xcodebuild \
+            -project apps/orbit-mini-ios/OrbitMini.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Debug \
+            -sdk iphoneos \
+            -showBuildSettings \
+            | tee "$RUNNER_TEMP/orbit-mini-debug-settings.txt"
+          grep -F 'SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG' "$RUNNER_TEMP/orbit-mini-debug-settings.txt"
+          grep -F 'PRODUCT_BUNDLE_IDENTIFIER = net.opik.orbit.mini' "$RUNNER_TEMP/orbit-mini-debug-settings.txt"
+
+      - name: Build unsigned Debug device app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/orbit-mini-ios/OrbitMini.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-mini-interpreter-debug" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            build
+
+      - name: Validate and package private Debug IPA
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/orbit-mini-interpreter-debug/Build/Products/Debug-iphoneos/Orbit Mini.app"
+          widget="$app/PlugIns/OrbitMiniWidget.appex"
+          test -d "$app"
+          test -d "$widget"
+          test -f "$app/Orbit Mini"
+          test -f "$widget/OrbitMiniWidget"
+          test -f "$app/OrbitSphere.jpg"
+          test -f "$widget/OrbitSphere.jpg"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist" | grep -Fx 'net.opik.orbit.mini'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist" | grep -Fx '1.0'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist" | grep -Fx '21'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$widget/Info.plist" | grep -Fx 'net.opik.orbit.mini.widget'
+          /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$widget/Info.plist" | grep -Fx 'com.apple.widgetkit-extension'
+          if /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPrincipalClass' "$widget/Info.plist" 2>/dev/null; then exit 1; fi
+          if /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionMainStoryboard' "$widget/Info.plist" 2>/dev/null; then exit 1; fi
+          strings "$app/Orbit Mini" | grep -F 'Azure Token Probe'
+          if strings "$app/Orbit Mini" "$widget/OrbitMiniWidget" | grep -E -i 'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}|-----BEGIN (RSA|OPENSSH|PRIVATE) KEY-----'; then
+            echo 'Potential secret pattern found in packaged binaries' >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/orbit-mini-interpreter-ipa/Payload"
+          cp -R "$app" "$RUNNER_TEMP/orbit-mini-interpreter-ipa/Payload/"
+          cd "$RUNNER_TEMP/orbit-mini-interpreter-ipa"
+          /usr/bin/zip -qry OrbitMini-InterpreterTokenProbe-Debug.ipa Payload
+          shasum -a 256 OrbitMini-InterpreterTokenProbe-Debug.ipa
+          stat -f 'size_bytes=%z' OrbitMini-InterpreterTokenProbe-Debug.ipa
+
+      - name: Upload private Debug IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrbitMini-InterpreterTokenProbe-Debug
+          path: ${{ runner.temp }}/orbit-mini-interpreter-ipa/OrbitMini-InterpreterTokenProbe-Debug.ipa
+          retention-days: 3
+          if-no-files-found: error
