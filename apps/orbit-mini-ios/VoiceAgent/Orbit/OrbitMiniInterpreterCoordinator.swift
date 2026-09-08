@@ -56,15 +56,17 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
         )
         recognizer.addRecognizingEventHandler { [weak self] (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
             Task { @MainActor in
-                self?.sourceText = event.result.text
-                self?.state = .partialSource(event.result.text)
+                guard let text = event.result.text, !text.isEmpty else { return }
+                self?.sourceText = text
+                self?.state = .partialSource(text)
             }
         }
         recognizer.addRecognizedEventHandler { [weak self] (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
             Task { @MainActor in
                 let result = event.result
-                self?.sourceText = result.text
-                self?.state = .finalSource(result.text)
+                guard let text = result.text, !text.isEmpty else { return }
+                self?.sourceText = text
+                self?.state = .finalSource(text)
                 if let translation = result.translations[self?.direction.targetLanguage ?? ""] as? String {
                     self?.translatedText = translation
                     self?.state = .translatedText(translation)
@@ -77,7 +79,7 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
                 self?.cleanup()
             }
         }
-        recognizer.startContinuousRecognition()
+        try recognizer.startContinuousRecognition()
         self.recognizer = recognizer
     }
 
