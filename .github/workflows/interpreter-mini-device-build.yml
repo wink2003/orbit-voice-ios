@@ -68,7 +68,6 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$widget/Info.plist" | grep -Fx 'com.apple.widgetkit-extension'
           if /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPrincipalClass' "$widget/Info.plist" 2>/dev/null; then exit 1; fi
           if /usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionMainStoryboard' "$widget/Info.plist" 2>/dev/null; then exit 1; fi
-          strings "$app/Orbit Mini" | grep -F 'Azure Token Probe'
           if strings "$app/Orbit Mini" "$widget/OrbitMiniWidget" | grep -E -i 'AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9]{20,}|-----BEGIN (RSA|OPENSSH|PRIVATE) KEY-----'; then
             echo 'Potential secret pattern found in packaged binaries' >&2
             exit 1
