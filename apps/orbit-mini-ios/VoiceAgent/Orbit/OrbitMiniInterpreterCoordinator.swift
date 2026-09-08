@@ -48,7 +48,7 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
     private func configureAndStart(credential: InterpreterCredential) throws {
         let config = try SPXSpeechTranslationConfiguration(authorizationToken: credential.token, region: credential.region)
         config.speechRecognitionLanguage = direction.sourceLanguage
-        config.addTargetLanguage(direction.targetLanguage)
+        config.addTargetLanguage(direction.azureTargetLanguage)
         let audio = SPXAudioConfiguration()
         let recognizer = try SPXTranslationRecognizer(
             speechTranslationConfiguration: config,
@@ -67,7 +67,7 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
                 guard let text = result.text, !text.isEmpty else { return }
                 self?.sourceText = text
                 self?.state = .finalSource(text)
-                if let translation = result.translations[self?.direction.targetLanguage ?? ""] as? String {
+                if let translation = result.translations[self?.direction.azureTargetLanguage ?? ""] as? String {
                     self?.translatedText = translation
                     self?.state = .translatedText(translation)
                 }
