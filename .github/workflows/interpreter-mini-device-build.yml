@@ -22,6 +22,7 @@ jobs:
       - name: Inspect project and DEBUG configuration
         run: |
           set -euo pipefail
+          git fetch --no-tags --depth=20 origin codex/interpreter-mini-token-probe
           git merge-base --is-ancestor 3ea101dfb30a4668d8367ea30a6555512d1c05d2 HEAD
           xcodebuild -version
           xcodebuild -list -project apps/orbit-mini-ios/OrbitMini.xcodeproj
