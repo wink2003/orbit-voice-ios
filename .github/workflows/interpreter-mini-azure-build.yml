@@ -54,6 +54,41 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' ENABLE_USER_SCRIPT_SANDBOXING=NO \
             build
 
+  device-package:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official Azure Speech SDK dependency
+        working-directory: apps/orbit-mini-ios
+        run: pod install
+      - name: Build unsigned Release device app
+        run: |
+          set -euo pipefail
+          xcodebuild -workspace apps/orbit-mini-ios/OrbitMini.xcworkspace -scheme VoiceAgent -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/orbit-mini-device" -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' ENABLE_USER_SCRIPT_SANDBOXING=NO build
+      - name: Validate metadata and package IPA
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/orbit-mini-device/Build/Products/Release-iphoneos/Orbit Mini.app"
+          widget="$app/PlugIns/OrbitMiniWidget.appex"
+          test -d "$app" && test -d "$widget"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist" | grep -Fx 'net.opik.orbit.mini'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist" | grep -Fx '1.0'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist" | grep -Fx '23'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$widget/Info.plist" | grep -Fx 'net.opik.orbit.mini.widget'
+          file "$app/Frameworks/MicrosoftCognitiveServicesSpeech.framework/MicrosoftCognitiveServicesSpeech"
+          mkdir -p "$RUNNER_TEMP/orbit-mini-ipa/Payload"
+          cp -R "$app" "$RUNNER_TEMP/orbit-mini-ipa/Payload/"
+          cd "$RUNNER_TEMP/orbit-mini-ipa"
+          zip -qry Orbit-Mini-Interpreter-Azure-v23.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-Mini-Interpreter-Azure-v23
+          path: ${{ runner.temp }}/orbit-mini-ipa/Orbit-Mini-Interpreter-Azure-v23.ipa
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Compile Mini Release without signing
         run: |
           set -euo pipefail
