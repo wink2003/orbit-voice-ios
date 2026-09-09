@@ -20,6 +20,21 @@ struct InterpreterModelsTests {
         expect(credential.sourceLanguage == "uk-UA" && credential.targetLanguage == "de-DE", "language metadata decode")
         expect(credential.region == "germanywestcentral", "region decode")
         expect(credential.expiresAt.timeIntervalSince1970 > 0, "fractional expiry decode")
+        let classifyPayload: (String) -> InterpreterTokenDiagnostic = { payload in
+            do {
+                _ = try JSONDecoder().decode(InterpreterCredential.self, from: Data(payload.utf8))
+                return .decodeUnknown
+            } catch let error as DecodingError {
+                return InterpreterTokenClient.diagnostic(for: error)
+            } catch {
+                return .decodeUnknown
+            }
+        }
+        let validPayload = String(data: json, encoding: .utf8)!
+        expect(classifyPayload(validPayload.replacingOccurrences(of: "https://germanywestcentral.api.cognitive.microsoft.com/", with: "not a URL")) == .decodeEndpoint, "malformed endpoint")
+        expect(classifyPayload(validPayload.replacingOccurrences(of: "\"endpoint\":\"https://germanywestcentral.api.cognitive.microsoft.com/\",", with: "")) == .decodeMissingField("endpoint"), "missing endpoint")
+        expect(classifyPayload(validPayload.replacingOccurrences(of: "\"endpoint\":\"https://germanywestcentral.api.cognitive.microsoft.com/\"", with: "\"endpoint\":null")) == .decodeNullField("endpoint"), "null endpoint")
+        expect(classifyPayload(validPayload.replacingOccurrences(of: "2026-09-08T13:47:36.396Z", with: "not-a-date")) == .decodeExpiresAt, "malformed expiry")
 
         // Keep the native SDK callback boundary structurally executor-neutral.
         // This source-level guard prevents a future refactor from moving the
