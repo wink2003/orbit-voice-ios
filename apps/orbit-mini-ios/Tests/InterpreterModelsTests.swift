@@ -41,8 +41,9 @@ struct InterpreterModelsTests {
         // closure literals back into the @MainActor coordinator.
         let coordinatorPath = "apps/orbit-mini-ios/VoiceAgent/Orbit/OrbitMiniInterpreterCoordinator.swift"
         let coordinatorSource = try! String(contentsOfFile: coordinatorPath, encoding: .utf8)
-        expect(coordinatorSource.contains("private func installInterpreterRecognizerCallbacks("), "callback adapter exists")
-        expect(coordinatorSource.contains("installInterpreterRecognizerCallbacks(on: recognizer"), "coordinator uses callback adapter")
+        expect(coordinatorSource.contains("private enum InterpreterRecognizerCallbackAdapter"), "callback adapter exists")
+        expect(coordinatorSource.contains("nonisolated static func install("), "callback adapter is explicitly nonisolated")
+        expect(coordinatorSource.contains("InterpreterRecognizerCallbackAdapter.install(on: recognizer"), "coordinator uses callback adapter")
         expect(coordinatorSource.contains("Task { await sink.partial"), "partial callback hops through sink")
         expect(coordinatorSource.contains("Task { await sink.recognized"), "recognized callback hops through sink")
         expect(coordinatorSource.contains("Task { await sink.canceled"), "canceled callback hops through sink")

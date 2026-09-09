@@ -26,27 +26,28 @@ private actor InterpreterRecognizerCallbackSink {
     }
 }
 
-/// File-scope (therefore non-MainActor) callback registration. Keeping the
-/// closure literals here is important: defining them inside the @MainActor
-/// coordinator would attach that executor to the native SDK entry point.
-private func installInterpreterRecognizerCallbacks(
-    on recognizer: SPXTranslationRecognizer,
-    sink: InterpreterRecognizerCallbackSink,
-    generation: UInt64,
-    targetLanguage: String
-) {
-    recognizer.addRecognizingEventHandler { (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
-        guard let text = event.result.text, !text.isEmpty else { return }
-        Task { await sink.partial(text, generation: generation) }
-    }
-    recognizer.addRecognizedEventHandler { (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
-        let result = event.result
-        guard let text = result.text, !text.isEmpty else { return }
-        let translation = result.translations[targetLanguage] as? String
-        Task { await sink.recognized(source: text, translation: translation, generation: generation) }
-    }
-    recognizer.addCanceledEventHandler { (_: SPXTranslationRecognizer, _: SPXTranslationRecognitionCanceledEventArgs) in
-        Task { await sink.canceled(generation: generation) }
+/// The target uses Swift 6 default MainActor isolation, so file scope alone is
+/// not neutral. This explicit nonisolated adapter is the native SDK boundary.
+private enum InterpreterRecognizerCallbackAdapter {
+    nonisolated static func install(
+        on recognizer: SPXTranslationRecognizer,
+        sink: InterpreterRecognizerCallbackSink,
+        generation: UInt64,
+        targetLanguage: String
+    ) {
+        recognizer.addRecognizingEventHandler { (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
+            guard let text = event.result.text, !text.isEmpty else { return }
+            Task { await sink.partial(text, generation: generation) }
+        }
+        recognizer.addRecognizedEventHandler { (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
+            let result = event.result
+            guard let text = result.text, !text.isEmpty else { return }
+            let translation = result.translations[targetLanguage] as? String
+            Task { await sink.recognized(source: text, translation: translation, generation: generation) }
+        }
+        recognizer.addCanceledEventHandler { (_: SPXTranslationRecognizer, _: SPXTranslationRecognitionCanceledEventArgs) in
+            Task { await sink.canceled(generation: generation) }
+        }
     }
 }
 
@@ -108,7 +109,7 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
         )
         let sink = InterpreterRecognizerCallbackSink(coordinator: self)
         callbackSink = sink
-        installInterpreterRecognizerCallbacks(on: recognizer, sink: sink, generation: generation, targetLanguage: targetLanguage)
+        InterpreterRecognizerCallbackAdapter.install(on: recognizer, sink: sink, generation: generation, targetLanguage: targetLanguage)
         try recognizer.startContinuousRecognition()
         self.recognizer = recognizer
     }
