@@ -25,7 +25,7 @@ enum InterpreterTokenDiagnostic: Equatable, Sendable {
     case metadataProvider, metadataSourceLanguage, metadataTargetLanguage, metadataRegion, metadataAuthScheme
     case tokenEmpty
 
-    var rawValue: String {
+    nonisolated var rawValue: String {
         switch self {
         case .transportNonHTTP: return "transport_non_http"
         case .decodeJSON: return "decode_json"
@@ -44,7 +44,7 @@ enum InterpreterTokenDiagnostic: Equatable, Sendable {
         }
     }
 
-    private static func safeField(_ field: String) -> String {
+    nonisolated private static func safeField(_ field: String) -> String {
         ["provider", "token", "expiresAt", "sourceLanguage", "targetLanguage", "region", "endpoint", "authScheme"].contains(field) ? field : "unknown_field"
     }
 }
