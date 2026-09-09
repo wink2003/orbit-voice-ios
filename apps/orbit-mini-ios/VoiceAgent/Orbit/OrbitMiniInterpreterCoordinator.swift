@@ -3,6 +3,29 @@ import Combine
 import Foundation
 import MicrosoftCognitiveServicesSpeech
 
+/// Executor-neutral delivery point for callbacks raised by the Objective-C
+/// Speech SDK. The SDK may invoke these closures on an arbitrary native
+/// pthread, so they must not capture the MainActor coordinator directly.
+private actor InterpreterRecognizerCallbackSink {
+    weak var coordinator: OrbitMiniInterpreterCoordinator?
+
+    init(coordinator: OrbitMiniInterpreterCoordinator) {
+        self.coordinator = coordinator
+    }
+
+    func partial(_ text: String, generation: UInt64) async {
+        await coordinator?.receivePartial(text, generation: generation)
+    }
+
+    func recognized(source: String, translation: String?, generation: UInt64) async {
+        await coordinator?.receiveRecognized(source: source, translation: translation, generation: generation)
+    }
+
+    func canceled(generation: UInt64) async {
+        await coordinator?.receiveCanceled(generation: generation)
+    }
+}
+
 @MainActor
 final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
     @Published private(set) var state: InterpreterState = .idle
@@ -15,6 +38,8 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
     private var credential: InterpreterCredential?
     private var direction: InterpreterDirection = .ukrainianToGerman
     private var refreshTask: Task<Void, Never>?
+    private var callbackSink: InterpreterRecognizerCallbackSink?
+    private var sessionGeneration: UInt64 = 0
 
     func start(direction: InterpreterDirection) async {
         guard !isActive else { return }
@@ -46,48 +71,67 @@ final class OrbitMiniInterpreterCoordinator: NSObject, ObservableObject {
     }
 
     private func configureAndStart(credential: InterpreterCredential) throws {
+        sessionGeneration &+= 1
+        let generation = sessionGeneration
         let config = try SPXSpeechTranslationConfiguration(authorizationToken: credential.token, region: credential.region)
         config.speechRecognitionLanguage = direction.sourceLanguage
         config.addTargetLanguage(direction.azureTargetLanguage)
+        let targetLanguage = direction.azureTargetLanguage
         let audio = SPXAudioConfiguration()
         let recognizer = try SPXTranslationRecognizer(
             speechTranslationConfiguration: config,
             audioConfiguration: audio
         )
-        recognizer.addRecognizingEventHandler { [weak self] (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
-            Task { @MainActor in
-                guard let text = event.result.text, !text.isEmpty else { return }
-                self?.sourceText = text
-                self?.state = .partialSource(text)
-            }
+        let sink = InterpreterRecognizerCallbackSink(coordinator: self)
+        callbackSink = sink
+        recognizer.addRecognizingEventHandler { (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
+            // Copy SDK-owned data before crossing the callback boundary.
+            guard let text = event.result.text, !text.isEmpty else { return }
+            Task { await sink.partial(text, generation: generation) }
         }
-        recognizer.addRecognizedEventHandler { [weak self] (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
-            Task { @MainActor in
-                let result = event.result
-                guard let text = result.text, !text.isEmpty else { return }
-                self?.sourceText = text
-                self?.state = .finalSource(text)
-                if let translation = result.translations[self?.direction.azureTargetLanguage ?? ""] as? String {
-                    self?.translatedText = translation
-                    self?.state = .translatedText(translation)
-                }
-            }
+        recognizer.addRecognizedEventHandler { (_: SPXTranslationRecognizer, event: SPXTranslationRecognitionEventArgs) in
+            // Copy both values synchronously; never pass SDK event objects to a Task.
+            let result = event.result
+            guard let text = result.text, !text.isEmpty else { return }
+            let translation = result.translations[targetLanguage] as? String
+            Task { await sink.recognized(source: text, translation: translation, generation: generation) }
         }
-        recognizer.addCanceledEventHandler { [weak self] (_: SPXTranslationRecognizer, _: SPXTranslationRecognitionCanceledEventArgs) in
-            Task { @MainActor in
-                self?.state = .error("Azure Speech session was canceled.")
-                self?.cleanup()
-            }
+        recognizer.addCanceledEventHandler { (_: SPXTranslationRecognizer, _: SPXTranslationRecognitionCanceledEventArgs) in
+            Task { await sink.canceled(generation: generation) }
         }
         try recognizer.startContinuousRecognition()
         self.recognizer = recognizer
     }
 
+    fileprivate func receivePartial(_ text: String, generation: UInt64) {
+        guard generation == sessionGeneration, isActive || state == .requestingCredential else { return }
+        sourceText = text
+        state = .partialSource(text)
+    }
+
+    fileprivate func receiveRecognized(source: String, translation: String?, generation: UInt64) {
+        guard generation == sessionGeneration, isActive else { return }
+        sourceText = source
+        state = .finalSource(source)
+        if let translation, !translation.isEmpty {
+            translatedText = translation
+            state = .translatedText(translation)
+        }
+    }
+
+    fileprivate func receiveCanceled(generation: UInt64) {
+        guard generation == sessionGeneration else { return }
+        state = .error("Azure Speech session was canceled.")
+        cleanup()
+    }
+
     private func cleanup() {
+        sessionGeneration &+= 1
         refreshTask?.cancel()
         refreshTask = nil
         recognizer = nil
         credential = nil
+        callbackSink = nil
         isActive = false
     }
 
