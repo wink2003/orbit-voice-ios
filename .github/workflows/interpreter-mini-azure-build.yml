@@ -36,6 +36,7 @@ jobs:
           set -euo pipefail
           xcrun swiftc \
             apps/orbit-mini-ios/VoiceAgent/Orbit/InterpreterModels.swift \
+            apps/orbit-mini-ios/VoiceAgent/Orbit/InterpreterTokenClient.swift \
             apps/orbit-mini-ios/Tests/InterpreterModelsTests.swift \
             -o "$RUNNER_TEMP/interpreter-model-tests"
           "$RUNNER_TEMP/interpreter-model-tests"

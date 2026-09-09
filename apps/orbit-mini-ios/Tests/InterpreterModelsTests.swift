@@ -31,6 +31,50 @@ struct InterpreterModelsTests {
         expect(coordinatorSource.contains("Task { await sink.partial"), "partial callback hops through sink")
         expect(coordinatorSource.contains("Task { await sink.recognized"), "recognized callback hops through sink")
         expect(coordinatorSource.contains("Task { await sink.canceled"), "canceled callback hops through sink")
+
+        let missing = InterpreterTokenClient.diagnostic(for: .keyNotFound(
+            InterpreterCodingKey("endpoint"),
+            .init(codingPath: [], debugDescription: "missing")
+        ))
+        expect(missing == .decodeMissingField("endpoint"), "missing endpoint classification")
+        let null = InterpreterTokenClient.diagnostic(for: .valueNotFound(
+            String.self,
+            .init(codingPath: [InterpreterCodingKey("endpoint")], debugDescription: "null")
+        ))
+        expect(null == .decodeNullField("endpoint"), "null endpoint classification")
+        let malformedEndpoint = InterpreterTokenClient.diagnostic(for: .typeMismatch(
+            URL.self,
+            .init(codingPath: [InterpreterCodingKey("endpoint")], debugDescription: "bad endpoint")
+        ))
+        expect(malformedEndpoint == .decodeEndpoint, "endpoint classification")
+        let malformedExpiry = InterpreterTokenClient.diagnostic(for: .dataCorrupted(
+            .init(codingPath: [InterpreterCodingKey("expiresAt")], debugDescription: "bad expiry")
+        ))
+        expect(malformedExpiry == .decodeExpiresAt, "expiry classification")
+        let requiredFields = ["provider", "token", "expiresAt", "sourceLanguage", "targetLanguage", "region", "endpoint", "authScheme"]
+        for field in requiredFields {
+            let error = DecodingError.keyNotFound(InterpreterCodingKey(field), .init(codingPath: [], debugDescription: "missing"))
+            expect(InterpreterTokenClient.diagnostic(for: error).rawValue == "decode_missing_\(field)", "missing \(field) classification")
+        }
+        let malformedJSON = InterpreterTokenClient.diagnostic(for: .dataCorrupted(
+            .init(codingPath: [], debugDescription: "malformed")
+        ))
+        expect(malformedJSON == .decodeJSON, "malformed JSON classification")
+        let userError = InterpreterTokenClientError.invalidResponse(.decodeEndpoint).localizedDescription
+        expect(!userError.contains("SUPER_SECRET_TEST_TOKEN_123"), "diagnostic excludes token")
+        expect(!userError.contains("https://"), "diagnostic excludes received values")
         print("InterpreterModelsTests: PASS")
     }
+}
+
+private struct InterpreterCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int? = nil
+    init(_ string: String) { stringValue = string }
+    init?(stringValue: String) { self.init(stringValue) }
+    init?(intValue: Int) { return nil }
+}
+
+enum KeychainStore {
+    static func readDeviceToken() -> String? { nil }
 }
