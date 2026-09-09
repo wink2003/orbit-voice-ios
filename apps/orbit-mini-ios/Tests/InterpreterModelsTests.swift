@@ -20,6 +20,17 @@ struct InterpreterModelsTests {
         expect(credential.sourceLanguage == "uk-UA" && credential.targetLanguage == "de-DE", "language metadata decode")
         expect(credential.region == "germanywestcentral", "region decode")
         expect(credential.expiresAt.timeIntervalSince1970 > 0, "fractional expiry decode")
+
+        // Keep the native SDK callback boundary structurally executor-neutral.
+        // This source-level guard prevents a future refactor from moving the
+        // closure literals back into the @MainActor coordinator.
+        let coordinatorPath = "apps/orbit-mini-ios/VoiceAgent/Orbit/OrbitMiniInterpreterCoordinator.swift"
+        let coordinatorSource = try! String(contentsOfFile: coordinatorPath, encoding: .utf8)
+        expect(coordinatorSource.contains("private func installInterpreterRecognizerCallbacks("), "callback adapter exists")
+        expect(coordinatorSource.contains("installInterpreterRecognizerCallbacks(on: recognizer"), "coordinator uses callback adapter")
+        expect(coordinatorSource.contains("Task { await sink.partial"), "partial callback hops through sink")
+        expect(coordinatorSource.contains("Task { await sink.recognized"), "recognized callback hops through sink")
+        expect(coordinatorSource.contains("Task { await sink.canceled"), "canceled callback hops through sink")
         print("InterpreterModelsTests: PASS")
     }
 }
