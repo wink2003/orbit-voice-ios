@@ -1314,6 +1314,9 @@ struct OrbitSettingsView: View {
                     NavigationLink { MemoryCenterView() } label: {
                         Label("Центр пам’яті", systemImage: "brain.head.profile")
                     }
+                    NavigationLink { ProjectJournalView() } label: {
+                        Label("Project Journal", systemImage: "book.closed")
+                    }
                     Label("Пам’ять Orbit — активна", systemImage: "checkmark.circle")
                     Text("Orbit використовує релевантну пам’ять за правилами доступу. Медичні, фінансові та юридичні дані не стають спільними автоматично.")
                         .font(.footnote).foregroundStyle(.secondary)

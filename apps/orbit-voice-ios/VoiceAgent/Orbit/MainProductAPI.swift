@@ -350,7 +350,7 @@ final class MainProductAPI {
         let defaultMessagingChannel: String?
     }
 
-    private func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, as: T.Type = T.self) async throws -> T {
+    func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, as: T.Type = T.self) async throws -> T {
         guard let token = KeychainStore.readDeviceToken() else { throw OrbitChatAPIError.notPaired }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
