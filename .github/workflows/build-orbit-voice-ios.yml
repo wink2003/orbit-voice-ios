@@ -77,7 +77,7 @@ jobs:
       - name: Test Project Journal release-detail decoding
         run: |
           set -euo pipefail
-          xcrun swiftc apps/orbit-voice-ios/Tests/ProjectJournalReleaseDetailTests.swift -o "$RUNNER_TEMP/project-journal-release-detail-tests"
+          xcrun swiftc -parse-as-library apps/orbit-voice-ios/Tests/ProjectJournalReleaseDetailTests.swift -o "$RUNNER_TEMP/project-journal-release-detail-tests"
           "$RUNNER_TEMP/project-journal-release-detail-tests"
 
       - name: Package IPA for AltStore
