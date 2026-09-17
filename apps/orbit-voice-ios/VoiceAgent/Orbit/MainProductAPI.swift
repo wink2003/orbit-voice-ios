@@ -391,7 +391,7 @@ final class MainProductAPI {
         guard let token = KeychainStore.readDeviceToken() else { throw OrbitSchoolSyncError.notPaired }
         var request = URLRequest(url: serviceBaseURL.appendingPathComponent("api/integrations/schulmanager/sync-trigger"))
         request.httpMethod = "POST"
-        request.timeoutInterval = 15
+        request.timeoutInterval = 35
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
