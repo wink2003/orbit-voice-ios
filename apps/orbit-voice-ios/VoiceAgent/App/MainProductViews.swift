@@ -1293,7 +1293,7 @@ struct OrbitSettingsView: View {
                     }
                 }
                 Section("Освіта") {
-                    NavigationLink { SchoolInboxView() } label: { Label("Школа", systemImage: "graduationcap") }
+                    NavigationLink { SchoolInboxView(embeddedInNavigation: true) } label: { Label("Школа", systemImage: "graduationcap") }
                 }
                 Section("Голос") {
                     Button { showingAudio = true } label: { LabeledContent("Обробка мікрофона", value: audioOptions.voiceProcessingModeLabel) }

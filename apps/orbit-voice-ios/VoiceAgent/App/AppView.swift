@@ -35,6 +35,7 @@ struct AppView: View {
         .environment(\.namespace, namespace)
         .preferredColorScheme(preferredColorScheme)
         .task { await authentication.refreshIdentity() }
+        .onReceive(NotificationCenter.default.publisher(for: .orbitSchoolNotificationTapped)) { _ in selectedTab = "school" }
     }
 
     private var preferredColorScheme: ColorScheme? {
