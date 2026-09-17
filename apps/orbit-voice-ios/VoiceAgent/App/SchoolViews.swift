@@ -22,7 +22,7 @@ struct SchoolInboxView: View {
         }
     }
     private func schoolRow(_ item: OrbitSchoolItem) -> some View { VStack(alignment: .leading, spacing: 5) { HStack { Image(systemName: item.type == "letter" ? "envelope" : "message"); Text(item.sender.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.sender).font(.subheadline); Spacer(); if item.unread { Circle().fill(.blue).frame(width: 8, height: 8).accessibilityLabel("Непрочитане") } }; Text(item.title.isEmpty ? String(item.originalGerman.prefix(80)) : item.title).font(.headline); Text(item.sourceTimestamp ?? item.importedAt ?? .now, style: .date).font(.caption).foregroundStyle(.secondary); Text(item.originalGerman).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }.padding(.vertical, 4) }
-    private func load() async { loading = true; defer { loading = false }; do { items = try await MainProductAPI.shared.schoolItems(filter: filter).items; error = nil } catch { error = "Не вдалося завантажити шкільні матеріали." } }
+    private func load() async { loading = true; defer { loading = false }; do { items = try await MainProductAPI.shared.schoolItems(filter: filter).items; error = nil } catch { self.error = "Не вдалося завантажити шкільні матеріали." } }
 }
 
 struct SchoolDetailView: View {
