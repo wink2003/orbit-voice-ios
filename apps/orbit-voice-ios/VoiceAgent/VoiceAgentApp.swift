@@ -9,6 +9,7 @@ struct VoiceAgentApp: App {
     private let audioOptions: AudioOptions
 
     init() {
+        _ = SchoolNotificationCoordinator.shared
         let runtime = OrbitRuntime.shared
         _authentication = StateObject(wrappedValue: runtime.authentication)
         session = runtime.session

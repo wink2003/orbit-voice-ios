@@ -1292,6 +1292,9 @@ struct OrbitSettingsView: View {
                         Label("Підключення календарів", systemImage: "calendar.badge.clock")
                     }
                 }
+                Section("Освіта") {
+                    NavigationLink { SchoolInboxView() } label: { Label("Школа", systemImage: "graduationcap") }
+                }
                 Section("Голос") {
                     Button { showingAudio = true } label: { LabeledContent("Обробка мікрофона", value: audioOptions.voiceProcessingModeLabel) }
                     LabeledContent("Стан голосу", value: "Готовий до запуску")

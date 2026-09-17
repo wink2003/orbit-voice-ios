@@ -1,4 +1,14 @@
 import Foundation
+import UserNotifications
+
+struct OrbitSchoolEvent: Decodable, Identifiable, Hashable { let key: String; let title: String; let startsAt: Date?; let endsAt: Date?; let allDay: Bool; let location: String?; var id: String { key } }
+struct OrbitSchoolItem: Decodable, Identifiable, Hashable {
+    let id: String; let type: String; let source: String; let externalId: String; let title: String; let sender: String
+    let originalGerman: String; let translationUkrainian: String?; let important: String?; let sourceTimestamp: Date?; let importedAt: Date?
+    let orbitReadAt: Date?; let unread: Bool; let attachments: [OrbitSchoolAttachment]; let events: [OrbitSchoolEvent]; let threadId: String?; let subscriptionId: String?
+}
+struct OrbitSchoolAttachment: Decodable, Hashable { let id: String?; let filename: String; let contentType: String?; let inline: Bool? }
+struct OrbitSchoolItemsResponse: Decodable { let items: [OrbitSchoolItem]; let unreadCount: Int }
 
 struct OrbitFamilyMessage: Decodable, Identifiable {
     let id: String
@@ -204,6 +214,15 @@ final class MainProductAPI {
         return response
     }
 
+    func schoolItems(filter: String = "all") async throws -> OrbitSchoolItemsResponse { try await request(path: "/api/school/items?filter=\(filter.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "all")") }
+    func schoolItem(id: String) async throws -> OrbitSchoolItem { try await request(path: "/api/school/items/\(id)", as: SchoolItemResponse.self).item }
+    func markSchoolItemRead(id: String) async throws { struct Response: Decodable { let ok: Bool }; _ = try await request(path: "/api/school/items/\(id)/read", method: "POST", body: nil, as: Response.self) }
+    func addSchoolEvent(itemID: String, event: OrbitSchoolEvent, confirm: Bool) async throws -> SchoolCalendarResult {
+        struct Payload: Encodable { let key: String; let title: String; let startsAt: Date?; let endsAt: Date?; let allDay: Bool; let location: String?; let confirm: Bool }
+        let body = try encoder.encode(Payload(key: event.key, title: event.title, startsAt: event.startsAt, endsAt: event.endsAt, allDay: event.allDay, location: event.location, confirm: confirm))
+        return try await request(path: "/api/school/items/\(itemID)/calendar-proposal", method: "POST", body: body)
+    }
+
     func familyMessages(limit: Int = 100) async throws -> [OrbitFamilyMessage] {
         let response: FamilyMessagesResponse = try await request(path: "/api/family/messages?limit=\(min(max(limit, 1), 120))")
         return response.messages
@@ -392,6 +411,7 @@ final class MainProductAPI {
         guard let result = try? JSONDecoder().decode(OrbitSchoolSyncResponse.self, from: data), result.ok, result.accepted else {
             throw OrbitSchoolSyncError.invalidResponse
         }
+        if result.newItemCount > 0 { await SchoolNotificationCoordinator.shared.schedule(newItemCount: result.newItemCount, itemIDs: result.items.map(\.id)) }
     }
 
     private static func userFacingError(_ code: String?) -> String {
@@ -411,10 +431,19 @@ final class MainProductAPI {
     }
 }
 
+private struct SchoolItemResponse: Decodable { let item: OrbitSchoolItem }
+struct SchoolCalendarResult: Decodable { let created: Bool; let duplicate: Bool?; let requiresConfirmation: Bool?; let eventId: String? }
+
 nonisolated struct OrbitSchoolSyncResponse: Decodable, Sendable {
     let ok: Bool
     let accepted: Bool
+    let pending: Bool
+    let newItemCount: Int
+    let newLetterCount: Int
+    let newMessageCount: Int
+    let items: [SchoolSyncItem]
 }
+nonisolated struct SchoolSyncItem: Decodable, Sendable { let id: String; let type: String }
 
 nonisolated enum OrbitSchoolSyncError: LocalizedError, Sendable {
     case notPaired

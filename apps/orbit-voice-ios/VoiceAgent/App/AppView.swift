@@ -25,6 +25,9 @@ struct AppView: View {
             OrbitCalendarView()
                 .tabItem { Label("Календар", systemImage: "calendar") }
                 .tag("calendar")
+            SchoolInboxView()
+                .tabItem { Label("Школа", systemImage: "graduationcap") }
+                .tag("school")
             OrbitSettingsView()
                 .tabItem { Label("Налаштування", systemImage: "gearshape") }
                 .tag("settings")
