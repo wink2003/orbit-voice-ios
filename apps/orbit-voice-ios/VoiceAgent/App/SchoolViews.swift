@@ -28,13 +28,49 @@ struct SchoolInboxView: View {
 struct SchoolDetailView: View {
     let item: OrbitSchoolItem
     @State private var calendarMessage: String?
+    @State private var pendingCalendarEvent: OrbitSchoolEvent?
     var body: some View {
         List {
             Section("ОРИГІНАЛ") { Text(item.originalGerman).textSelection(.enabled) }
             Section("ПЕРЕКЛАД") { Text(item.translationUkrainian ?? "Переклад ще готується.").textSelection(.enabled) }
             Section("ВАЖЛИВО") { Text(item.important ?? "Перевірте оригінал: структурований підсумок ще готується.").textSelection(.enabled) }
             if !item.events.isEmpty { Section("ДАТИ / ДЕДЛАЙНИ") { ForEach(item.events) { event in VStack(alignment: .leading) { Text(event.title).font(.headline); if let starts = event.startsAt { Text(starts, style: .date); if !event.allDay { Text(starts, style: .time) } }; if let location = event.location { Text(location).foregroundStyle(.secondary) }; Button("Додати до календаря") { Task { await add(event) } }.buttonStyle(.borderedProminent) } } } }
-        }.navigationTitle(item.title.isEmpty ? "Школа" : item.title).navigationBarTitleDisplayMode(.inline).task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }.alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
+        }.navigationTitle(item.title.isEmpty ? "Школа" : item.title).navigationBarTitleDisplayMode(.inline).task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }.alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }.alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
     }
-    private func add(_ event: OrbitSchoolEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false); if preview.requiresConfirmation == true { let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true); calendarMessage = result.duplicate == true ? "Подію вже додано." : "Подію додано до календаря." } } catch { calendarMessage = "Не вдалося додати подію." } }
+    private var calendarPreviewMessage: String {
+        guard let event = pendingCalendarEvent else { return "" }
+        var lines = [event.title]
+        if let starts = event.startsAt {
+            let start = starts.formatted(date: .abbreviated, time: event.allDay ? .omitted : .shortened)
+            if let ends = event.endsAt, ends != starts {
+                lines.append("\(start) — \(ends.formatted(date: .abbreviated, time: event.allDay ? .omitted : .shortened))")
+            } else {
+                lines.append(start)
+            }
+        }
+        if let location = event.location, !location.isEmpty { lines.append(location) }
+        return lines.joined(separator: "\n")
+    }
+    private func add(_ event: OrbitSchoolEvent) async {
+        do {
+            let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false)
+            if preview.duplicate == true {
+                calendarMessage = "Подію вже додано."
+            } else if preview.requiresConfirmation == true {
+                pendingCalendarEvent = event
+            } else {
+                calendarMessage = "Не вдалося підготувати подію."
+            }
+        } catch {
+            calendarMessage = "Не вдалося додати подію."
+        }
+    }
+    private func confirm(_ event: OrbitSchoolEvent) async {
+        do {
+            let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true)
+            calendarMessage = result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.")
+        } catch {
+            calendarMessage = "Не вдалося додати подію."
+        }
+    }
 }
