@@ -186,7 +186,8 @@ private struct EventResponse: Decodable { let event: OrbitCalendarEvent }
 @MainActor
 final class MainProductAPI {
     static let shared = MainProductAPI()
-    private let baseURL = URL(string: "https://voice.orbit.opik.net")!
+    nonisolated private static let serviceBaseURL = URL(string: "https://voice.orbit.opik.net")!
+    private let baseURL = MainProductAPI.serviceBaseURL
     private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -367,6 +368,32 @@ final class MainProductAPI {
         do { return try decoder.decode(T.self, from: data) } catch { throw OrbitChatAPIError.invalidResponse }
     }
 
+    nonisolated static func triggerSchoolSync() async throws {
+        guard let token = KeychainStore.readDeviceToken() else { throw OrbitSchoolSyncError.notPaired }
+        var request = URLRequest(url: serviceBaseURL.appendingPathComponent("api/integrations/schulmanager/sync-trigger"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data(#"{"source":"ios-shortcuts"}"#.utf8)
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw OrbitSchoolSyncError.network
+        }
+        guard let http = response as? HTTPURLResponse else { throw OrbitSchoolSyncError.invalidResponse }
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 { throw OrbitSchoolSyncError.unauthorized }
+            throw OrbitSchoolSyncError.serviceUnavailable
+        }
+        guard let result = try? JSONDecoder().decode(OrbitSchoolSyncResponse.self, from: data), result.ok, result.accepted else {
+            throw OrbitSchoolSyncError.invalidResponse
+        }
+    }
+
     private static func userFacingError(_ code: String?) -> String {
         switch code {
         case "contact_identity_already_linked": "Ця ідентичність уже прив’язана до іншого контакту."
@@ -380,6 +407,28 @@ final class MainProductAPI {
         case "calendar_connection_rate_limited": "Забагато спроб. Спробуйте ще раз трохи пізніше."
         case "invalid_calendar_connection": "Перевірте назву, Apple ID і пароль для програми."
         default: "Orbit тимчасово недоступний. Спробуйте ще раз."
+        }
+    }
+}
+
+nonisolated struct OrbitSchoolSyncResponse: Decodable, Sendable {
+    let ok: Bool
+    let accepted: Bool
+}
+
+nonisolated enum OrbitSchoolSyncError: LocalizedError, Sendable {
+    case notPaired
+    case unauthorized
+    case network
+    case serviceUnavailable
+    case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .notPaired: "Orbit не активований на цьому пристрої."
+        case .unauthorized: "Orbit не підтвердив доступ цього пристрою."
+        case .network, .serviceUnavailable: "Не вдалося передати шкільний тригер до Orbit."
+        case .invalidResponse: "Orbit повернув неочікувану відповідь."
         }
     }
 }
