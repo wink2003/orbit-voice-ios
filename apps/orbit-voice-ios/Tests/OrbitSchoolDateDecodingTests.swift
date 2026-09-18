@@ -18,10 +18,15 @@ private struct FlexibleEvent: Decodable {
     }
 }
 
-let payload = Data(#"{"startsAt":"2026-10-12","endsAt":"2026-10-16"}"#.utf8)
-let strict = JSONDecoder()
-strict.dateDecodingStrategy = .iso8601
-precondition((try? strict.decode(StrictEvent.self, from: payload)) == nil, "The production-shaped event must reproduce the old strict ISO8601 failure")
-let flexible = try! JSONDecoder().decode(FlexibleEvent.self, from: payload)
-precondition(flexible.startsAt != nil && flexible.endsAt != nil)
-print("School event date decoding: PASS")
+@main
+struct OrbitSchoolDateDecodingTests {
+    static func main() {
+        let payload = Data(#"{"startsAt":"2026-10-12","endsAt":"2026-10-16"}"#.utf8)
+        let strict = JSONDecoder()
+        strict.dateDecodingStrategy = .iso8601
+        precondition((try? strict.decode(StrictEvent.self, from: payload)) == nil, "The production-shaped event must reproduce the old strict ISO8601 failure")
+        let flexible = try! JSONDecoder().decode(FlexibleEvent.self, from: payload)
+        precondition(flexible.startsAt != nil && flexible.endsAt != nil)
+        print("School event date decoding: PASS")
+    }
+}
