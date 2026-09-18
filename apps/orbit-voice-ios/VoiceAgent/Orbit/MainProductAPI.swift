@@ -1,7 +1,35 @@
 import Foundation
 import UserNotifications
 
-struct OrbitSchoolEvent: Decodable, Identifiable, Hashable { let key: String; let title: String; let startsAt: Date?; let endsAt: Date?; let allDay: Bool; let location: String?; var id: String { key } }
+struct OrbitSchoolEvent: Decodable, Identifiable, Hashable {
+    let key: String
+    let title: String
+    let startsAt: Date?
+    let endsAt: Date?
+    let allDay: Bool
+    let location: String?
+    var id: String { key }
+
+    private enum CodingKeys: String, CodingKey { case key, title, startsAt, endsAt, allDay, location }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        key = try container.decode(String.self, forKey: .key)
+        title = try container.decode(String.self, forKey: .title)
+        allDay = try container.decode(Bool.self, forKey: .allDay)
+        location = try container.decodeIfPresent(String.self, forKey: .location)
+        startsAt = try Self.decodeDate(container, forKey: .startsAt)
+        endsAt = try Self.decodeDate(container, forKey: .endsAt)
+    }
+
+    private static func decodeDate(_ container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> Date? {
+        guard let value = try container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        guard let date = OrbitSchoolDateDecoding.date(from: value) else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: container, debugDescription: "Unsupported School event date format")
+        }
+        return date
+    }
+}
 struct OrbitSchoolItem: Decodable, Identifiable, Hashable {
     let id: String; let type: String; let source: String; let externalId: String; let title: String; let sender: String
     let originalGerman: String; let originalPlainText: String?; let previewPlainText: String?; let titlePlainText: String?; let translationUkrainian: String?; let important: String?; let sourceTimestamp: Date?; let importedAt: Date?
