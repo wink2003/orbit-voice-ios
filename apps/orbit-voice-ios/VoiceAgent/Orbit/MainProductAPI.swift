@@ -214,7 +214,12 @@ final class MainProductAPI {
         return response
     }
 
-    func schoolItems(filter: String = "all") async throws -> OrbitSchoolItemsResponse { try await request(path: "/api/school/items?filter=\(filter.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "all")") }
+    func schoolItems(filter: String = "all") async throws -> OrbitSchoolItemsResponse {
+        try await request(
+            path: "/api/school/items?filter=\(filter.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "all")",
+            cachePolicy: .reloadIgnoringLocalCacheData
+        )
+    }
     func schoolItem(id: String) async throws -> OrbitSchoolItem { try await request(path: "/api/school/items/\(id)", as: SchoolItemResponse.self).item }
     func markSchoolItemRead(id: String) async throws { struct Response: Decodable { let ok: Bool }; _ = try await request(path: "/api/school/items/\(id)/read", method: "POST", body: nil, as: Response.self) }
     func addSchoolEvent(itemID: String, event: OrbitSchoolEvent, confirm: Bool) async throws -> SchoolCalendarResult {
@@ -370,11 +375,12 @@ final class MainProductAPI {
         let defaultMessagingChannel: String?
     }
 
-    func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, as: T.Type = T.self) async throws -> T {
+    func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy, as: T.Type = T.self) async throws -> T {
         guard let token = KeychainStore.readDeviceToken() else { throw OrbitChatAPIError.notPaired }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        request.cachePolicy = cachePolicy
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body { request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = body }
