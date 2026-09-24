@@ -19,6 +19,11 @@ private func schoolUkrainianDate(_ date: Date) -> String {
     guard let day = parts.day, let month = parts.month, let year = parts.year else { return "Дата не визначена" }
     return "\(day) \(schoolUkrainianMonthFormatter.monthSymbols[month - 1]) \(year)"
 }
+private func schoolLocalizedDate(_ value: String) -> String {
+    let formatter = ISO8601DateFormatter()
+    guard let date = formatter.date(from: value) else { return value }
+    return DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .none)
+}
 private func schoolAllDayRange(_ event: OrbitSchoolEvent) -> String {
     guard let start = event.startsAt else { return "Дата не визначена" }
     guard let end = event.endsAt else { return schoolUkrainianDate(start) }
@@ -110,17 +115,33 @@ struct SchoolBrainView: View {
 }
 
 struct SchoolCalendarView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var events: [OrbitSchulmanagerCalendarEvent] = []; @State private var scope = "for-us"; @State private var error: String?
-    var body: some View { List { Picker("Показати", selection: $scope) { Text("Для нас").tag("for-us"); Text("Вся школа").tag("all") }.pickerStyle(.segmented); if events.isEmpty { ContentUnavailableView("Календар порожній", systemImage: "calendar", description: Text("Нові шкільні події з’являться після синхронізації.")) }; ForEach(events) { event in VStack(alignment: .leading, spacing: 5) { Text(event.title).font(.headline); Text(event.allDay ? "\(event.startsAt ?? "") – \(event.endsAt ?? event.startsAt ?? "")" : (event.startsAt ?? "Дата не визначена")).font(.subheadline); if let relevance = event.relevanceClass, relevance != "UNCERTAIN" { Text(relevance == "DIRECT" ? "Для нашого класу" : relevance == "GRADE" ? "Для 5 класу" : relevance == "SCHOOLWIDE" ? "Для всієї школи" : "Може стосуватися нас").font(.caption).foregroundStyle(.secondary) }; if !event.location.isEmpty { Text(event.location).foregroundStyle(.secondary) }; Button("Додати до сімейного календаря") { Task { await add(event) } }.buttonStyle(.bordered) } } }.navigationTitle("Календар школи").navigationBarBackButtonHidden(true).toolbar { ToolbarItem(placement: .topBarLeading) { Button { dismiss() } label: { Label("Назад", systemImage: "chevron.left") } } }.task { await load() }.onChange(of: scope) { _, _ in Task { await load() } }.alert("Календар школи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") } }
+    @State private var events: [OrbitSchulmanagerCalendarEvent] = []
+    @State private var scope = "for-us"
+    @State private var error: String?
+    var body: some View {
+        List {
+            Picker("Показати", selection: $scope) { Text("Для нас").tag("for-us"); Text("Вся школа").tag("all") }.pickerStyle(.segmented)
+            if events.isEmpty { ContentUnavailableView("Календар порожній", systemImage: "calendar", description: Text("Нові шкільні події з’являться після синхронізації.")) }
+            ForEach(events) { event in
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(event.title).font(.headline)
+                    Text(event.allDay ? "\(event.startsAt.map(schoolLocalizedDate) ?? "Дата не визначена") – \(event.endsAt.map(schoolLocalizedDate) ?? event.startsAt.map(schoolLocalizedDate) ?? "")" : (event.startsAt.map(schoolLocalizedDate) ?? "Дата не визначена")).font(.subheadline)
+                    let audience = event.audienceClass ?? "OTHER_UNCERTAIN"
+                    let label = audience == "STAFF_ONLY" ? "Для працівників школи" : (event.relevanceClass == "DIRECT" || event.relevanceClass == "GRADE" || event.relevanceClass == "SCHOOLWIDE" ? "Для нас" : "Можливо для нас")
+                    Text(label).font(.caption.weight(.semibold)).padding(.horizontal, 8).padding(.vertical, 4).background(audience == "STAFF_ONLY" ? Color.secondary.opacity(0.18) : (label == "Для нас" ? Color.green.opacity(0.22) : Color.orange.opacity(0.22)), in: Capsule())
+                    if !event.location.isEmpty { Text(event.location).foregroundStyle(.secondary) }
+                    Button("Додати до сімейного календаря") { Task { await add(event) } }.buttonStyle(.borderedProminent)
+                }
+            }
+        }.navigationTitle("Календар школи").task { await load() }.onChange(of: scope) { _, _ in Task { await load() } }.alert("Календар школи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+    }
     private func load() async { do { events = try await MainProductAPI.shared.schulmanagerCalendar(scope: scope) } catch { self.error = "Не вдалося завантажити календар школи." } }
     private func add(_ event: OrbitSchulmanagerCalendarEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: event.uid, confirm: false); if preview.duplicate == true { self.error = "Подію вже додано." } else if preview.requiresConfirmation == true { let result = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: event.uid, confirm: true); self.error = result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.") } } catch { self.error = "Не вдалося додати подію." } }
 }
 
 struct SchoolTasksView: View {
-    @Environment(\.dismiss) private var dismiss
     @State private var tasks: [OrbitSchoolTask] = []; @State private var importantEvents: [OrbitSchulmanagerCalendarEvent] = []; @State private var error: String?
-    var body: some View { List { Section("Треба зробити") { if tasks.isEmpty { ContentUnavailableView("Немає шкільних завдань", systemImage: "checklist", description: Text("Немає дій, запланованих на наступні 10 днів.")) }; ForEach(tasks) { task in NavigationLink { SchoolDetailLoaderView(itemID: task.sourceItemId) } label: { VStack(alignment: .leading, spacing: 4) { Text(task.title).font(.headline); if let dueAt = task.dueAt { Text(dueAt).font(.subheadline) }; Text(task.sourceType == "letter" ? "Лист" : "Повідомлення").font(.caption).foregroundStyle(.secondary) } } } }; Section("Важливі події") { if importantEvents.isEmpty { Text("Немає важливих подій у цьому вікні.").foregroundStyle(.secondary) }; ForEach(importantEvents) { event in NavigationLink { SchoolCalendarView() } label: { VStack(alignment: .leading) { Text(event.title).font(.headline); Text(event.startsAt ?? "Дата не визначена").font(.subheadline) } } } } }.navigationTitle("Наступні 10 днів").navigationBarBackButtonHidden(true).toolbar { ToolbarItem(placement: .topBarLeading) { Button { dismiss() } label: { Label("Назад", systemImage: "chevron.left") } } }.task { do { let response = try await MainProductAPI.shared.schoolTasks(); tasks = response.tasks; importantEvents = response.importantEvents } catch { self.error = "Не вдалося завантажити завдання." } }.alert("Шкільні завдання", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") } }
+    var body: some View { List { Section("Треба зробити") { if tasks.isEmpty { ContentUnavailableView("Немає шкільних завдань", systemImage: "checklist", description: Text("Немає дій, запланованих на наступні 10 днів.")) }; ForEach(tasks) { task in NavigationLink { SchoolDetailLoaderView(itemID: task.sourceItemId) } label: { VStack(alignment: .leading, spacing: 4) { Text(task.title).font(.headline); if let dueAt = task.dueAt { Text(schoolLocalizedDate(dueAt)).font(.subheadline) }; Text(task.sourceType == "letter" ? "Лист" : "Повідомлення").font(.caption).foregroundStyle(.secondary) } } } }; Section("Важливі події") { if importantEvents.isEmpty { Text("Немає важливих подій у цьому вікні.").foregroundStyle(.secondary) }; ForEach(importantEvents) { event in NavigationLink { SchoolCalendarView() } label: { VStack(alignment: .leading) { Text(event.title).font(.headline); Text(schoolLocalizedDate(event.startsAt ?? "")).font(.subheadline) } } } } }.navigationTitle("Наступні 10 днів").task { do { let response = try await MainProductAPI.shared.schoolTasks(); tasks = response.tasks; importantEvents = response.importantEvents } catch { self.error = "Не вдалося завантажити завдання." } }.alert("Шкільні завдання", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") } }
 }
 struct SchoolDetailLoaderView: View { let itemID: String; @State private var item: OrbitSchoolItem?; var body: some View { Group { if let item { SchoolDetailView(item: item) } else { ProgressView() } }.task { item = try? await MainProductAPI.shared.schoolItem(id: itemID) } } }
 
