@@ -49,6 +49,7 @@ struct SchoolInboxView: View {
     }
     private var schoolList: some View {
         List {
+            Section { NavigationLink { SchoolCalendarView() } label: { Label("Календар школи", systemImage: "calendar") }; NavigationLink { SchoolTasksView() } label: { Label("Наступні 10 днів", systemImage: "checklist") } }
             Picker("Показати", selection: $filter) {
                 Text("Усі").tag("all"); Text("Листи").tag("letters"); Text("Чати").tag("messages"); Text("Нові").tag("unread")
             }.pickerStyle(.segmented)
@@ -90,6 +91,19 @@ struct SchoolInboxView: View {
     private func requestNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.requestAuthorization() }
     private func scheduleDiagnosticNotification() async { notificationDiagnosticMessage = await SchoolNotificationCoordinator.shared.scheduleDiagnostic() ? "Тестове сповіщення з’явиться приблизно через 5 секунд." : "Не вдалося запланувати тестове сповіщення." }
 }
+
+struct SchoolCalendarView: View {
+    @State private var events: [OrbitSchulmanagerCalendarEvent] = []; @State private var error: String?
+    var body: some View { List { if events.isEmpty { ContentUnavailableView("Календар порожній", systemImage: "calendar", description: Text("Нові шкільні події з’являться після синхронізації.")) }; ForEach(events) { event in VStack(alignment: .leading, spacing: 5) { Text(event.title).font(.headline); Text(event.allDay ? "\(event.startsAt ?? "") – \(event.endsAt ?? event.startsAt ?? "")" : (event.startsAt ?? "Дата не визначена")).font(.subheadline); if !event.location.isEmpty { Text(event.location).foregroundStyle(.secondary) }; Button("Додати до сімейного календаря") { Task { await add(event) } }.buttonStyle(.bordered) } } }.navigationTitle("Календар школи").task { await load() }.alert("Календар школи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") } }
+    private func load() async { do { events = try await MainProductAPI.shared.schulmanagerCalendar() } catch { error = "Не вдалося завантажити календар школи." } }
+    private func add(_ event: OrbitSchulmanagerCalendarEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: event.uid, confirm: false); if preview.duplicate == true { error = "Подію вже додано." } else if preview.requiresConfirmation == true { let result = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: event.uid, confirm: true); error = result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.") } } catch { error = "Не вдалося додати подію." } }
+}
+
+struct SchoolTasksView: View {
+    @State private var tasks: [OrbitSchoolTask] = []; @State private var error: String?
+    var body: some View { List { if tasks.isEmpty { ContentUnavailableView("Немає шкільних завдань", systemImage: "checklist", description: Text("Немає дій, запланованих на наступні 10 днів.")) }; ForEach(tasks) { task in NavigationLink { SchoolDetailLoaderView(itemID: task.sourceItemId) } label: { VStack(alignment: .leading, spacing: 4) { Text(task.title).font(.headline); Text(task.dueAt).font(.subheadline); Text(task.sourceType == "letter" ? "Лист" : "Повідомлення").font(.caption).foregroundStyle(.secondary) } } } }.navigationTitle("Наступні 10 днів").task { do { tasks = try await MainProductAPI.shared.schoolTasks() } catch { error = "Не вдалося завантажити завдання." } }.alert("Шкільні завдання", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") } }
+}
+struct SchoolDetailLoaderView: View { let itemID: String; @State private var item: OrbitSchoolItem?; var body: some View { Group { if let item { SchoolDetailView(item: item) } else { ProgressView() } }.task { item = try? await MainProductAPI.shared.schoolItem(id: itemID) } } }
 
 struct SchoolDetailView: View {
     let item: OrbitSchoolItem
