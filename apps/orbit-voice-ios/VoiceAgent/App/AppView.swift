@@ -10,6 +10,17 @@ struct AppView: View {
     @State private var selectedTab = "voice"
 
     var body: some View {
+        Group {
+            if authentication.identityResolved {
+                tabs
+            } else {
+                ProgressView("Завантаження Orbit…")
+            }
+        }
+        .task { await authentication.refreshIdentity() }
+    }
+
+    private var tabs: some View {
         TabView(selection: $selectedTab) {
             if authentication.canViewServerOverview {
                 OrbitDashboardView(isSelected: selectedTab == "overview")
@@ -38,7 +49,6 @@ struct AppView: View {
         }
         .environment(\.namespace, namespace)
         .preferredColorScheme(preferredColorScheme)
-        .task { await authentication.refreshIdentity() }
         .onReceive(NotificationCenter.default.publisher(for: .orbitSchoolNotificationTapped)) { _ in selectedTab = "school" }
     }
 
