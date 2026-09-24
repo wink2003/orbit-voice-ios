@@ -32,7 +32,7 @@ struct OrbitSchoolEvent: Decodable, Identifiable, Hashable {
 }
 struct OrbitSchoolItem: Decodable, Identifiable, Hashable {
     let id: String; let type: String; let source: String; let externalId: String; let title: String; let sender: String
-    let originalGerman: String; let originalPlainText: String?; let previewPlainText: String?; let titlePlainText: String?; let translationUkrainian: String?; let important: String?; let tasks: [OrbitSchoolTask]; let sourceTimestamp: Date?; let importedAt: Date?
+    let originalGerman: String; let originalPlainText: String?; let previewPlainText: String?; let titlePlainText: String?; let translationUkrainian: String?; let important: String?; let tasks: [OrbitSchoolTask]?; let sourceTimestamp: Date?; let importedAt: Date?
     let orbitReadAt: Date?; let unread: Bool; let attachments: [OrbitSchoolAttachment]; let events: [OrbitSchoolEvent]; let threadId: String?; let subscriptionId: String?
 }
 struct OrbitSchoolAttachment: Decodable, Hashable { let id: String?; let filename: String; let contentType: String?; let inline: Bool? }
