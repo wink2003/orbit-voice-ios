@@ -32,15 +32,15 @@ struct OrbitSchoolEvent: Decodable, Identifiable, Hashable {
 }
 struct OrbitSchoolItem: Decodable, Identifiable, Hashable {
     let id: String; let type: String; let source: String; let externalId: String; let title: String; let sender: String
-    let originalGerman: String; let originalPlainText: String?; let previewPlainText: String?; let titlePlainText: String?; let translationUkrainian: String?; let important: String?; let sourceTimestamp: Date?; let importedAt: Date?
+    let originalGerman: String; let originalPlainText: String?; let previewPlainText: String?; let titlePlainText: String?; let translationUkrainian: String?; let important: String?; let tasks: [OrbitSchoolTask]; let sourceTimestamp: Date?; let importedAt: Date?
     let orbitReadAt: Date?; let unread: Bool; let attachments: [OrbitSchoolAttachment]; let events: [OrbitSchoolEvent]; let threadId: String?; let subscriptionId: String?
 }
 struct OrbitSchoolAttachment: Decodable, Hashable { let id: String?; let filename: String; let contentType: String?; let inline: Bool? }
 struct OrbitSchoolItemsResponse: Decodable { let items: [OrbitSchoolItem]; let unreadCount: Int }
-struct OrbitSchulmanagerCalendarEvent: Decodable, Identifiable, Hashable { let uid: String; let title: String; let description: String; let location: String; let startsAt: String?; let endsAt: String?; let allDay: Bool; let timeZone: String?; let recurrenceRule: String?; var id: String { uid } }
-struct OrbitSchoolTask: Decodable, Identifiable, Hashable { let key: String; let title: String; let dueAt: String; let endsAt: String?; let allDay: Bool; let location: String?; let sourceItemId: String; let sourceType: String; let sourceExternalId: String; var id: String { "\(sourceItemId):\(key)" } }
+struct OrbitSchulmanagerCalendarEvent: Decodable, Identifiable, Hashable { let uid: String; let title: String; let description: String; let location: String; let startsAt: String?; let endsAt: String?; let allDay: Bool; let timeZone: String?; let recurrenceRule: String?; let relevanceClass: String?; let relevanceReason: String?; var id: String { uid } }
+struct OrbitSchoolTask: Decodable, Identifiable, Hashable { let key: String; let title: String; let action: String?; let dueAt: String?; let endsAt: String?; let allDay: Bool; let importance: String?; let target: String?; let confidence: Double?; let reason: String?; let location: String?; let sourceItemId: String; let sourceType: String; let sourceExternalId: String; var id: String { "\(sourceItemId):\(key)" } }
 struct OrbitSchulmanagerCalendarResponse: Decodable { let events: [OrbitSchulmanagerCalendarEvent] }
-struct OrbitSchoolTasksResponse: Decodable { let from: String; let to: String; let tasks: [OrbitSchoolTask] }
+struct OrbitSchoolTasksResponse: Decodable { let from: String; let to: String; let tasks: [OrbitSchoolTask]; let importantEvents: [OrbitSchulmanagerCalendarEvent] }
 
 struct OrbitFamilyMessage: Decodable, Identifiable {
     let id: String
@@ -252,10 +252,10 @@ final class MainProductAPI {
             cachePolicy: .reloadIgnoringLocalCacheData
         )
     }
-    func schulmanagerCalendar(from: Date = .now, to: Date = Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now) async throws -> [OrbitSchulmanagerCalendarEvent] {
-        let f = ISO8601DateFormatter(); let path = "/api/school/calendar?from=\(f.string(from: from).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&to=\(f.string(from: to).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"; return try await request(path: path, as: OrbitSchulmanagerCalendarResponse.self).events
+    func schulmanagerCalendar(scope: String = "for-us", from: Date = .now, to: Date = Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now) async throws -> [OrbitSchulmanagerCalendarEvent] {
+        let f = ISO8601DateFormatter(); let path = "/api/school/calendar?scope=\(scope)&from=\(f.string(from: from).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&to=\(f.string(from: to).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"; return try await request(path: path, as: OrbitSchulmanagerCalendarResponse.self).events
     }
-    func schoolTasks() async throws -> [OrbitSchoolTask] { try await request(path: "/api/school/tasks", as: OrbitSchoolTasksResponse.self).tasks }
+    func schoolTasks() async throws -> OrbitSchoolTasksResponse { try await request(path: "/api/school/tasks", as: OrbitSchoolTasksResponse.self) }
     func addSchoolCalendarEvent(uid: String, key: String = "default", confirm: Bool) async throws -> SchoolCalendarResult { struct Payload: Encodable { let key: String; let confirm: Bool }; return try await request(path: "/api/school/calendar/\(uid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? uid)/proposal", method: "POST", body: try encoder.encode(Payload(key: key, confirm: confirm))) }
     func schoolItem(id: String) async throws -> OrbitSchoolItem { try await request(path: "/api/school/items/\(id)", as: SchoolItemResponse.self).item }
     func markSchoolItemRead(id: String) async throws { struct Response: Decodable { let ok: Bool }; _ = try await request(path: "/api/school/items/\(id)/read", method: "POST", body: nil, as: Response.self) }
