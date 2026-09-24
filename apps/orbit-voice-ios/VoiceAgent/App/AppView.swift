@@ -25,7 +25,11 @@ struct AppView: View {
             OrbitCalendarView()
                 .tabItem { Label("Календар", systemImage: "calendar") }
                 .tag("calendar")
-            SchoolInboxView()
+            // With the server overview enabled, UIKit moves the sixth tab into
+            // its system "More" navigation controller.  Supplying another
+            // NavigationStack there creates two visible back affordances on
+            // School child screens.  The five-tab layout still owns its stack.
+            SchoolInboxView(embeddedInNavigation: authentication.canViewServerOverview)
                 .tabItem { Label("Школа", systemImage: "graduationcap") }
                 .tag("school")
             OrbitSettingsView()
