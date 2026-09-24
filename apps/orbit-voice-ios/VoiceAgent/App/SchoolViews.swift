@@ -49,7 +49,7 @@ struct SchoolInboxView: View {
     }
     private var schoolList: some View {
         List {
-            Section { NavigationLink { SchoolCalendarView() } label: { Label("Календар школи", systemImage: "calendar") }; NavigationLink { SchoolTasksView() } label: { Label("Наступні 10 днів", systemImage: "checklist") } }
+            Section { NavigationLink { SchoolBrainView() } label: { Label("Запитати про школу", systemImage: "sparkles") }; NavigationLink { SchoolCalendarView() } label: { Label("Календар школи", systemImage: "calendar") }; NavigationLink { SchoolTasksView() } label: { Label("Наступні 10 днів", systemImage: "checklist") } }
             Picker("Показати", selection: $filter) {
                 Text("Усі").tag("all"); Text("Листи").tag("letters"); Text("Чати").tag("messages"); Text("Нові").tag("unread")
             }.pickerStyle(.segmented)
@@ -90,6 +90,23 @@ struct SchoolInboxView: View {
     private func refreshNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.authorizationStatus() }
     private func requestNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.requestAuthorization() }
     private func scheduleDiagnosticNotification() async { notificationDiagnosticMessage = await SchoolNotificationCoordinator.shared.scheduleDiagnostic() ? "Тестове сповіщення з’явиться приблизно через 5 секунд." : "Не вдалося запланувати тестове сповіщення." }
+}
+
+struct SchoolBrainView: View {
+    @State private var messages: [OrbitSchoolBrainMessage] = []
+    @State private var draft = ""
+    @State private var loading = false
+    @State private var error: String?
+    private let starters = ["Що нового?", "Що нам треба зробити?", "Що важливого цього тижня?", "Що стосується 5F?"]
+    var body: some View {
+        VStack(spacing: 0) {
+            if messages.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(starters, id: \.self) { value in Button(value) { draft = value } .buttonStyle(.bordered) } }.padding() } }
+            ScrollView { LazyVStack(alignment: .leading, spacing: 12) { ForEach(messages) { message in VStack(alignment: .leading, spacing: 4) { Text(message.role == "user" ? "Ви" : "Orbit School Brain").font(.caption).foregroundStyle(.secondary); Text(message.content).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10).background(message.role == "user" ? Color.blue.opacity(0.12) : Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 12)) } } } .padding() }
+            HStack(alignment: .bottom) { TextField("Запитайте про школу…", text: $draft, axis: .vertical).textFieldStyle(.roundedBorder); Button { Task { await send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }.disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || loading) }.padding()
+        }.navigationTitle("Запитати про школу").task { await load() }.alert("School Brain", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+    }
+    private func load() async { do { messages = try await MainProductAPI.shared.schoolBrainConversation().messages } catch { self.error = "Не вдалося завантажити розмову." } }
+    private func send() async { let value = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !value.isEmpty else { return }; draft = ""; loading = true; defer { loading = false }; do { let reply = try await MainProductAPI.shared.askSchool(value); messages.append(OrbitSchoolBrainMessage(id: UUID().uuidString, role: "user", content: value, sourceRefs: [], createdAt: .now)); messages.append(reply) } catch { self.error = "Не вдалося отримати відповідь School Brain." } }
 }
 
 struct SchoolCalendarView: View {
