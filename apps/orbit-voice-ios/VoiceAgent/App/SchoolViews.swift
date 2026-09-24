@@ -21,7 +21,8 @@ private func schoolUkrainianDate(_ date: Date) -> String {
 }
 private func schoolLocalizedDate(_ value: String) -> String {
     let formatter = ISO8601DateFormatter()
-    guard let date = formatter.date(from: value) else { return value }
+    let date = formatter.date(from: value) ?? { let d = DateFormatter(); d.locale = Locale(identifier: "en_US_POSIX"); d.dateFormat = "yyyy-MM-dd"; return d.date(from: value) }()
+    guard let date else { return value }
     return DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .none)
 }
 private func schoolAllDayRange(_ event: OrbitSchoolEvent) -> String {
