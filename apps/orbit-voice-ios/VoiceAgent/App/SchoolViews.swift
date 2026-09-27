@@ -109,7 +109,7 @@ struct SchoolBrainView: View {
         }.navigationTitle("Запитати про школу").task { await load() }.alert("School Brain", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
     }
     private func load() async { do { messages = try await MainProductAPI.shared.schoolBrainConversation().messages } catch { self.error = "Не вдалося завантажити розмову." } }
-    private func send() async { let value = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !value.isEmpty else { return }; draft = ""; loading = true; defer { loading = false }; do { let reply = try await MainProductAPI.shared.askSchool(value); messages.append(OrbitSchoolBrainMessage(id: UUID().uuidString, role: "user", content: value, sourceRefs: [], createdAt: .now)); messages.append(reply) } catch { self.error = "Не вдалося отримати відповідь School Brain." } }
+    private func send() async { let value = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !value.isEmpty else { return }; draft = ""; SchoolBrainRequestState.beginRequest(error: &error); loading = true; defer { loading = false }; do { let reply = try await MainProductAPI.shared.askSchool(value); messages.append(OrbitSchoolBrainMessage(id: UUID().uuidString, role: "user", content: value, sourceRefs: [], createdAt: .now)); messages.append(reply); SchoolBrainRequestState.completedSuccessfully(error: &error) } catch { self.error = "Не вдалося отримати відповідь School Brain." } }
 }
 
 struct SchoolCalendarView: View {

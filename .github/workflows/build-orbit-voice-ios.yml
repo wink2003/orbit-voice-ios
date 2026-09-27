@@ -89,6 +89,15 @@ jobs:
           xcrun swiftc apps/orbit-voice-ios/Tests/OrbitSchoolItemsDecodingRegressionTests.swift -o "$RUNNER_TEMP/orbit-school-items-decoding-tests"
           "$RUNNER_TEMP/orbit-school-items-decoding-tests"
 
+      - name: Test School Brain request state
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/App/SchoolBrainRequestState.swift \
+            apps/orbit-voice-ios/Tests/SchoolBrainRequestStateTests.swift \
+            -o "$RUNNER_TEMP/orbit-school-brain-request-state-tests"
+          "$RUNNER_TEMP/orbit-school-brain-request-state-tests"
+
       - name: Package IPA for AltStore
         run: |
           set -euo pipefail
