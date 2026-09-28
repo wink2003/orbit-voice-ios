@@ -15,6 +15,26 @@ struct OrbitSchoolBrainMessage: Decodable, Identifiable {
         case createdAtSnake = "created_at"
     }
 
+    private indirect enum SourceRefValue: Decodable {
+        case string(String)
+        case object([String: SourceRefValue])
+        case array([SourceRefValue])
+        case number(Double)
+        case boolean(Bool)
+        case null
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if container.decodeNil() { self = .null }
+            else if let value = try? container.decode(String.self) { self = .string(value) }
+            else if let value = try? container.decode([String: SourceRefValue].self) { self = .object(value) }
+            else if let value = try? container.decode([SourceRefValue].self) { self = .array(value) }
+            else if let value = try? container.decode(Double.self) { self = .number(value) }
+            else if let value = try? container.decode(Bool.self) { self = .boolean(value) }
+            else { throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported School Brain source reference value") }
+        }
+    }
+
     init(id: String, role: String, content: String, sourceRefs: [[String: String]], createdAt: Date) {
         self.id = id
         self.role = role
@@ -28,9 +48,15 @@ struct OrbitSchoolBrainMessage: Decodable, Identifiable {
         id = try container.decode(String.self, forKey: .id)
         role = try container.decode(String.self, forKey: .role)
         content = try container.decode(String.self, forKey: .content)
-        sourceRefs = try container.decodeIfPresent([[String: String]].self, forKey: .sourceRefs)
-            ?? container.decodeIfPresent([[String: String]].self, forKey: .sourceRefsSnake)
+        let encodedRefs = try container.decodeIfPresent([[String: SourceRefValue]].self, forKey: .sourceRefs)
+            ?? container.decodeIfPresent([[String: SourceRefValue]].self, forKey: .sourceRefsSnake)
             ?? []
+        sourceRefs = encodedRefs.map { ref in
+            ref.compactMapValues { value in
+                guard case let .string(string) = value else { return nil }
+                return string
+            }
+        }
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
             ?? container.decode(Date.self, forKey: .createdAtSnake)
     }

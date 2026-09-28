@@ -6,11 +6,14 @@ struct SchoolBrainMessageDecodingTests {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let message = try decoder.decode(OrbitSchoolBrainMessage.self, from: Data("""
-        {"id":"message-1","role":"assistant","content":"Готово","source_refs":[{"id":"item-1","type":"letter"}],"created_at":"2026-09-28T05:26:33.884Z"}
+        {"id":"message-1","role":"assistant","content":"Готово","source_refs":[{"id":"item-1","type":"letter","sourceDate":"2026-09-28","tasks":[{"title":"Дія","dueAt":"2026-09-30","importance":"high"}]}],"created_at":"2026-09-28T05:26:33.884Z"}
         """.utf8))
         precondition(message.id == "message-1")
         precondition(message.content == "Готово")
         precondition(message.sourceRefs.first?["id"] == "item-1")
+        precondition(message.sourceRefs.first?["type"] == "letter")
+        precondition(message.sourceRefs.first?["sourceDate"] == "2026-09-28")
+        precondition(message.sourceRefs.first?["tasks"] == nil)
         precondition(message.createdAt.timeIntervalSince1970 > 0)
         print("school brain snake_case response decodes")
     }
