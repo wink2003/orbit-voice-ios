@@ -100,16 +100,29 @@ struct SchoolBrainView: View {
     @State private var draft = ""
     @State private var loading = false
     @State private var error: String?
+    @State private var requestGeneration = 0
     private let starters = ["Що нового?", "Що нам треба зробити?", "Що важливого цього тижня?", "Що стосується 5F?"]
     var body: some View {
         VStack(spacing: 0) {
             if messages.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(starters, id: \.self) { value in Button(value) { draft = value } .buttonStyle(.bordered) } }.padding() } }
-            ScrollView { LazyVStack(alignment: .leading, spacing: 12) { ForEach(messages) { message in VStack(alignment: .leading, spacing: 6) { Text(message.role == "user" ? "Ви" : "Orbit School Brain").font(.caption).foregroundStyle(.secondary); Text(message.content).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10).background(message.role == "user" ? Color.blue.opacity(0.12) : Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 12)); if message.role == "assistant", !message.sourceRefs.isEmpty { VStack(alignment: .leading, spacing: 4) { Text("Джерела").font(.caption.weight(.semibold)).foregroundStyle(.secondary); ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(Array(message.sourceRefs.enumerated()), id: \.offset) { _, ref in if let id = ref["id"], let type = ref["type"], ["letter", "message"].contains(type) { NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { Label(type == "letter" ? "Лист" : "Повідомлення", systemImage: type == "letter" ? "envelope" : "message") }.buttonStyle(.bordered) } } } } } } } } } .padding() }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(messages) { message in
+                            VStack(alignment: .leading, spacing: 6) { Text(message.role == "user" ? "Ви" : "Orbit School Brain").font(.caption).foregroundStyle(.secondary); Text(message.content).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10).background(message.role == "user" ? Color.blue.opacity(0.12) : Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 12)); if message.role == "assistant", !message.sourceRefs.isEmpty { VStack(alignment: .leading, spacing: 4) { Text("Джерела").font(.caption.weight(.semibold)).foregroundStyle(.secondary); ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(Array(message.sourceRefs.enumerated()), id: \.offset) { _, ref in if let id = ref["id"], let type = ref["type"], ["letter", "message"].contains(type) { NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { Label(type == "letter" ? "Лист" : "Повідомлення", systemImage: type == "letter" ? "envelope" : "message") }.buttonStyle(.bordered) } } } } } }
+                            }.id(message.id)
+                        }
+                    }.padding()
+                }
+                .onChange(of: messages.count) { _, _ in scrollToLatest(using: proxy) }
+                .onAppear { scrollToLatest(using: proxy) }
+            }
             HStack(alignment: .bottom) { TextField("Запитайте про школу…", text: $draft, axis: .vertical).textFieldStyle(.roundedBorder); Button { Task { await send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }.disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || loading) }.padding()
         }.navigationTitle("Запитати про школу").task { await load() }.alert("School Brain", isPresented: SchoolBrainRequestState.alertBinding(error: $error)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
     }
+    private func scrollToLatest(using proxy: ScrollViewProxy) { guard let latest = messages.last else { return }; DispatchQueue.main.async { withAnimation { proxy.scrollTo(latest.id, anchor: .bottom) } } }
     private func load() async { do { messages = try await MainProductAPI.shared.schoolBrainConversation().messages } catch { self.error = "Не вдалося завантажити розмову." } }
-    private func send() async { let value = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !value.isEmpty else { return }; draft = ""; SchoolBrainRequestState.beginRequest(error: &error); loading = true; defer { loading = false }; do { let reply = try await MainProductAPI.shared.askSchool(value); messages.append(OrbitSchoolBrainMessage(id: UUID().uuidString, role: "user", content: value, sourceRefs: [], createdAt: .now)); messages.append(reply); SchoolBrainRequestState.completedSuccessfully(error: &error) } catch { self.error = "Не вдалося отримати відповідь School Brain." } }
+    private func send() async { let value = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !value.isEmpty, !loading else { return }; draft = ""; requestGeneration += 1; let generation = requestGeneration; SchoolBrainRequestState.beginRequest(error: &error); loading = true; defer { if generation == requestGeneration { loading = false } }; do { let reply = try await MainProductAPI.shared.askSchool(value); guard generation == requestGeneration else { return }; messages.append(OrbitSchoolBrainMessage(id: UUID().uuidString, role: "user", content: value, sourceRefs: [], createdAt: .now)); messages.append(reply); SchoolBrainRequestState.completedSuccessfully(error: &error) } catch is CancellationError { return } catch { guard generation == requestGeneration else { return }; self.error = "Не вдалося отримати відповідь School Brain." } }
 }
 
 struct SchoolCalendarView: View {
@@ -148,8 +161,66 @@ struct SchoolCalendarView: View {
 }
 
 struct SchoolTasksView: View {
-    @State private var tasks: [OrbitSchoolTask] = []; @State private var importantEvents: [OrbitSchulmanagerCalendarEvent] = []; @State private var error: String?
-    var body: some View { List { Section("Треба зробити") { if tasks.isEmpty { ContentUnavailableView("Немає шкільних завдань", systemImage: "checklist", description: Text("Немає дій, запланованих на наступні 10 днів.")) }; ForEach(tasks) { task in NavigationLink { SchoolDetailLoaderView(itemID: task.sourceItemId) } label: { VStack(alignment: .leading, spacing: 4) { Text(task.title).font(.headline); if let dueAt = task.dueAt { Text(schoolLocalizedDate(dueAt)).font(.subheadline) }; Text(task.sourceType == "letter" ? "Лист" : "Повідомлення").font(.caption).foregroundStyle(.secondary) } } } }; Section("Важливі події") { if importantEvents.isEmpty { Text("Немає важливих подій у цьому вікні.").foregroundStyle(.secondary) }; ForEach(importantEvents) { event in NavigationLink { SchoolCalendarView() } label: { VStack(alignment: .leading, spacing: 4) { Text(event.title).font(.headline); if let explanation = event.relevanceReason?.trimmingCharacters(in: .whitespacesAndNewlines), !explanation.isEmpty { Text("(\(explanation))").font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }; Text(event.allDay ? OrbitSchoolCivilDate.inclusiveRange(start: event.startsAt, end: event.endsAt) : schoolLocalizedDate(event.startsAt ?? "")).font(.subheadline); Label("Джерело: Календар Schulmanager", systemImage: "calendar").font(.caption).foregroundStyle(.secondary) } } } } }.navigationTitle("Наступні 10 днів").task { do { let response = try await MainProductAPI.shared.schoolTasks(); tasks = response.tasks; importantEvents = response.importantEvents } catch { self.error = "Не вдалося завантажити завдання." } }.alert("Шкільні завдання", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") } }
+    @State private var tasks: [OrbitSchoolTask] = []
+    @State private var importantEvents: [OrbitSchulmanagerCalendarEvent] = []
+    @State private var digest: OrbitSchoolBrainMessage?
+    @State private var windowFrom = ""
+    @State private var windowTo = ""
+    @State private var error: String?
+    @State private var loading = false
+
+    var body: some View {
+        List {
+            if loading { ProgressView().frame(maxWidth: .infinity) }
+            Section("Важливо зараз") {
+                if let digest, !digest.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(digest.content).fixedSize(horizontal: false, vertical: true)
+                    sourceLinks(for: digest)
+                } else if !loading {
+                    Text("Немає окремого підсумку від School Brain.").foregroundStyle(.secondary)
+                }
+            }
+            Section("Треба зробити") {
+                if tasks.isEmpty { Text("Немає дій, запланованих на наступні 10 днів.").foregroundStyle(.secondary) }
+                ForEach(tasks.prefix(8)) { task in
+                    NavigationLink { SchoolDetailLoaderView(itemID: task.sourceItemId) } label: {
+                        VStack(alignment: .leading, spacing: 4) { Text(task.title).font(.headline); if let dueAt = task.dueAt { Text(schoolLocalizedDate(dueAt)).font(.subheadline) }; Text(task.sourceType == "letter" ? "Лист" : "Повідомлення").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+            }
+            Section("Найближчим часом") {
+                if importantEvents.isEmpty { Text("Немає важливих подій у цьому вікні.").foregroundStyle(.secondary) }
+                ForEach(importantEvents.prefix(8)) { event in
+                    NavigationLink { SchoolCalendarView() } label: {
+                        VStack(alignment: .leading, spacing: 4) { Text(event.title).font(.headline); Text(event.allDay ? OrbitSchoolCivilDate.inclusiveRange(start: event.startsAt, end: event.endsAt) : schoolLocalizedDate(event.startsAt ?? "")).font(.subheadline); Label("Джерело: Календар Schulmanager", systemImage: "calendar").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Наступні 10 днів")
+        .task { await load() }
+        .refreshable { await load() }
+        .alert("Шкільний огляд", isPresented: SchoolBrainRequestState.alertBinding(error: $error)) { Button("Повторити") { Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
+    }
+
+    @ViewBuilder private func sourceLinks(for message: OrbitSchoolBrainMessage) -> some View {
+        if !message.sourceRefs.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(Array(message.sourceRefs.enumerated()), id: \.offset) { _, ref in if let id = ref["id"], let type = ref["type"], ["letter", "message"].contains(type) { NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { Label(type == "letter" ? "Лист" : "Повідомлення", systemImage: type == "letter" ? "envelope" : "message") }.buttonStyle(.bordered) } } } }
+        }
+    }
+
+    private func load() async {
+        loading = true; defer { loading = false }
+        do {
+            let response = try await MainProductAPI.shared.schoolTasks()
+            tasks = response.tasks; importantEvents = response.importantEvents; windowFrom = response.from; windowTo = response.to
+            let taskLines = tasks.prefix(8).map { task in "- \(task.title)\(task.dueAt.map { ", дата: \($0)" } ?? "")" }.joined(separator: "\n")
+            let eventLines = importantEvents.prefix(8).map { event in "- \(event.title), дата: \(event.startsAt ?? "невідомо")" }.joined(separator: "\n")
+            let prompt = "Сформуй короткий огляд українською для періоду \(windowFrom) — \(windowTo). Використай лише наведені дані. Не вигадуй дат. Поясни, що важливо зараз, але не повторюй повний список. Завдання:\n\(taskLines.isEmpty ? "немає" : taskLines)\nПодії:\n\(eventLines.isEmpty ? "немає" : eventLines)"
+            digest = try await MainProductAPI.shared.askSchool(prompt)
+            error = nil
+        } catch is CancellationError { } catch { error = "Не вдалося підготувати огляд школи." }
+    }
 }
 struct SchoolDetailLoaderView: View { let itemID: String; @State private var item: OrbitSchoolItem?; var body: some View { Group { if let item { SchoolDetailView(item: item) } else { ProgressView() } }.task { item = try? await MainProductAPI.shared.schoolItem(id: itemID) } } }
 
