@@ -15,6 +15,12 @@ struct SchoolBrainMessageDecodingTests {
         precondition(message.sourceRefs.first?["sourceDate"] == "2026-09-28")
         precondition(message.sourceRefs.first?["tasks"] == nil)
         precondition(message.createdAt.timeIntervalSince1970 > 0)
+        let briefing = try decoder.decode(OrbitSchoolBriefingResponse.self, from: Data("""
+        {"from":"2026-09-28","to":"2026-10-09","timeZone":"Europe/Berlin","dated":[{"date":"2026-10-03","title":"Подія","detail":"Опис","sourceRefs":[{"id":"calendar-1","type":"calendar"}]}],"attention":[{"date":null,"title":"Опитування","detail":"Перевірити відповідь","sourceRefs":[{"id":"item-1","type":"letter"}]}]}
+        """.utf8))
+        precondition(briefing.dated.first?.date == "2026-10-03")
+        precondition(briefing.dated.first?.sourceRefs.first?.type == "calendar")
+        precondition(briefing.attention.count == 1)
         print("school brain snake_case response decodes")
     }
 }

@@ -161,9 +161,7 @@ struct SchoolCalendarView: View {
 }
 
 struct SchoolTasksView: View {
-    @State private var tasks: [OrbitSchoolTask] = []
-    @State private var importantEvents: [OrbitSchulmanagerCalendarEvent] = []
-    @State private var digest: OrbitSchoolBrainMessage?
+    @State private var briefing: OrbitSchoolBriefingResponse?
     @State private var windowFrom = ""
     @State private var windowTo = ""
     @State private var error: String?
@@ -172,30 +170,16 @@ struct SchoolTasksView: View {
     var body: some View {
         List {
             if loading { ProgressView().frame(maxWidth: .infinity) }
-            Section("Важливо зараз") {
-                if let digest, !digest.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(digest.content).fixedSize(horizontal: false, vertical: true)
-                    sourceLinks(for: digest)
-                } else if !loading {
-                    Text("Немає окремого підсумку від School Brain.").foregroundStyle(.secondary)
+            if let briefing {
+                Section { Text("\(localizedDate(briefing.from)) — \(localizedDate(briefing.to))").font(.subheadline).foregroundStyle(.secondary) }
+                ForEach(briefing.dated) { item in
+                    Section(localizedDate(item.date ?? briefing.from)) { briefingItem(item) }
                 }
-            }
-            Section("Треба зробити") {
-                if tasks.isEmpty { Text("Немає дій, запланованих на наступні 10 днів.").foregroundStyle(.secondary) }
-                ForEach(tasks.prefix(8)) { task in
-                    NavigationLink { SchoolDetailLoaderView(itemID: task.sourceItemId) } label: {
-                        VStack(alignment: .leading, spacing: 4) { Text(task.title).font(.headline); if let dueAt = task.dueAt { Text(schoolLocalizedDate(dueAt)).font(.subheadline) }; Text(task.sourceType == "letter" ? "Лист" : "Повідомлення").font(.caption).foregroundStyle(.secondary) }
-                    }
+                Section("Потребує уваги") {
+                    if briefing.attention.isEmpty { Text("Немає окремих дій без визначеної дати.").foregroundStyle(.secondary) }
+                    ForEach(briefing.attention) { item in briefingItem(item) }
                 }
-            }
-            Section("Найближчим часом") {
-                if importantEvents.isEmpty { Text("Немає важливих подій у цьому вікні.").foregroundStyle(.secondary) }
-                ForEach(importantEvents.prefix(8)) { event in
-                    NavigationLink { SchoolCalendarView() } label: {
-                        VStack(alignment: .leading, spacing: 4) { Text(event.title).font(.headline); Text(event.allDay ? OrbitSchoolCivilDate.inclusiveRange(start: event.startsAt, end: event.endsAt) : schoolLocalizedDate(event.startsAt ?? "")).font(.subheadline); Label("Джерело: Календар Schulmanager", systemImage: "calendar").font(.caption).foregroundStyle(.secondary) }
-                    }
-                }
-            }
+            } else if !loading { ContentUnavailableView("Огляд недоступний", systemImage: "calendar.badge.exclamationmark") }
         }
         .navigationTitle("Наступні 10 днів")
         .task { await load() }
@@ -212,14 +196,21 @@ struct SchoolTasksView: View {
     private func load() async {
         loading = true; defer { loading = false }
         do {
-            let response = try await MainProductAPI.shared.schoolTasks()
-            tasks = response.tasks; importantEvents = response.importantEvents; windowFrom = response.from; windowTo = response.to
-            let taskLines = tasks.prefix(8).map { task in "- \(task.title)\(task.dueAt.map { ", дата: \($0)" } ?? "")" }.joined(separator: "\n")
-            let eventLines = importantEvents.prefix(8).map { event in "- \(event.title), дата: \(event.startsAt ?? "невідомо")" }.joined(separator: "\n")
-            let prompt = "Сформуй дуже короткий огляд українською для періоду \(windowFrom) — \(windowTo). Поверни не більше трьох окремих коротких пунктів, без вступу про відсутність даних. Використай лише наведені завдання та події; не додавай дії з історичних повідомлень, яких немає у списку завдань. Не вигадуй дат. Якщо список завдань порожній, не називай жодну дію обов’язковою. Завдання:\n\(taskLines.isEmpty ? "немає" : taskLines)\nПодії:\n\(eventLines.isEmpty ? "немає" : eventLines)"
-            digest = try await MainProductAPI.shared.askSchool(prompt)
-            self.error = nil
+            briefing = try await MainProductAPI.shared.schoolBriefing(); error = nil
         } catch is CancellationError { } catch { self.error = "Не вдалося підготувати огляд школи." }
+    }
+
+    @ViewBuilder private func briefingItem(_ item: OrbitSchoolBriefingItem) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(item.title).font(.headline)
+            if !item.detail.isEmpty { Text(item.detail).fixedSize(horizontal: false, vertical: true) }
+            if !item.sourceRefs.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(item.sourceRefs, id: \.self) { source in if source.type == "calendar" { NavigationLink { SchoolCalendarView() } label: { Label("Календар", systemImage: "calendar") }.buttonStyle(.bordered) } else { NavigationLink { SchoolDetailLoaderView(itemID: source.id) } label: { Label(source.type == "message" ? "Повідомлення" : "Лист", systemImage: source.type == "message" ? "message" : "envelope") }.buttonStyle(.bordered) } } } } }
+        }
+    }
+
+    private func localizedDate(_ value: String) -> String {
+        let parts = value.split(separator: "-").compactMap { Int($0) }; guard parts.count == 3, let date = Calendar(identifier: .gregorian).date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else { return value }
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "uk_UA"); formatter.timeZone = TimeZone(identifier: "Europe/Berlin"); formatter.dateFormat = "d MMMM, EEEE"; return formatter.string(from: date)
     }
 }
 struct SchoolDetailLoaderView: View { let itemID: String; @State private var item: OrbitSchoolItem?; var body: some View { Group { if let item { SchoolDetailView(item: item) } else { ProgressView() } }.task { item = try? await MainProductAPI.shared.schoolItem(id: itemID) } } }
