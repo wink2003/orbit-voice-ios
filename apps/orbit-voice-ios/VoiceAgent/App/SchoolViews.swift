@@ -171,7 +171,7 @@ struct SchoolTasksView: View {
         List {
             if loading { ProgressView().frame(maxWidth: .infinity) }
             if let briefing {
-                Section { Text("\(localizedDate(briefing.from)) — \(localizedDate(briefing.to))").font(.subheadline).foregroundStyle(.secondary) }
+                Section { Text("\(localizedDate(briefing.from)) — \(localizedDate(briefing.to, subtractingDays: 1))").font(.subheadline).foregroundStyle(.secondary) }
                 ForEach(briefing.dated) { item in
                     Section(localizedDate(item.date ?? briefing.from)) { briefingItem(item) }
                 }
@@ -208,9 +208,10 @@ struct SchoolTasksView: View {
         }
     }
 
-    private func localizedDate(_ value: String) -> String {
+    private func localizedDate(_ value: String, subtractingDays: Int = 0) -> String {
         let parts = value.split(separator: "-").compactMap { Int($0) }; guard parts.count == 3, let date = Calendar(identifier: .gregorian).date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else { return value }
-        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "uk_UA"); formatter.timeZone = TimeZone(identifier: "Europe/Berlin"); formatter.dateFormat = "d MMMM, EEEE"; return formatter.string(from: date)
+        let adjusted = Calendar(identifier: .gregorian).date(byAdding: .day, value: -subtractingDays, to: date) ?? date
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "uk_UA"); formatter.timeZone = TimeZone(identifier: "Europe/Berlin"); formatter.dateFormat = "d MMMM, EEEE"; return formatter.string(from: adjusted)
     }
 }
 struct SchoolDetailLoaderView: View { let itemID: String; @State private var item: OrbitSchoolItem?; var body: some View { Group { if let item { SchoolDetailView(item: item) } else { ProgressView() } }.task { item = try? await MainProductAPI.shared.schoolItem(id: itemID) } } }
