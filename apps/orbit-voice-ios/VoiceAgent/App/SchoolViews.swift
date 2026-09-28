@@ -218,8 +218,8 @@ struct SchoolTasksView: View {
             let eventLines = importantEvents.prefix(8).map { event in "- \(event.title), дата: \(event.startsAt ?? "невідомо")" }.joined(separator: "\n")
             let prompt = "Сформуй короткий огляд українською для періоду \(windowFrom) — \(windowTo). Використай лише наведені дані. Не вигадуй дат. Поясни, що важливо зараз, але не повторюй повний список. Завдання:\n\(taskLines.isEmpty ? "немає" : taskLines)\nПодії:\n\(eventLines.isEmpty ? "немає" : eventLines)"
             digest = try await MainProductAPI.shared.askSchool(prompt)
-            error = nil
-        } catch is CancellationError { } catch { error = "Не вдалося підготувати огляд школи." }
+            self.error = nil
+        } catch is CancellationError { } catch { self.error = "Не вдалося підготувати огляд школи." }
     }
 }
 struct SchoolDetailLoaderView: View { let itemID: String; @State private var item: OrbitSchoolItem?; var body: some View { Group { if let item { SchoolDetailView(item: item) } else { ProgressView() } }.task { item = try? await MainProductAPI.shared.schoolItem(id: itemID) } } }
