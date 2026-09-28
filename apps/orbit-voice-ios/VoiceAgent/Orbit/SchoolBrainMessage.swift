@@ -61,3 +61,7 @@ struct OrbitSchoolBrainMessage: Decodable, Identifiable {
             ?? container.decode(Date.self, forKey: .createdAtSnake)
     }
 }
+
+struct OrbitSchoolBriefingSource: Decodable, Hashable { let id: String; let type: String }
+struct OrbitSchoolBriefingItem: Decodable, Identifiable, Hashable { let date: String?; let title: String; let detail: String; let sourceRefs: [OrbitSchoolBriefingSource]; var id: String { "\(date ?? "attention"):\(title)" } }
+struct OrbitSchoolBriefingResponse: Decodable { let from: String; let to: String; let timeZone: String; let dated: [OrbitSchoolBriefingItem]; let attention: [OrbitSchoolBriefingItem] }

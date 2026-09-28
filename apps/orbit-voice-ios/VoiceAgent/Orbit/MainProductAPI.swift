@@ -41,9 +41,6 @@ struct OrbitSchulmanagerCalendarEvent: Decodable, Identifiable, Hashable { let u
 struct OrbitSchoolTask: Decodable, Identifiable, Hashable { let key: String; let title: String; let action: String?; let dueAt: String?; let endsAt: String?; let allDay: Bool; let importance: String?; let target: String?; let confidence: Double?; let reason: String?; let location: String?; let sourceItemId: String; let sourceType: String; let sourceExternalId: String; var id: String { "\(sourceItemId):\(key)" } }
 struct OrbitSchulmanagerCalendarResponse: Decodable { let events: [OrbitSchulmanagerCalendarEvent] }
 struct OrbitSchoolTasksResponse: Decodable { let from: String; let to: String; let tasks: [OrbitSchoolTask]; let importantEvents: [OrbitSchulmanagerCalendarEvent] }
-struct OrbitSchoolBriefingSource: Decodable, Hashable { let id: String; let type: String }
-struct OrbitSchoolBriefingItem: Decodable, Identifiable, Hashable { let date: String?; let title: String; let detail: String; let sourceRefs: [OrbitSchoolBriefingSource]; var id: String { "\(date ?? "attention"):\(title)" } }
-struct OrbitSchoolBriefingResponse: Decodable { let from: String; let to: String; let timeZone: String; let dated: [OrbitSchoolBriefingItem]; let attention: [OrbitSchoolBriefingItem] }
 struct OrbitSchoolBrainConversationResponse: Decodable { let conversation: OrbitSchoolBrainConversation; let messages: [OrbitSchoolBrainMessage] }
 struct OrbitSchoolBrainConversation: Decodable { let id: String; let title: String; let createdAt: Date; let updatedAt: Date }
 
