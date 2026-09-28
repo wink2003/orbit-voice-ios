@@ -93,6 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           xcrun swiftc \
+            -framework SwiftUI \
             apps/orbit-voice-ios/VoiceAgent/App/SchoolBrainRequestState.swift \
             apps/orbit-voice-ios/Tests/SchoolBrainRequestStateTests.swift \
             -o "$RUNNER_TEMP/orbit-school-brain-request-state-tests"

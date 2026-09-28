@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 @main
 struct SchoolBrainRequestStateTests {
@@ -11,6 +11,15 @@ struct SchoolBrainRequestStateTests {
         SchoolBrainRequestState.completedSuccessfully(error: &staleError)
         precondition(staleError == nil)
 
-        print("school brain success clears stale error state")
+        var alertError: String? = "Не вдалося отримати відповідь School Brain."
+        let binding = SchoolBrainRequestState.alertBinding(error: Binding(
+            get: { alertError },
+            set: { alertError = $0 }
+        ))
+        precondition(binding.wrappedValue)
+        binding.wrappedValue = false
+        precondition(alertError == nil)
+
+        print("school brain success clears stale error and dismisses alert state")
     }
 }
