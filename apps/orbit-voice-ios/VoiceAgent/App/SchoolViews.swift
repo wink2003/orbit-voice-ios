@@ -216,7 +216,7 @@ struct SchoolTasksView: View {
             tasks = response.tasks; importantEvents = response.importantEvents; windowFrom = response.from; windowTo = response.to
             let taskLines = tasks.prefix(8).map { task in "- \(task.title)\(task.dueAt.map { ", дата: \($0)" } ?? "")" }.joined(separator: "\n")
             let eventLines = importantEvents.prefix(8).map { event in "- \(event.title), дата: \(event.startsAt ?? "невідомо")" }.joined(separator: "\n")
-            let prompt = "Сформуй короткий огляд українською для періоду \(windowFrom) — \(windowTo). Використай лише наведені дані. Не вигадуй дат. Поясни, що важливо зараз, але не повторюй повний список. Завдання:\n\(taskLines.isEmpty ? "немає" : taskLines)\nПодії:\n\(eventLines.isEmpty ? "немає" : eventLines)"
+            let prompt = "Сформуй дуже короткий огляд українською для періоду \(windowFrom) — \(windowTo). Поверни не більше трьох окремих коротких пунктів, без вступу про відсутність даних. Використай лише наведені завдання та події; не додавай дії з історичних повідомлень, яких немає у списку завдань. Не вигадуй дат. Якщо список завдань порожній, не називай жодну дію обов’язковою. Завдання:\n\(taskLines.isEmpty ? "немає" : taskLines)\nПодії:\n\(eventLines.isEmpty ? "немає" : eventLines)"
             digest = try await MainProductAPI.shared.askSchool(prompt)
             self.error = nil
         } catch is CancellationError { } catch { self.error = "Не вдалося підготувати огляд школи." }
