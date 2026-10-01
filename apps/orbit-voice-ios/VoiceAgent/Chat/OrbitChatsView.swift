@@ -129,7 +129,7 @@ private struct OrbitConversationView: View {
     @State private var jumpToLatestRequest = 0
     @State private var didInitialLoad = false
     @State private var failedMessageID: String?
-    @State private var agentPollTask: Task<Void, Never>?
+    @State private var agentPollTasks: [String: Task<Void, Never>] = [:]
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
 
     init(conversation: OrbitConversation, initialDraft: String? = nil) {
@@ -254,7 +254,7 @@ private struct OrbitConversationView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .task { await loadMessages() }
-        .onDisappear { agentPollTask?.cancel(); agentPollTask = nil }
+        .onDisappear { cancelLocalAgentPolling() }
         .alert("Orbit тимчасово недоступний", isPresented: .constant(error != nil)) {
             Button("Гаразд") { error = nil }
         } message: {
@@ -345,33 +345,34 @@ private struct OrbitConversationView: View {
     }
 
     // Polling is local only: cancelling it never cancels the server-side run.
+    private func cancelLocalAgentPolling() {
+        agentPollTasks.values.forEach { $0.cancel() }
+        agentPollTasks.removeAll()
+    }
+
     private func startAgentPolling(runId: String, placeholderID: String) {
-        agentPollTask?.cancel()
-        agentPollTask = Task { @MainActor in
+        guard agentPollTasks[runId] == nil else { return }
+        agentPollTasks[runId] = Task { @MainActor in
+            defer { agentPollTasks[runId] = nil }
             let delays: [UInt64] = [1_500_000_000] + Array(repeating: 2_500_000_000, count: 70)
             for delay in delays {
                 try? await Task.sleep(nanoseconds: delay)
                 if Task.isCancelled { return }
                 guard let status = try? await OrbitChatAPI.shared.agentRunStatus(in: conversation, runId: runId) else { continue }
                 if Task.isCancelled { return }
-                if status.isDone {
-                    if let final = status.assistantMessage {
-                        let hasFinal = messages.contains(where: { $0.id == final.id })
-                        if let index = messages.firstIndex(where: { $0.id == placeholderID }) {
-                            if hasFinal { messages.remove(at: index) } else { messages[index] = final }
-                        } else if !hasFinal {
-                            messages.append(final)
-                        }
-                    } else {
-                        messages.removeAll { $0.id == placeholderID }
-                        await loadMessages()
-                    }
-                    return
-                }
+                guard status.isDone else { continue }
+                let outcome = OrbitAgentRunMerge.applyTerminal(&messages, placeholderID: placeholderID, durable: status.assistantMessage)
+                if outcome == .needsRefresh { await quietRefresh() }
+                return
             }
-            messages.removeAll { $0.id == placeholderID }
-            await loadMessages()
+            if Task.isCancelled { return }
+            OrbitAgentRunMerge.removePlaceholder(&messages, placeholderID: placeholderID)
+            await quietRefresh()
         }
+    }
+
+    private func quietRefresh() async {
+        if let remote = try? await OrbitChatAPI.shared.messages(in: conversation) { messages = remote }
     }
 
     private func reconcile(clientMessageID: String) async -> Bool {
