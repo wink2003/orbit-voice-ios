@@ -129,6 +129,7 @@ private struct OrbitConversationView: View {
     @State private var jumpToLatestRequest = 0
     @State private var didInitialLoad = false
     @State private var failedMessageID: String?
+    @State private var agentPollTask: Task<Void, Never>?
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
 
     init(conversation: OrbitConversation, initialDraft: String? = nil) {
@@ -253,6 +254,7 @@ private struct OrbitConversationView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .task { await loadMessages() }
+        .onDisappear { agentPollTask?.cancel(); agentPollTask = nil }
         .alert("Orbit тимчасово недоступний", isPresented: .constant(error != nil)) {
             Button("Гаразд") { error = nil }
         } message: {
@@ -329,6 +331,9 @@ private struct OrbitConversationView: View {
                 if !messages.contains(where: { $0.id == response.assistantMessage.id }) {
                     messages.append(response.assistantMessage)
                 }
+                if let run = response.agentRun {
+                    startAgentPolling(runId: run.id, placeholderID: response.assistantMessage.id)
+                }
             } catch {
                 if !(await reconcile(clientMessageID: clientMessageID)) {
                     failedMessageID = localMessageID
@@ -336,6 +341,36 @@ private struct OrbitConversationView: View {
                     self.error = error
                 }
             }
+        }
+    }
+
+    // Polling is local only: cancelling it never cancels the server-side run.
+    private func startAgentPolling(runId: String, placeholderID: String) {
+        agentPollTask?.cancel()
+        agentPollTask = Task { @MainActor in
+            let delays: [UInt64] = [1_500_000_000] + Array(repeating: 2_500_000_000, count: 70)
+            for delay in delays {
+                try? await Task.sleep(nanoseconds: delay)
+                if Task.isCancelled { return }
+                guard let status = try? await OrbitChatAPI.shared.agentRunStatus(in: conversation, runId: runId) else { continue }
+                if Task.isCancelled { return }
+                if status.isDone {
+                    if let final = status.assistantMessage {
+                        let hasFinal = messages.contains(where: { $0.id == final.id })
+                        if let index = messages.firstIndex(where: { $0.id == placeholderID }) {
+                            if hasFinal { messages.remove(at: index) } else { messages[index] = final }
+                        } else if !hasFinal {
+                            messages.append(final)
+                        }
+                    } else {
+                        messages.removeAll { $0.id == placeholderID }
+                        await loadMessages()
+                    }
+                    return
+                }
+            }
+            messages.removeAll { $0.id == placeholderID }
+            await loadMessages()
         }
     }
 

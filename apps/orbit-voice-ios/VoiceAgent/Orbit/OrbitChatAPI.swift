@@ -46,9 +46,21 @@ private struct MessagesResponse: Decodable {
     let messages: [OrbitChatMessage]
 }
 
+struct OrbitAgentRunRef: Decodable {
+    let id: String
+    let state: String
+}
+
 struct SendMessageResponse: Decodable {
     let userMessage: OrbitChatMessage
     let assistantMessage: OrbitChatMessage
+    let agentRun: OrbitAgentRunRef?
+}
+
+struct OrbitAgentRunStatus: Decodable {
+    let state: String
+    let assistantMessage: OrbitChatMessage?
+    var isDone: Bool { state == "done" }
 }
 
 enum OrbitChatAPIError: LocalizedError {
@@ -92,6 +104,10 @@ final class OrbitChatAPI {
             "clientMessageId": clientMessageId,
         ]
         return try await request(path: "/api/chats/\(conversation.id)/messages", method: "POST", body: body)
+    }
+
+    func agentRunStatus(in conversation: OrbitConversation, runId: String) async throws -> OrbitAgentRunStatus {
+        try await request(path: "/api/chats/\(conversation.id)/agent-runs/\(runId)")
     }
 
     private func request<T: Decodable>(path: String, method: String = "GET", body: [String: String]? = nil) async throws -> T {
