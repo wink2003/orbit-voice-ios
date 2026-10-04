@@ -147,44 +147,59 @@ private final class OrbitMiniSessionPCMObserver: AudioRenderer, @unchecked Senda
     private var hasLoggedFirstFrame = false
     private var frameCount = 0
     private var lastReportAt = ProcessInfo.processInfo.systemUptime
-    private var lastEnergyState: Bool?
+    private var window = OrbitMiniPCMLevelAccumulator()
+    private var unsupportedCount = 0
 
     init(source: String, startID: String) {
         self.source = source
         self.startID = startID
     }
 
+    /// LiveKit delivers Int16 non-interleaved PCM here; floatChannelData is nil
+    /// for that format, so levels are computed from int16ChannelData.
     func render(pcmBuffer: AVAudioPCMBuffer) {
-        let samples = Int(pcmBuffer.frameLength)
-        var sumSquares = 0.0
-        var peak = 0.0
-        if samples > 0, let channel = pcmBuffer.floatChannelData?.pointee {
-            for index in 0..<samples {
-                let value = Double(channel[index])
-                sumSquares += value * value
-                peak = max(peak, abs(value))
+        let format = pcmBuffer.format
+        let frames = Int(pcmBuffer.frameLength)
+        var block = OrbitMiniPCMLevelAccumulator()
+        var supported = false
+        if format.commonFormat == .pcmFormatInt16, !format.isInterleaved, let channels = pcmBuffer.int16ChannelData {
+            supported = true
+            for channel in 0..<Int(format.channelCount) {
+                block.add(channels[channel], count: frames)
             }
         }
-        let rms = samples > 0 ? sqrt(sumSquares / Double(samples)) : 0
-        let hasEnergy = rms >= 0.003 || peak >= 0.02
         let now = ProcessInfo.processInfo.systemUptime
-        let event: (first: Bool, report: Bool, frameCount: Int, rms: Double, peak: Double, energy: Bool) = lock.withLock {
+        let event: (first: Bool, count: Int, report: OrbitMiniPCMLevelAccumulator.Report?, unsupported: Int) = lock.withLock {
             frameCount += 1
             let first = !hasLoggedFirstFrame
             if first { hasLoggedFirstFrame = true }
-            let report = first || lastEnergyState != hasEnergy || now - lastReportAt >= 5
-            if report {
-                lastReportAt = now
-                lastEnergyState = hasEnergy
-            }
-            return (first, report, frameCount, rms, peak, hasEnergy)
+            if supported { window.merge(block) } else { unsupportedCount += 1 }
+            guard now - lastReportAt >= 5 else { return (first, frameCount, nil, 0) }
+            lastReportAt = now
+            let unsupported = unsupportedCount
+            unsupportedCount = 0
+            return (first, frameCount, window.takeReport(), unsupported)
         }
         if event.first {
             logger.notice("audio capture first PCM source=\(source) id=\(startID) engineRunning=\(AudioManager.shared.isEngineRunning)")
         }
-        if event.report {
-            logger.notice("audio capture energy source=\(source) id=\(startID) frames=\(event.frameCount) rms=\(String(format: "%.4f", event.rms)) peak=\(String(format: "%.4f", event.peak)) energy=\(event.energy) route=\(AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType.rawValue ?? "unknown")")
+        if let report = event.report {
+            logger.notice(Self.levelLine(source: source, startID: startID, frames: event.count, report: report))
         }
+        if event.unsupported > 0 {
+            logger.notice("audio capture unsupported PCM source=\(source) id=\(startID) callbacks=\(event.unsupported) commonFormat=\(format.commonFormat.rawValue) interleaved=\(format.isInterleaved) channels=\(format.channelCount)")
+        }
+    }
+
+    /// Final partial window, called off the realtime thread when detaching.
+    func logFinalWindow() {
+        let (count, report) = lock.withLock { (frameCount, window.takeReport()) }
+        guard let report else { return }
+        logger.notice(Self.levelLine(source: source, startID: startID, frames: count, report: report) + " final=true")
+    }
+
+    private static func levelLine(source: String, startID: String, frames: Int, report: OrbitMiniPCMLevelAccumulator.Report) -> String {
+        "audio capture level source=\(source) id=\(startID) frames=\(frames) rms=\(String(format: "%.4f", report.rms)) peak=\(String(format: "%.4f", report.peak)) activeBlocksPct=\(String(format: "%.0f", report.activeBlocksPercent))"
     }
 }
 
@@ -606,6 +621,7 @@ private extension OrbitMiniVoiceCoordinator {
     func clearSessionPCMDiagnostics() {
         guard let observer = sessionPCMObserver else { return }
         AudioManager.shared.remove(localAudioRenderer: observer)
+        observer.logFinalWindow()
         sessionPCMObserver = nil
         logger.notice("audio capture diagnostics detached")
     }

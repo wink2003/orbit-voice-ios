@@ -33,6 +33,11 @@ jobs:
             apps/orbit-mini-ios/Tests/OrbitMiniProfileSelectionTests.swift \
             -o "$RUNNER_TEMP/orbit-mini-profile-selection-tests"
           "$RUNNER_TEMP/orbit-mini-profile-selection-tests"
+          xcrun swiftc \
+            apps/orbit-mini-ios/VoiceAgent/Orbit/OrbitMiniPCMLevelAccumulator.swift \
+            apps/orbit-mini-ios/Tests/OrbitMiniPCMLevelAccumulatorTests.swift \
+            -o "$RUNNER_TEMP/orbit-mini-pcm-level-tests"
+          "$RUNNER_TEMP/orbit-mini-pcm-level-tests"
 
       - name: Build Orbit Mini and WidgetKit extension
         run: |
