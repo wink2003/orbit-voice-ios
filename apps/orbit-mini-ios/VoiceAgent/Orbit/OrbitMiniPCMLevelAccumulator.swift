@@ -2,7 +2,7 @@ import Foundation
 
 /// Diagnostic-only level statistics for Int16 PCM. No application behavior
 /// depends on it, and only aggregate numbers (never samples) leave this type.
-struct OrbitMiniPCMLevelAccumulator: Equatable {
+nonisolated struct OrbitMiniPCMLevelAccumulator: Equatable {
     /// A block counts as "active" when its RMS is at least this many Int16
     /// counts (about 0.003 of full scale, roughly -50 dBFS). Purely a
     /// diagnostic marker for comparing speech and quiet windows.
