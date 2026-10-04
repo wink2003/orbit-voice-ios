@@ -20,14 +20,16 @@ enum OrbitMiniPCMLevelAccumulatorTests {
         add(&acc, [1000, -3000, 2000, -500])
         report = acc.takeReport()
         expect(near(report?.peak, 3000.0 / 32768.0), "peak uses absolute value")
-        let expectedRMS = ((1000.0 * 1000 + 3000 * 3000 + 2000 * 2000 + 500 * 500) / 4).squareRoot() / 32768.0
+        let mixed: [Double] = [1000, -3000, 2000, -500]
+        let expectedRMS: Double = meanSquareRoot(mixed) / 32768.0
         expect(near(report?.rms, expectedRMS), "rms of mixed-sign samples")
 
         // D. Int16.min does not overflow
         add(&acc, [Int16.min, Int16.max])
         report = acc.takeReport()
         expect(near(report?.peak, 1.0), "Int16.min reports full-scale peak")
-        expect(near(report?.rms, ((32768.0 * 32768 + 32767.0 * 32767) / 2).squareRoot() / 32768.0), "Int16.min rms")
+        let extremes: [Double] = [32768, 32767]
+        expect(near(report?.rms, meanSquareRoot(extremes) / 32768.0), "Int16.min rms")
 
         // E. accumulation over blocks, with one quiet and one active block
         add(&acc, [Int16](repeating: 10, count: 480))
@@ -36,7 +38,8 @@ enum OrbitMiniPCMLevelAccumulatorTests {
         expect(report?.blocks == 2, "two blocks accumulated")
         expect(near(report?.activeBlocksPercent, 50), "half of the blocks are active")
         expect(near(report?.peak, 8000.0 / 32768.0), "window peak is the maximum block peak")
-        let windowRMS = ((10.0 * 10 + 8000.0 * 8000) / 2).squareRoot() / 32768.0
+        let blockLevels: [Double] = [10, 8000]
+        let windowRMS: Double = meanSquareRoot(blockLevels) / 32768.0
         expect(near(report?.rms, windowRMS), "window rms spans all samples")
 
         // F. report resets the window; merge matches direct accumulation
@@ -68,6 +71,12 @@ enum OrbitMiniPCMLevelAccumulatorTests {
 
     private static func add(_ acc: inout OrbitMiniPCMLevelAccumulator, _ samples: [Int16]) {
         samples.withUnsafeBufferPointer { acc.add($0.baseAddress, count: $0.count) }
+    }
+
+    private static func meanSquareRoot(_ values: [Double]) -> Double {
+        var total = 0.0
+        for value in values { total += value * value }
+        return (total / Double(values.count)).squareRoot()
     }
 
     private static func near(_ value: Double?, _ expected: Double) -> Bool {
