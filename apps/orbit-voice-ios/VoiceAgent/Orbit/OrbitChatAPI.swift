@@ -115,7 +115,7 @@ final class OrbitChatAPI {
         try await request(path: "/api/chats/\(conversation.id)/agent-runs/\(runId)/cancel", method: "POST")
     }
 
-    private func request<T: Decodable>(path: String, method: String = "GET", body: [String: String]? = nil) async throws -> T {
+    private func request<T: Decodable>(path: String, method: String = "GET", body: [String: String]? = nil, allowRefresh: Bool = true) async throws -> T {
         guard let deviceToken = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
@@ -128,6 +128,9 @@ final class OrbitChatAPI {
         }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
+        if http.statusCode == 401, allowRefresh, KeychainStore.readSessionToken() != nil, await OrbitAuthentication.refreshStoredSession() {
+            return try await request(path: path, method: method, body: body, allowRefresh: false)
+        }
         guard (200 ..< 300).contains(http.statusCode) else {
             let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
             throw OrbitChatAPIError.requestFailed(message ?? "Не вдалося зв’язатися з Orbit.")

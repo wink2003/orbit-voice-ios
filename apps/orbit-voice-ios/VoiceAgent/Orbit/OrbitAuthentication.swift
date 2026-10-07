@@ -116,9 +116,15 @@ final class OrbitAuthentication: ObservableObject {
     }
 
     private func refreshSession(token: String) async -> Bool {
+        guard await Self.refreshStoredSession(), let next = KeychainStore.readSessionToken() else { return false }
+        return await restoreSession(token: next)
+    }
+
+    nonisolated static func refreshStoredSession() async -> Bool {
+        guard let token = KeychainStore.readSessionToken() else { return false }
         var request = URLRequest(url: URL(string: "https://voice.orbit.opik.net/api/auth/refresh")!); request.httpMethod = "POST"; request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (data, response) = try? await URLSession.shared.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200, let result = try? JSONDecoder().decode(SessionResponse.self, from: data), let next = result.token else { return false }
-        try? KeychainStore.saveSessionToken(next); apply(result.profile); return true
+        try? KeychainStore.saveSessionToken(next); return true
     }
 
     private func apply(_ profile: SessionProfile) {
