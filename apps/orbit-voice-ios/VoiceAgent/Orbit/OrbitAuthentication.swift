@@ -3,6 +3,8 @@ import Foundation
 import LiveKit
 import UIKit
 
+private struct OrbitSessionRefreshResponse: Decodable { let token: String? }
+
 struct OrbitTokenSource: EndpointTokenSource {
     let url = URL(string: "https://voice.orbit.opik.net/api/token")!
 
@@ -123,7 +125,7 @@ final class OrbitAuthentication: ObservableObject {
     nonisolated static func refreshStoredSession() async -> Bool {
         guard let token = KeychainStore.readSessionToken() else { return false }
         var request = URLRequest(url: URL(string: "https://voice.orbit.opik.net/api/auth/refresh")!); request.httpMethod = "POST"; request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        guard let (data, response) = try? await URLSession.shared.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200, let result = try? JSONDecoder().decode(SessionResponse.self, from: data), let next = result.token else { return false }
+        guard let (data, response) = try? await URLSession.shared.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200, let result = try? JSONDecoder().decode(OrbitSessionRefreshResponse.self, from: data), let next = result.token else { return false }
         try? KeychainStore.saveSessionToken(next); return true
     }
 

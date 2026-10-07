@@ -129,7 +129,7 @@ final class OrbitChatAPI {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
         if http.statusCode == 401, allowRefresh, KeychainStore.readSessionToken() != nil, await OrbitAuthentication.refreshStoredSession() {
-            return try await request(path: path, method: method, body: body, allowRefresh: false)
+            return try await self.request(path: path, method: method, body: body, allowRefresh: false)
         }
         guard (200 ..< 300).contains(http.statusCode) else {
             let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
