@@ -135,6 +135,15 @@ jobs:
             -o "$RUNNER_TEMP/orbit-app-lock-tests"
           "$RUNNER_TEMP/orbit-app-lock-tests"
 
+      - name: Test Main account session state
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/OrbitAccountSessionState.swift \
+            apps/orbit-voice-ios/Tests/OrbitAccountSessionStateTests.swift \
+            -o "$RUNNER_TEMP/orbit-account-session-tests"
+          "$RUNNER_TEMP/orbit-account-session-tests"
+
       - name: Test source states
         run: |
           set -euo pipefail

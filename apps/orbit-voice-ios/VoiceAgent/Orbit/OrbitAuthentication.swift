@@ -16,6 +16,7 @@ struct OrbitTokenSource: EndpointTokenSource {
 @MainActor
 final class OrbitAuthentication: ObservableObject {
     @Published private(set) var isPaired = KeychainStore.readMainBearerToken() != nil
+    @Published private(set) var hasAccountSession = KeychainStore.readSessionToken() != nil
     @Published private(set) var displayName = UserDefaults.standard.string(forKey: "orbit.displayName")
     @Published private(set) var personId: String?
     @Published private(set) var identityResolved = false
@@ -89,6 +90,7 @@ final class OrbitAuthentication: ObservableObject {
             throw PairingFailure.message((try? JSONDecoder().decode(APIError.self, from: data).error) ?? "Не вдалося увійти в Orbit.")
         }
         try KeychainStore.saveSessionToken(token)
+        hasAccountSession = true
         apply(result.profile)
     }
 
@@ -98,6 +100,7 @@ final class OrbitAuthentication: ObservableObject {
             if await restoreSession(token: token) { identityResolved = true; return }
             if await refreshSession(token: token) { identityResolved = true; return }
             KeychainStore.removeSessionToken()
+            hasAccountSession = false
             isPaired = KeychainStore.readDeviceToken() != nil
         }
         guard let token = KeychainStore.readDeviceToken(), let url = URL(string: "https://voice.orbit.opik.net/api/me") else { identityResolved = true; return }
@@ -141,7 +144,7 @@ final class OrbitAuthentication: ObservableObject {
             var request = URLRequest(url: URL(string: "https://voice.orbit.opik.net/api/auth/logout")!); request.httpMethod = "POST"; request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             _ = try? await URLSession.shared.data(for: request)
         }
-        KeychainStore.removeSessionToken(); isPaired = KeychainStore.readDeviceToken() != nil; await refreshIdentity()
+        KeychainStore.removeSessionToken(); hasAccountSession = false; isPaired = KeychainStore.readDeviceToken() != nil; await refreshIdentity()
     }
 
     func impersonationTargets() async throws -> [ImpersonationTarget] {
@@ -163,6 +166,7 @@ final class OrbitAuthentication: ObservableObject {
     func forgetDevice() {
         KeychainStore.removeSessionToken()
         KeychainStore.removeDeviceToken()
+        hasAccountSession = false
         UserDefaults.standard.removeObject(forKey: "orbit.displayName")
         displayName = nil
         personId = nil

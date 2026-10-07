@@ -1262,6 +1262,7 @@ struct OrbitSettingsView: View {
     @State private var showingAudio = false
     @State private var serverOnline: Bool?
     @State private var showsChangeUserConfirmation = false
+    @State private var showsAccountLogin = false
     @AppStorage("orbit.chat.showTimestamps") private var showChatTimestamps = false
     @AppStorage("orbit.chat.compact") private var compactChat = false
     @AppStorage("orbit.chat.haptics") private var chatHaptics = true
@@ -1272,6 +1273,24 @@ struct OrbitSettingsView: View {
                 Section("Профіль") {
                     Label(authentication.displayName ?? "Активний профіль", systemImage: "person.crop.circle")
                     Button("Змінити профіль на цьому iPhone", role: .destructive) { showsChangeUserConfirmation = true }
+                }
+                Section("Orbit акаунт") {
+                    if authentication.hasAccountSession {
+                        Label {
+                            Text("Ви увійшли як \(authentication.displayName ?? "активний профіль")")
+                        } icon: {
+                            Image(systemName: "person.crop.circle.badge.checkmark")
+                        }
+                        Button("Вийти з акаунта Orbit", role: .destructive) {
+                            Task { await authentication.logout() }
+                        }
+                    } else if authentication.isPaired {
+                        Label("Цей iPhone активовано", systemImage: "iphone")
+                        Button("Увійти в акаунт Orbit") { showsAccountLogin = true }
+                        Text("Поточна активація цього iPhone залишиться доступною після входу.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Section("Голос") {
                     Button { showingAudio = true } label: { LabeledContent("Обробка мікрофона", value: audioOptions.voiceProcessingModeLabel) }
@@ -1321,6 +1340,7 @@ struct OrbitSettingsView: View {
             .navigationTitle("Налаштування")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingAudio) { AudioOptionsSheet() }
+            .sheet(isPresented: $showsAccountLogin) { OrbitAccountLoginSheet() }
             .task { await checkServer() }
             .confirmationDialog("Змінити профіль на цьому iPhone?", isPresented: $showsChangeUserConfirmation) {
                 Button("Змінити профіль", role: .destructive) { authentication.forgetDevice() }
@@ -1333,6 +1353,68 @@ struct OrbitSettingsView: View {
         guard let url = URL(string: "https://voice.orbit.opik.net/healthz") else { return }
         do { let (_, response) = try await URLSession.shared.data(from: url); serverOnline = (response as? HTTPURLResponse)?.statusCode == 200 }
         catch { serverOnline = false }
+    }
+}
+
+private struct OrbitAccountLoginSheet: View {
+    @EnvironmentObject private var authentication: OrbitAuthentication
+    @Environment(\.dismiss) private var dismiss
+    @State private var login = ""
+    @State private var password = ""
+    @State private var errorMessage: String?
+    @State private var isSigningIn = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Вхід до Main Orbit") {
+                    TextField("Логін", text: $login)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textContentType(.username)
+                    SecureField("Пароль", text: $password)
+                        .textContentType(.password)
+                }
+                if let errorMessage {
+                    Section { Text(errorMessage).foregroundStyle(.red) }
+                }
+                Section {
+                    Button {
+                        Task { await signIn() }
+                    } label: {
+                        if isSigningIn { ProgressView() } else { Text("Увійти в акаунт Orbit") }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .disabled(login.isEmpty || password.isEmpty || isSigningIn)
+                }
+                Section {
+                    Text("Вхід в акаунт не змінює активацію цього iPhone.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Orbit акаунт")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Скасувати") { dismiss() }
+                }
+            }
+        }
+        .onChange(of: authentication.hasAccountSession) { _, isActive in
+            if isActive { dismiss() }
+        }
+    }
+
+    private func signIn() async {
+        isSigningIn = true
+        errorMessage = nil
+        defer { isSigningIn = false }
+        do {
+            try await authentication.login(login: login, password: password)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 
