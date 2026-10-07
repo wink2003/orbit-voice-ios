@@ -117,6 +117,42 @@ jobs:
             -o "$RUNNER_TEMP/orbit-agent-run-merge-tests"
           "$RUNNER_TEMP/orbit-agent-run-merge-tests"
 
+      - name: Test Main navigation
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/App/OrbitNavigation.swift \
+            apps/orbit-voice-ios/Tests/OrbitNavigationTests.swift \
+            -o "$RUNNER_TEMP/orbit-navigation-tests"
+          "$RUNNER_TEMP/orbit-navigation-tests"
+
+      - name: Test source states
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/App/OrbitSourceState.swift \
+            apps/orbit-voice-ios/Tests/OrbitSourceStateTests.swift \
+            -o "$RUNNER_TEMP/orbit-source-state-tests"
+          "$RUNNER_TEMP/orbit-source-state-tests"
+
+      - name: Test Today logic
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/App/OrbitTodayLogic.swift \
+            apps/orbit-voice-ios/Tests/OrbitTodayLogicTests.swift \
+            -o "$RUNNER_TEMP/orbit-today-logic-tests"
+          "$RUNNER_TEMP/orbit-today-logic-tests"
+
+      - name: Test chat presentation
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Chat/OrbitChatPresentation.swift \
+            apps/orbit-voice-ios/Tests/OrbitChatPresentationTests.swift \
+            -o "$RUNNER_TEMP/orbit-chat-presentation-tests"
+          "$RUNNER_TEMP/orbit-chat-presentation-tests"
+
       - name: Package IPA for AltStore
         run: |
           set -euo pipefail

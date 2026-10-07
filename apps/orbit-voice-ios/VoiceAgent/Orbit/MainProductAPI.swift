@@ -248,17 +248,18 @@ final class MainProductAPI {
         return response
     }
 
-    func schoolItems(filter: String = "all") async throws -> OrbitSchoolItemsResponse {
+    func schoolItems(filter: String = "all", classifyUnavailable: Bool = false) async throws -> OrbitSchoolItemsResponse {
         try await request(
             path: "/api/school/items?filter=\(filter.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "all")",
-            cachePolicy: .reloadIgnoringLocalCacheData
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            classifyUnavailable: classifyUnavailable
         )
     }
     func schulmanagerCalendar(scope: String = "for-us", from: Date = .now, to: Date = Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now) async throws -> [OrbitSchulmanagerCalendarEvent] {
         let f = ISO8601DateFormatter(); let path = "/api/school/calendar?scope=\(scope)&from=\(f.string(from: from).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&to=\(f.string(from: to).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"; return try await request(path: path, as: OrbitSchulmanagerCalendarResponse.self).events
     }
     func schoolTasks() async throws -> OrbitSchoolTasksResponse { try await request(path: "/api/school/tasks", as: OrbitSchoolTasksResponse.self) }
-    func schoolBriefing() async throws -> OrbitSchoolBriefingResponse { try await request(path: "/api/school/brain/briefing", as: OrbitSchoolBriefingResponse.self) }
+    func schoolBriefing(classifyUnavailable: Bool = false) async throws -> OrbitSchoolBriefingResponse { try await request(path: "/api/school/brain/briefing", classifyUnavailable: classifyUnavailable, as: OrbitSchoolBriefingResponse.self) }
     func schoolBrainConversation() async throws -> OrbitSchoolBrainConversationResponse { try await request(path: "/api/school/brain/conversation") }
     func askSchool(_ content: String) async throws -> OrbitSchoolBrainMessage { struct Payload: Encodable { let content: String }; struct Response: Decodable { let message: OrbitSchoolBrainMessage }; return try await request(path: "/api/school/brain/messages", method: "POST", body: try encoder.encode(Payload(content: content)), as: Response.self).message }
     func addSchoolCalendarEvent(uid: String, key: String = "default", confirm: Bool) async throws -> SchoolCalendarResult { struct Payload: Encodable { let key: String; let confirm: Bool }; return try await request(path: "/api/school/calendar/\(uid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? uid)/proposal", method: "POST", body: try encoder.encode(Payload(key: key, confirm: confirm))) }
@@ -281,10 +282,10 @@ final class MainProductAPI {
         return response.message
     }
 
-    func calendarEvents(from: Date = .now, to: Date = Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now) async throws -> [OrbitCalendarEvent] {
+    func calendarEvents(from: Date = .now, to: Date = Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now, classifyUnavailable: Bool = false) async throws -> [OrbitCalendarEvent] {
         let formatter = ISO8601DateFormatter()
         let path = "/api/family/calendar?from=\(formatter.string(from: from).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&to=\(formatter.string(from: to).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-        let response: CalendarResponse = try await request(path: path)
+        let response: CalendarResponse = try await request(path: path, classifyUnavailable: classifyUnavailable)
         return response.events
     }
 
@@ -417,7 +418,7 @@ final class MainProductAPI {
         let defaultMessagingChannel: String?
     }
 
-    func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy, as: T.Type = T.self) async throws -> T {
+    func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy, classifyUnavailable: Bool = false, as: T.Type = T.self) async throws -> T {
         guard let token = KeychainStore.readDeviceToken() else { throw OrbitChatAPIError.notPaired }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
@@ -429,6 +430,7 @@ final class MainProductAPI {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
         guard (200 ..< 300).contains(http.statusCode) else {
+            if classifyUnavailable, let failure = OrbitHTTPFailure.classify(status: http.statusCode) { throw failure }
             let code = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
             throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
         }

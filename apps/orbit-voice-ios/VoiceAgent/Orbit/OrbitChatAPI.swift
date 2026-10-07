@@ -110,6 +110,11 @@ final class OrbitChatAPI {
         try await request(path: "/api/chats/\(conversation.id)/agent-runs/\(runId)")
     }
 
+    // Same contract as status: the run moves to cancelling/done and polling merges the durable terminal message.
+    func cancelAgentRun(in conversation: OrbitConversation, runId: String) async throws -> OrbitAgentRunStatus {
+        try await request(path: "/api/chats/\(conversation.id)/agent-runs/\(runId)/cancel", method: "POST")
+    }
+
     private func request<T: Decodable>(path: String, method: String = "GET", body: [String: String]? = nil) async throws -> T {
         guard let deviceToken = KeychainStore.readDeviceToken() else { throw OrbitChatAPIError.notPaired }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }

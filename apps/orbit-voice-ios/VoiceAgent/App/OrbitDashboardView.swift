@@ -5,7 +5,7 @@ struct OrbitDashboardView: View {
     let isSelected: Bool
     @StateObject private var store = ServerOverviewStore()
     var body: some View {
-        NavigationStack { ScrollView { VStack(alignment: .leading, spacing: 16) { content }.padding(16) }.background(Color(uiColor: .systemGroupedBackground)).navigationTitle("Огляд").toolbar { Button { store.loadIfNeeded(force: true) } label: { Image(systemName: "arrow.clockwise") }.disabled(store.isLoading) }.refreshable { store.loadIfNeeded(force: true) } }
+        ScrollView { VStack(alignment: .leading, spacing: 16) { content }.padding(16) }.background(Color(uiColor: .systemGroupedBackground)).navigationTitle("Admin · сервер").toolbar { Button { store.loadIfNeeded(force: true) } label: { Image(systemName: "arrow.clockwise") }.disabled(store.isLoading) }.refreshable { store.loadIfNeeded(force: true) }
         .task(id: isSelected) { if isSelected { store.loadIfNeeded() } }
     }
     @ViewBuilder private var content: some View {

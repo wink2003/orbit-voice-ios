@@ -1,3 +1,4 @@
+import LiveKit
 import SwiftUI
 import UIKit
 
@@ -9,6 +10,7 @@ struct OrbitChatsView: View {
     @State private var isLoading = true
     @State private var error: Error?
     @State private var familyProfiles: [OrbitFamilyProfile] = []
+    @State private var showingVoice = false
 
     var body: some View {
         NavigationStack {
@@ -34,7 +36,7 @@ struct OrbitChatsView: View {
                                     .background(chat.kind == "family" ? Color.teal : Color.indigo, in: Circle())
                                 VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Text(chat.title).font(.headline)
+                                    Text(OrbitChatPresentation.displayTitle(kind: chat.kind, title: chat.title)).font(.headline)
                                     Spacer()
                                     if let updatedAt = chat.updatedAt {
                                         Text(updatedAt, style: .relative)
@@ -61,6 +63,11 @@ struct OrbitChatsView: View {
             .navigationTitle("Чати")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showingVoice = true } label: { Image(systemName: "waveform") }
+                        .frame(minWidth: OrbitSpacing.minTarget, minHeight: OrbitSpacing.minTarget)
+                        .accessibilityLabel("Голосова розмова")
+                }
                 if let profile {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -85,6 +92,7 @@ struct OrbitChatsView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
             .navigationDestination(item: $selectedChat) { chat in
                 OrbitConversationView(conversation: chat, initialDraft: contactPrompt)
             }
@@ -130,6 +138,9 @@ private struct OrbitConversationView: View {
     @State private var didInitialLoad = false
     @State private var failedMessageID: String?
     @State private var agentPollTasks: [String: Task<Void, Never>] = [:]
+    @State private var isStopping = false
+    @State private var showingVoice = false
+    @State private var searchText = ""
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
 
     init(conversation: OrbitConversation, initialDraft: String? = nil) {
@@ -142,7 +153,7 @@ private struct OrbitConversationView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 10) {
+                    LazyVStack(spacing: 2) {
                         if messages.isEmpty && !isSending {
                             VStack(alignment: .leading, spacing: 14) {
                                 Label("Чим допомогти?", systemImage: "sparkles")
@@ -162,17 +173,45 @@ private struct OrbitConversationView: View {
                             .padding(.horizontal)
                             .padding(.top, 24)
                         }
-                        ForEach(messages) { message in
-                            MessageBubble(
-                                message: message,
-                                deliveryFailed: failedMessageID == message.id,
-                                isActionInFlight: isSending,
-                                confirmAction: canConfirm(message) ? { submitConfirmation("Підтверджую") } : nil,
-                                cancelAction: canConfirm(message) ? { submitConfirmation("Скасувати") } : nil
-                            )
-                                .id(message.id)
+                        if !searchText.isEmpty {
+                            Text(visibleMessages.isEmpty ? "Нічого не знайдено серед завантажених повідомлень" : "Пошук лише серед завантажених повідомлень")
+                                .font(.caption).foregroundStyle(.secondary).padding(.horizontal)
                         }
-                        if isSending {
+                        ForEach(visibleMessages) { item in
+                            if let separator = item.layout.dateSeparator {
+                                Text(separator)
+                                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 12).padding(.vertical, 4)
+                                    .background(OrbitColors.bubbleOther, in: Capsule())
+                                    .padding(.top, 8)
+                                    .accessibilityAddTraits(.isHeader)
+                            }
+                            MessageBubble(
+                                message: item.message,
+                                deliveryFailed: failedMessageID == item.message.id,
+                                isActionInFlight: isSending,
+                                startsGroup: item.layout.startsGroup,
+                                endsGroup: item.layout.endsGroup,
+                                retryAction: failedMessageID == item.message.id ? { retryFailed() } : nil,
+                                confirmAction: canConfirm(item.message) ? { submitConfirmation("Підтверджую") } : nil,
+                                cancelAction: canConfirm(item.message) ? { submitConfirmation("Скасувати") } : nil
+                            )
+                                .id(item.message.id)
+                        }
+                        if isAgentWorking {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text(isStopping ? "Зупиняю…" : "Orbit працює над відповіддю — це може тривати довше")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Зупинити") { stopAgent() }
+                                    .buttonStyle(.bordered)
+                                    .disabled(isStopping)
+                                    .frame(minHeight: OrbitSpacing.minTarget)
+                            }
+                            .padding(.horizontal)
+                            .accessibilityElement(children: .contain)
+                        } else if isSending {
                             HStack(spacing: 8) {
                                 ProgressView().controlSize(.small)
                                 Text("Orbit думає…").font(.footnote).foregroundStyle(.secondary)
@@ -223,10 +262,11 @@ private struct OrbitConversationView: View {
                     Image(systemName: isSending ? "ellipsis" : "arrow.up")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 38, height: 38)
-                        .background(canSend ? Color.indigo : Color.secondary, in: Circle())
+                        .frame(width: OrbitSpacing.minTarget, height: OrbitSpacing.minTarget)
+                        .background(canSend ? Color.accentColor : Color.secondary, in: Circle())
                 }
                 .disabled(!canSend)
+                .accessibilityLabel("Надіслати")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -245,13 +285,23 @@ private struct OrbitConversationView: View {
                         .padding(.vertical, 8)
                         .background(.regularMaterial, in: Capsule())
                 }
+                .frame(minHeight: OrbitSpacing.minTarget)
                 .padding(.trailing, 18)
                 .padding(.bottom, 68)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
-        .navigationTitle(conversation.title)
+        .navigationTitle(OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title))
         .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Пошук у завантажених")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingVoice = true } label: { Image(systemName: "waveform") }
+                    .frame(minWidth: OrbitSpacing.minTarget, minHeight: OrbitSpacing.minTarget)
+                    .accessibilityLabel("Голосова розмова")
+            }
+        }
+        .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
         .toolbar(.hidden, for: .tabBar)
         .task { await loadMessages() }
         .onDisappear { cancelLocalAgentPolling() }
@@ -260,6 +310,39 @@ private struct OrbitConversationView: View {
         } message: {
             Text(error?.localizedDescription ?? "Спробуй ще раз.")
         }
+    }
+
+    private struct DisplayedMessage: Identifiable {
+        let message: OrbitChatMessage
+        let layout: OrbitChatRowLayout
+        var id: String { message.id }
+    }
+
+    private var visibleMessages: [DisplayedMessage] {
+        let filtered = messages.filter { OrbitChatPresentation.matches($0.content, query: searchText) }
+        let rows = filtered.map { OrbitChatRowInput(id: $0.id, senderKey: $0.senderKind == "person" ? "person:\($0.senderPersonId ?? "me")" : $0.senderKind, date: $0.createdAt) }
+        let layouts = OrbitChatPresentation.layout(rows)
+        return zip(filtered, layouts).map { DisplayedMessage(message: $0, layout: $1) }
+    }
+
+    private var isAgentWorking: Bool { !agentPollTasks.isEmpty }
+
+    private func stopAgent() {
+        guard !isStopping else { return }
+        let runIDs = Array(agentPollTasks.keys)
+        isStopping = true
+        Task { @MainActor in
+            defer { isStopping = false }
+            for runID in runIDs { _ = try? await OrbitChatAPI.shared.cancelAgentRun(in: conversation, runId: runID) }
+        }
+    }
+
+    private func retryFailed() {
+        guard let failedID = failedMessageID, let failed = messages.first(where: { $0.id == failedID }), !isSending else { return }
+        messages.removeAll { $0.id == failedID }
+        failedMessageID = nil
+        draft = failed.content
+        send()
     }
 
     private var canSend: Bool {
@@ -399,6 +482,9 @@ private struct MessageBubble: View {
     let message: OrbitChatMessage
     let deliveryFailed: Bool
     let isActionInFlight: Bool
+    var startsGroup = true
+    var endsGroup = true
+    var retryAction: (() -> Void)? = nil
     let confirmAction: (() -> Void)?
     let cancelAction: (() -> Void)?
     @AppStorage("orbit.chat.showTimestamps") private var showTimestamp = false
@@ -419,7 +505,7 @@ private struct MessageBubble: View {
                         #endif
                         ShareLink(item: message.content) { Label("Поділитися", systemImage: "square.and.arrow.up") }
                     }
-                if showTimestamp {
+                if showTimestamp || endsGroup {
                     Text(message.createdAt, style: .time)
                         .font(.caption2)
                         .foregroundStyle(message.senderKind == "person" ? .white.opacity(0.75) : .secondary)
@@ -437,20 +523,30 @@ private struct MessageBubble: View {
             }
             .padding(.horizontal, 13)
             .padding(.vertical, compactMessages ? 7 : 10)
-                .background(message.senderKind == "person" ? Color.indigo : Color(uiColor: .secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .background(message.senderKind == "person" ? OrbitColors.bubbleOwn : OrbitColors.bubbleOther)
+                .clipShape(RoundedRectangle(cornerRadius: OrbitRadius.bubble))
             if message.senderKind == "orbit" { Spacer(minLength: 52) }
         }
         .padding(.horizontal)
+        .padding(.top, startsGroup ? 8 : 0)
+        .accessibilityElement(children: .contain)
         .overlay(alignment: .bottomTrailing) {
             if deliveryFailed {
-                Label("Не підтверджено", systemImage: "exclamationmark.circle")
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .padding(.trailing, 20)
-                    .offset(y: 18)
+                HStack(spacing: 8) {
+                    Label("Не надіслано", systemImage: "exclamationmark.circle")
+                        .font(.caption2)
+                        .foregroundStyle(OrbitColors.danger)
+                    if let retryAction {
+                        Button("Повторити", action: retryAction)
+                            .font(.caption.weight(.semibold))
+                            .frame(minHeight: OrbitSpacing.minTarget)
+                    }
+                }
+                .padding(.trailing, 20)
+                .offset(y: 30)
             }
         }
+        .padding(.bottom, deliveryFailed ? 30 : 0)
     }
 
 }
@@ -556,5 +652,27 @@ private struct SelectableMarkdownText: UIViewRepresentable, Equatable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 300
         return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+    }
+}
+
+// Voice stays an explicit action: the session is only started by a button inside MainVoiceHomeView.
+struct OrbitVoiceSheet: View {
+    @EnvironmentObject private var session: Session
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            MainVoiceHomeView()
+                .navigationTitle("Голос")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Закрити") { dismiss() }
+                            .disabled(session.isConnected)
+                            .frame(minHeight: OrbitSpacing.minTarget)
+                    }
+                }
+        }
+        .interactiveDismissDisabled(session.isConnected)
     }
 }

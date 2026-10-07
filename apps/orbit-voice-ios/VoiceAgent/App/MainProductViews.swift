@@ -173,12 +173,17 @@ struct OrbitCalendarView: View {
     @State private var editingEvent: OrbitCalendarEvent?
     @State private var deleteCandidate: OrbitCalendarEvent?
     @State private var error: Error?
+    @State private var loaded = false
 
     var body: some View {
         NavigationStack {
             List {
-                if events.isEmpty {
-                    ContentUnavailableView("Календар порожній", systemImage: "calendar", description: Text("Додайте першу сімейну подію."))
+                Section {
+                    NavigationLink { SchoolCalendarView() } label: { Label("Шкільні події — окремий календар школи", systemImage: "graduationcap") }
+                        .frame(minHeight: OrbitSpacing.minTarget)
+                } footer: { Text("Тут сімейні та підключені зовнішні події. Шкільні події з вкладки «Школа» потрапляють сюди лише після вашого підтвердження.") }
+                if events.isEmpty && loaded {
+                    ContentUnavailableView("Подій не знайдено", systemImage: "calendar", description: Text("Немає подій у сімейному та підключених календарях на найближчі 3 місяці. Додайте першу сімейну подію кнопкою «+»."))
                 } else {
                     ForEach(events) { event in calendarRow(event) }
                 }
@@ -214,7 +219,7 @@ struct OrbitCalendarView: View {
         }
     }
 
-    private func load() async { do { events = try await MainProductAPI.shared.calendarEvents() } catch let caught { error = caught } }
+    private func load() async { do { events = try await MainProductAPI.shared.calendarEvents(); loaded = true } catch let caught { error = caught } }
 
     private func calendarRow(_ event: OrbitCalendarEvent) -> some View {
         Group {
@@ -230,7 +235,7 @@ struct OrbitCalendarView: View {
                 if !event.notes.isEmpty {
                     Text(event.notes).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
                 }
-                Label(event.sourceName ?? (event.sourceType == "external" ? "iCloud" : "Сімейний Orbit"), systemImage: "calendar.badge.checkmark")
+                Label(event.sourceName ?? (event.sourceType == "external" ? "Зовнішній календар (iCloud)" : "Сімейний Orbit"), systemImage: event.sourceType == "external" ? "icloud" : "calendar.badge.checkmark")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
         }
@@ -244,7 +249,7 @@ struct OrbitCalendarView: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack { Text(event.title).font(.headline); Spacer(); Text(event.startsAt, style: .date).font(.caption).foregroundStyle(.secondary) }
                 Text(event.allDay ? "Увесь день" : event.startsAt.formatted(date: .omitted, time: .shortened)).font(.subheadline).foregroundStyle(.secondary)
-                Label(event.sourceName ?? "iCloud", systemImage: "calendar.badge.checkmark").font(.caption2).foregroundStyle(.tertiary)
+                Label((event.sourceName ?? "iCloud") + " · лише перегляд", systemImage: "icloud").font(.caption2).foregroundStyle(.tertiary)
             }
         }
         }
@@ -782,7 +787,6 @@ struct MemoryCenterView: View {
     @AppStorage("orbit.memory.showHistory") private var showHistory = false
 
     var body: some View {
-        NavigationStack {
             Group {
                 if isLoading && response == nil {
                     ProgressView("Завантажую пам’ять…")
@@ -873,7 +877,6 @@ struct MemoryCenterView: View {
             } message: {
                 Text(error?.localizedDescription ?? "Спробуйте ще раз.")
             }
-        }
     }
 
     private var isEmpty: Bool {
@@ -1264,36 +1267,10 @@ struct OrbitSettingsView: View {
     @AppStorage("orbit.appearance") private var appearance = "system"
 
     var body: some View {
-        NavigationStack {
             List {
                 Section("Профіль") {
                     Label(authentication.displayName ?? "Активний профіль", systemImage: "person.crop.circle")
                     Button("Змінити профіль на цьому iPhone", role: .destructive) { showsChangeUserConfirmation = true }
-                }
-                Section("Родина") {
-                    NavigationLink { FamilyHubView() } label: {
-                        Label("Сім’я", systemImage: "person.3")
-                    }
-                    Text("Профілі, спільний чат і родинні можливості Orbit.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                Section("Контакти") {
-                    NavigationLink { OrbitContactsView() } label: {
-                        Label("Контакти Orbit", systemImage: "person.crop.circle.badge.plus")
-                    }
-                    Text("Канали WhatsApp, Telegram і майбутній Viber та канал за замовчуванням для кожного контакту.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                Section("Календар") {
-                    NavigationLink { OrbitCalendarView() } label: {
-                        Label("Календар Orbit", systemImage: "calendar")
-                    }
-                    NavigationLink { CalendarSettingsView() } label: {
-                        Label("Підключення календарів", systemImage: "calendar.badge.clock")
-                    }
-                }
-                Section("Освіта") {
-                    NavigationLink { SchoolInboxView(embeddedInNavigation: true) } label: { Label("Школа", systemImage: "graduationcap") }
                 }
                 Section("Голос") {
                     Button { showingAudio = true } label: { LabeledContent("Обробка мікрофона", value: audioOptions.voiceProcessingModeLabel) }
@@ -1312,14 +1289,6 @@ struct OrbitSettingsView: View {
                         Text("Світла").tag("light")
                         Text("Темна").tag("dark")
                     }
-                }
-                Section("Пам’ять і приватність") {
-                    NavigationLink { MemoryCenterView() } label: {
-                        Label("Центр пам’яті", systemImage: "brain.head.profile")
-                    }
-                    Label("Пам’ять Orbit — активна", systemImage: "checkmark.circle")
-                    Text("Orbit використовує релевантну пам’ять за правилами доступу. Медичні, фінансові та юридичні дані не стають спільними автоматично.")
-                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Стан") {
                     LabeledContent("Сервер", value: serverOnline == true ? "Доступний" : serverOnline == false ? "Недоступний" : "Перевірка…")
@@ -1342,7 +1311,6 @@ struct OrbitSettingsView: View {
             } message: {
                 Text("Поточний профіль буде від’єднано. Для повторної активації знадобиться новий одноразовий код.")
             }
-        }
     }
     private func checkServer() async {
         guard let url = URL(string: "https://voice.orbit.opik.net/healthz") else { return }
