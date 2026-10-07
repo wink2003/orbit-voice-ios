@@ -3,7 +3,6 @@ import Foundation
 import LiveKit
 import UIKit
 
-private struct OrbitSessionRefreshResponse: Decodable { let token: String? }
 
 struct OrbitTokenSource: EndpointTokenSource {
     let url = URL(string: "https://voice.orbit.opik.net/api/token")!
@@ -125,7 +124,9 @@ final class OrbitAuthentication: ObservableObject {
     nonisolated static func refreshStoredSession() async -> Bool {
         guard let token = KeychainStore.readSessionToken() else { return false }
         var request = URLRequest(url: URL(string: "https://voice.orbit.opik.net/api/auth/refresh")!); request.httpMethod = "POST"; request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        guard let (data, response) = try? await URLSession.shared.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200, let result = try? JSONDecoder().decode(OrbitSessionRefreshResponse.self, from: data), let next = result.token else { return false }
+        guard let (data, response) = try? await URLSession.shared.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200,
+              let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let next = payload["token"] as? String else { return false }
         try? KeychainStore.saveSessionToken(next); return true
     }
 
@@ -151,7 +152,7 @@ final class OrbitAuthentication: ObservableObject {
     }
 
     func beginImpersonation(targetPersonId: String, password: String) async throws { try await postImpersonation(path: "/api/auth/impersonation/start", body: ["targetPersonId": targetPersonId, "password": password, "ttlMs": 900000]); await refreshIdentity() }
-    func endImpersonation() async throws { _ = try await postImpersonation(path: "/api/auth/impersonation/end", body: [:]); await refreshIdentity() }
+    func endImpersonation() async throws { try await postImpersonation(path: "/api/auth/impersonation/end", body: [:]); await refreshIdentity() }
 
     private func postImpersonation(path: String, body: [String: Any]) async throws -> Data {
         guard let token = KeychainStore.readSessionToken() else { throw PairingFailure.message("Потрібен захищений вхід.") }
