@@ -3,6 +3,10 @@ import SwiftUI
 struct OrbitMoreView: View {
     @EnvironmentObject private var authentication: OrbitAuthentication
     @State private var selectedTarget: OrbitAuthentication.ImpersonationTarget?
+    @State private var impersonationTargets: [OrbitAuthentication.ImpersonationTarget] = []
+    @State private var showingTargetPicker = false
+    @State private var loadingTargets = false
+    @State private var targetsError: String?
     @State private var testingPassword = ""
     @State private var testingError: String?
 
@@ -37,12 +41,30 @@ struct OrbitMoreView: View {
                     if authentication.principalPersonId == "oleksandr" && !authentication.impersonating {
                         Button("Тестове перемикання профілю") {
                             Task {
-                                selectedTarget = (try? await authentication.impersonationTargets())?.first(where: { $0.personId != authentication.principalPersonId })
+                                loadingTargets = true
+                                targetsError = nil
+                                defer { loadingTargets = false }
+                                do {
+                                    let targets = try await authentication.impersonationTargets()
+                                    let allowedIds = OrbitTargetFiltering.selectableTargetIds(
+                                        targets.map(\.personId),
+                                        principalPersonId: authentication.principalPersonId
+                                    )
+                                    impersonationTargets = targets.filter { allowedIds.contains($0.personId) }
+                                    showingTargetPicker = true
+                                } catch {
+                                    targetsError = error.localizedDescription
+                                }
                             }
                         }
                     }
+                    if let targetsError {
+                        Text(targetsError).font(.footnote).foregroundStyle(.red)
+                    } else if loadingTargets {
+                        ProgressView("Завантаження тестових профілів…")
+                    }
                     if KeychainStore.readSessionToken() != nil {
-                        Button("Вийти з Main Orbit", role: .destructive) { Task { await authentication.logout() } }
+                        Button("Вийти з акаунта Orbit", role: .destructive) { Task { await authentication.logout() } }
                     }
                     Text("Main Orbit — сімейний AI-помічник. Orbit Mini залишається окремим клієнтом для голосу без рук.")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -64,6 +86,38 @@ struct OrbitMoreView: View {
                     }
                     .navigationTitle("Тестовий режим")
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { selectedTarget = nil } } }
+                }
+            }
+            .sheet(isPresented: $showingTargetPicker) {
+                NavigationStack {
+                    List {
+                        if impersonationTargets.isEmpty {
+                            ContentUnavailableView("Профілів немає", systemImage: "person.crop.circle.badge.xmark", description: Text("Сервер не надав доступних профілів для тестування."))
+                        } else {
+                            Section("Оберіть профіль") {
+                                ForEach(impersonationTargets) { target in
+                                    Button {
+                                        selectedTarget = target
+                                        showingTargetPicker = false
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(target.displayName).foregroundStyle(.primary)
+                                            Text(target.isMinor ? "Дитина" : "Член родини")
+                                                .font(.footnote)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .frame(minHeight: OrbitSpacing.minTarget)
+                                }
+                            }
+                        }
+                    }
+                    .navigationTitle("Тестовий профіль")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Скасувати") { showingTargetPicker = false }
+                        }
+                    }
                 }
             }
         }

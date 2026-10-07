@@ -1346,7 +1346,7 @@ struct OrbitSettingsView: View {
                 Button("Змінити профіль", role: .destructive) { authentication.forgetDevice() }
                 Button("Скасувати", role: .cancel) {}
             } message: {
-                Text("Поточний профіль буде від’єднано. Для повторної активації знадобиться новий одноразовий код.")
+                Text("Це видалить активацію цього iPhone і всі локальні сесії. Для повторної активації знадобиться новий одноразовий код. Вихід з акаунта Orbit у розділі акаунта залишає активацію iPhone.")
             }
     }
     private func checkServer() async {
