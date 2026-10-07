@@ -1257,6 +1257,7 @@ private func memorySourceLabel(_ source: String?) -> String {
 
 struct OrbitSettingsView: View {
     @EnvironmentObject private var authentication: OrbitAuthentication
+    @EnvironmentObject private var appLock: OrbitAppLock
     @EnvironmentObject private var audioOptions: AudioOptions
     @State private var showingAudio = false
     @State private var serverOnline: Bool?
@@ -1275,6 +1276,22 @@ struct OrbitSettingsView: View {
                 Section("Голос") {
                     Button { showingAudio = true } label: { LabeledContent("Обробка мікрофона", value: audioOptions.voiceProcessingModeLabel) }
                     LabeledContent("Стан голосу", value: "Готовий до запуску")
+                }
+                Section("Захист застосунку") {
+                    Toggle("Face ID / Touch ID", isOn: Binding(
+                        get: { appLock.isEnabled },
+                        set: { enabled in
+                            if enabled {
+                                Task { _ = await appLock.enable() }
+                            } else {
+                                appLock.disable()
+                            }
+                        }
+                    ))
+                    Text("Після переходу Main Orbit у фон застосунок попросить Face ID, Touch ID або код-пароль. Активний голосовий сеанс не переривається.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    LabeledContent("Доступний захист", value: appLock.availabilityDescription)
                 }
                 Section("Чат") {
                     Toggle("Показувати час повідомлень", isOn: $showChatTimestamps)

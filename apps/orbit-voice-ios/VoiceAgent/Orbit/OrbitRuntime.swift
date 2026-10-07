@@ -9,6 +9,7 @@ final class OrbitRuntime: NSObject {
     static let shared = OrbitRuntime()
 
     let authentication: OrbitAuthentication
+    let appLock: OrbitAppLock
     let session: Session
     let localMedia: LocalMedia
     let audioOptions: AudioOptions
@@ -19,6 +20,7 @@ final class OrbitRuntime: NSObject {
 
     private override init() {
         authentication = OrbitAuthentication()
+        appLock = OrbitAppLock()
 
         let session = Session(
             tokenSource: OrbitTokenSource(),
