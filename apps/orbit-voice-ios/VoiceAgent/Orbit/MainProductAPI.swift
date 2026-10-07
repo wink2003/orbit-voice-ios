@@ -419,7 +419,7 @@ final class MainProductAPI {
     }
 
     func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy, classifyUnavailable: Bool = false, as: T.Type = T.self) async throws -> T {
-        guard let token = KeychainStore.readDeviceToken() else { throw OrbitChatAPIError.notPaired }
+        guard let token = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -438,7 +438,7 @@ final class MainProductAPI {
     }
 
     nonisolated static func triggerSchoolSync() async throws {
-        guard let token = KeychainStore.readDeviceToken() else { throw OrbitSchoolSyncError.notPaired }
+        guard let token = KeychainStore.readMainBearerToken() else { throw OrbitSchoolSyncError.notPaired }
         var request = URLRequest(url: serviceBaseURL.appendingPathComponent("api/integrations/schulmanager/sync-trigger"))
         request.httpMethod = "POST"
         request.timeoutInterval = 35

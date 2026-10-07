@@ -34,7 +34,7 @@ final class OrbitCallManager: NSObject {
     }
 
     func startCall() async throws {
-        guard KeychainStore.readDeviceToken() != nil else {
+        guard KeychainStore.readMainBearerToken() != nil else {
             throw OrbitCallError.notPaired
         }
         guard !session.isConnected else { return }

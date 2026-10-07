@@ -61,7 +61,7 @@ struct OpenRouterStats: Decodable {
         task = Task { defer { isLoading = false }; await request() }
     }
     private func request() async {
-        guard let token = KeychainStore.readDeviceToken(), let url = URL(string: "https://voice.orbit.opik.net/api/server/overview") else { error = "Не вдалося підключитися до Orbit."; return }
+        guard let token = KeychainStore.readMainBearerToken(), let url = URL(string: "https://voice.orbit.opik.net/api/server/overview") else { error = "Не вдалося підключитися до Orbit."; return }
         var request = URLRequest(url: url); request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -119,7 +119,7 @@ struct ServerOverviewDetail: Decodable {
         task = Task { defer { isLoading = false }; await request() }
     }
     private func request() async {
-        guard let token = KeychainStore.readDeviceToken(), let url = URL(string: "https://voice.orbit.opik.net/api/server/overview/\(section.rawValue)") else { error = "Не вдалося підключитися до Orbit."; return }
+        guard let token = KeychainStore.readMainBearerToken(), let url = URL(string: "https://voice.orbit.opik.net/api/server/overview/\(section.rawValue)") else { error = "Не вдалося підключитися до Orbit."; return }
         var request = URLRequest(url: url); request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         do { let (data, response) = try await URLSession.shared.data(for: request); guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }; let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601; detail = try decoder.decode(ServerOverviewDetail.self, from: data) } catch { self.error = "Не вдалося завантажити деталі." }
     }
@@ -176,7 +176,7 @@ struct CacheCleanupResult: Decodable {
     func clearProposal() { proposal = nil }
     private struct CancelResponse: Decodable { let actionId: String; let status: String }
     private func request<T: Decodable>(path: String, method: String, decode: T.Type) async throws -> T {
-        guard let token = KeychainStore.readDeviceToken(), let url = URL(string: "https://voice.orbit.opik.net/api/server/overview/\(path)") else { throw URLError(.badURL) }
+        guard let token = KeychainStore.readMainBearerToken(), let url = URL(string: "https://voice.orbit.opik.net/api/server/overview/\(path)") else { throw URLError(.badURL) }
         var request = URLRequest(url: url); request.httpMethod = method; request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status) else { throw URLError(.badServerResponse) }

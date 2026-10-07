@@ -55,7 +55,7 @@ final class OrbitNativeCallManager: NSObject, ObservableObject {
     }
 
     func startCall() async throws {
-        guard KeychainStore.readDeviceToken() != nil else {
+        guard KeychainStore.readMainBearerToken() != nil else {
             throw OrbitNativeCallError.notPaired
         }
         guard activeCallUUID == nil else { return }

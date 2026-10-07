@@ -49,7 +49,7 @@ final class OrbitRealtimeDiagnostics: NSObject, @unchecked Sendable {
         emit(["event": "interruption", "network": values.0, "reconnectCount": values.1, "interruptionCount": values.2, "audioRoute": audioRoute()])
     }
     private nonisolated func emit(_ payload: [String: Any]) {
-        guard let token = KeychainStore.readDeviceToken(), let data = try? JSONSerialization.data(withJSONObject: payload), let url = URL(string: "https://voice.orbit.opik.net/api/realtime/diagnostics") else { return }
+        guard let token = KeychainStore.readMainBearerToken(), let data = try? JSONSerialization.data(withJSONObject: payload), let url = URL(string: "https://voice.orbit.opik.net/api/realtime/diagnostics") else { return }
         var request = URLRequest(url: url); request.httpMethod = "POST"; request.timeoutInterval = 3
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = data

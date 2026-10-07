@@ -116,7 +116,7 @@ final class OrbitChatAPI {
     }
 
     private func request<T: Decodable>(path: String, method: String = "GET", body: [String: String]? = nil) async throws -> T {
-        guard let deviceToken = KeychainStore.readDeviceToken() else { throw OrbitChatAPIError.notPaired }
+        guard let deviceToken = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
         request.httpMethod = method
