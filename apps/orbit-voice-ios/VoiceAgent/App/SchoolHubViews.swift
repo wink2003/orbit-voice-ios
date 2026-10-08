@@ -129,6 +129,30 @@ private enum SchoolHubFormat {
         return formatter("EEEEE").string(from: date).uppercased()
     }
     static func dayNumber(_ key: String) -> String { String(Int(key.suffix(2)) ?? 0) }
+    static func weekdayShort(_ key: String) -> String {
+        guard let date = SchoolHubLogic.date(fromDayKey: key) else { return "" }
+        return formatter("EE").string(from: date).capitalized
+    }
+    static func shortDay(_ key: String) -> String {
+        guard let date = SchoolHubLogic.date(fromDayKey: key) else { return key }
+        return formatter("d MMM").string(from: date)
+    }
+    static func month(_ key: String) -> String {
+        guard let date = SchoolHubLogic.date(fromDayKey: key) else { return "" }
+        return formatter("LLL").string(from: date)
+    }
+    static func daysFrom(_ today: String, to key: String) -> Int? {
+        guard let a = SchoolHubLogic.date(fromDayKey: today), let b = SchoolHubLogic.date(fromDayKey: key) else { return nil }
+        return Int((b.timeIntervalSince(a) / 86400).rounded())
+    }
+    static func relative(_ days: Int) -> String {
+        switch days {
+        case 0: "сьогодні"
+        case 1: "завтра"
+        case ..<0: "\(-days) д тому"
+        default: "за \(days) д"
+        }
+    }
     static func time(_ event: SchoolHubEvent) -> String {
         if event.allDay { return "Увесь день" }
         guard let start = event.startsAt, let date = OrbitSchoolDateDecoding.date(from: start) else { return "Час не визначено" }
@@ -149,51 +173,75 @@ private struct SchoolEvidenceBadge: View {
     var body: some View {
         Label(evidence.title, systemImage: evidence.systemImage)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(color)
+            .foregroundStyle(schoolEvidenceColor(evidence))
             .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(color.opacity(0.14), in: Capsule())
+            .background(schoolEvidenceColor(evidence).opacity(0.14), in: Capsule())
             .accessibilityLabel("Довіра: \(evidence.title)")
     }
-    private var color: Color {
-        switch evidence {
-        case .sourceRecord: .green
-        case .interpretation: .accentColor
-        case .needsVerification: .orange
+}
+
+private func schoolEvidenceColor(_ evidence: SchoolEvidence) -> Color {
+    switch evidence {
+    case .sourceRecord: Color(red: 0.12, green: 0.56, blue: 0.30)
+    case .interpretation: .accentColor
+    case .needsVerification: Color(red: 0.70, green: 0.42, blue: 0.0)
+    }
+}
+
+private struct SchoolTrustGlyph: View {
+    let evidence: SchoolEvidence
+    var body: some View {
+        Image(systemName: evidence.systemImage)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(schoolEvidenceColor(evidence))
+            .accessibilityLabel("Довіра: \(evidence.title)")
+    }
+}
+
+private struct SchoolClassDot: View {
+    let relevance: SchoolEventRelevance
+    var body: some View {
+        Group {
+            switch relevance {
+            case .ours: Circle().fill(Color.accentColor)
+            case .likely: Circle().fill(Color.accentColor.opacity(0.35)).overlay(Circle().stroke(Color.accentColor, lineWidth: 1.5))
+            case .uncertain, .unclassified: Circle().strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
+            case .unrelated, .staffOnly: RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.6))
+            }
         }
+        .frame(width: 9, height: 9)
+        .accessibilityHidden(true)
     }
 }
 
 private struct SchoolRelevanceMarker: View {
     let relevance: SchoolEventRelevance
     var body: some View {
-        Label(relevance.title, systemImage: relevance.systemImage)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(color)
-    }
-    private var color: Color {
-        switch relevance {
-        case .ours: .red
-        case .likely: .green
-        case .uncertain, .unclassified: .orange
-        case .unrelated, .staffOnly: .secondary
+        HStack(spacing: 5) {
+            SchoolClassDot(relevance: relevance)
+            Text(relevance.title).font(.caption.weight(.medium)).foregroundStyle(relevance == .ours ? Color.accentColor : Color.secondary)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
 private struct SchoolSectionHeader: View {
     let title: String
-    let systemImage: String
+    var systemImage: String?
     var count: Int?
+    var linkTitle: String?
+    var link: (() -> Void)?
     var body: some View {
-        HStack(spacing: 8) {
-            Capsule().fill(Color.accentColor).frame(width: 3, height: 16)
-            Image(systemName: systemImage).foregroundStyle(Color.accentColor).imageScale(.small)
-            Text(title).font(.headline)
-            if let count { Text("\(count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.vertical, 1).background(.secondary.opacity(0.15), in: Capsule()) }
+        HStack(spacing: 6) {
+            Text(title.uppercased() + (count.map { " · \($0)" } ?? ""))
+                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 8)
+            if let linkTitle, let link {
+                Button(linkTitle, action: link).font(.caption.weight(.semibold)).textCase(nil)
+            }
         }
         .textCase(nil)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -201,7 +249,66 @@ private struct SchoolNotice: View {
     let text: String
     let systemImage: String
     var body: some View {
-        Label(text, systemImage: systemImage).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Label(text, systemImage: systemImage).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private extension SchoolHubSection {
+    var systemImage: String {
+        switch self {
+        case .overview: "house"
+        case .letters: "envelope"
+        case .calendar: "calendar"
+        case .tasks: "checklist"
+        }
+    }
+}
+
+private func schoolDigestLines(store: SchoolHubStore) -> [String] {
+    let now = Date()
+    let today = SchoolHubLogic.dayKey(of: now)
+    let tomorrow = SchoolHubLogic.addDays(1, to: today) ?? today
+    let tasks = store.hubTasks
+    let events = store.hubEvents
+    let groups = SchoolHubLogic.groupTasks(tasks, today: today, sourceDates: store.sourceDates, now: now)
+    let tomorrowCount = SchoolHubLogic.events(events, on: tomorrow).filter(SchoolHubLogic.isDayRelevant).count + SchoolHubLogic.tasks(tasks, dueOn: tomorrow).count
+    return SchoolHubLogic.digest(.init(
+        unreadLetters: store.letters.filter(\.unread).count, tomorrowEvents: tomorrowCount,
+        overdueTasks: groups.overdue.count, datedTasks: groups.dated.count,
+        undatedTasks: groups.undated.count + groups.undatedOlder.count,
+        unclassifiedEvents: SchoolHubLogic.counts(events)[.unclassified] ?? 0
+    ))
+}
+
+private struct SchoolDigestSheet: View {
+    let store: SchoolHubStore
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        let lines = schoolDigestLines(store: store)
+        NavigationStack {
+            List {
+                Section {
+                    if lines.isEmpty {
+                        SchoolNotice(text: store.itemsLoadedOnce ? "У завантажених даних немає нового, що вимагає уваги." : "Дані ще не завантажено.", systemImage: "list.bullet.clipboard")
+                    } else {
+                        ForEach(lines, id: \.self) { Text($0).font(.subheadline) }
+                    }
+                } header: { SchoolSectionHeader(title: "Коротко") } footer: { Text("Складено з завантажених даних без AI.") }
+                Section {
+                    ForEach([SchoolEvidence.sourceRecord, .interpretation, .needsVerification], id: \.self) { evidence in
+                        Label { Text(evidence.title).font(.subheadline) } icon: { SchoolTrustGlyph(evidence: evidence) }
+                    }
+                } header: { SchoolSectionHeader(title: "Рівні довіри") } footer: { Text("Позначки показують, чи дані взято з джерела, чи це інтерпретація Orbit, чи їх треба перевірити за оригіналом.") }
+                Section {
+                    NavigationLink { SchoolBrainView() } label: { Label("Запитати про школу", systemImage: "sparkles") }.frame(minHeight: OrbitSpacing.minTarget)
+                }
+            }
+            .listSectionSpacing(.compact)
+            .navigationTitle("Коротко")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 
@@ -211,6 +318,9 @@ struct SchoolHubView: View {
     @State private var store = SchoolHubStore()
     @State private var section: SchoolHubSection = .overview
     @State private var search = ""
+    @State private var searching = false
+    @State private var showDigest = false
+    @FocusState private var searchFocused: Bool
     @EnvironmentObject private var authentication: OrbitAuthentication
 
     private var scopeKey: String {
@@ -229,6 +339,8 @@ struct SchoolHubView: View {
             if store.scopeKey != scopeKey {
                 section = .overview
                 search = ""
+                searching = false
+                showDigest = false
                 store.reset(to: scopeKey)
             }
             await store.load()
@@ -238,19 +350,85 @@ struct SchoolHubView: View {
     private var hub: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("Розділ школи", selection: $section.animation(.easeOut(duration: 0.15))) {
-                    ForEach(SchoolHubSection.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, OrbitSpacing.large).padding(.vertical, OrbitSpacing.medium)
-                .sensoryFeedback(.selection, trigger: section)
+                header
+                if searching { searchField }
+                schoolNav
                 content
             }
             .background(OrbitColors.canvas)
-            .navigationTitle("Школа")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $search, prompt: "Шукати в завантаженому")
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showDigest) { SchoolDigestSheet(store: store) }
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Capsule().fill(Color.accentColor).frame(width: 3, height: 26)
+            Text("Школа").font(.largeTitle.weight(.bold)).minimumScaleFactor(0.7).lineLimit(1).accessibilityAddTraits(.isHeader)
+            Spacer()
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    searching.toggle()
+                    if searching { searchFocused = true } else { search = ""; searchFocused = false }
+                }
+            } label: { Image(systemName: searching ? "xmark" : "magnifyingglass").frame(width: OrbitSpacing.minTarget, height: OrbitSpacing.minTarget) }
+                .accessibilityLabel(searching ? "Закрити пошук" : "Пошук")
+            Button { showDigest = true } label: { Image(systemName: "text.alignleft").frame(width: OrbitSpacing.minTarget, height: OrbitSpacing.minTarget) }
+                .accessibilityLabel("Коротко і рівні довіри")
+        }
+        .padding(.leading, OrbitSpacing.large).padding(.trailing, 4)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Шукати в завантаженому", text: $search)
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+            if !search.isEmpty {
+                Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.accessibilityLabel("Очистити")
+            }
+        }
+        .padding(.horizontal, 12).frame(minHeight: 40)
+        .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, OrbitSpacing.large).padding(.bottom, 6)
+    }
+
+    private var schoolNav: some View {
+        let unread = store.letters.filter(\.unread).count
+        let today = SchoolHubLogic.dayKey(of: Date())
+        let groups = SchoolHubLogic.groupTasks(store.hubTasks, today: today, sourceDates: store.sourceDates, now: Date())
+        let open = groups.overdue.count + groups.dated.count + groups.undated.count + groups.undatedOlder.count
+        return HStack(spacing: 2) {
+            ForEach(SchoolHubSection.allCases) { item in
+                let badge = item == .letters ? unread : (item == .tasks ? open : 0)
+                let selected = item == section
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { section = item }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: item.systemImage).font(.footnote)
+                        Text(item.title).font(.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                        if badge > 0 {
+                            Text("\(badge)").font(.caption2.weight(.bold)).padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(selected ? Color.accentColor : Color.secondary.opacity(0.25), in: Capsule())
+                                .foregroundStyle(selected ? Color.white : Color.primary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                    .background(selected ? OrbitColors.card : .clear, in: RoundedRectangle(cornerRadius: 9))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(badge > 0 ? "\(item.title), \(badge)" : item.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 11))
+        .padding(.horizontal, OrbitSpacing.large).padding(.bottom, 6)
+        .sensoryFeedback(.selection, trigger: section)
     }
 
     @ViewBuilder private var content: some View {
@@ -285,17 +463,15 @@ private struct SchoolOverviewView: View {
         let prep = SchoolHubLogic.preparation(for: tomorrow, tasks: tasks)
         List {
             statusSection
-            digestSection(groups: groups, tomorrowCount: tomorrowEvents.count + tomorrowTasks.count, events: events)
             tomorrowSection(events: tomorrowEvents, tasks: tomorrowTasks, prep: prep)
             attentionSection(groups: groups)
             newSection
             upcomingSection(events: events)
-            Section { Button { navigate(.letters) } label: { Label("Листи та повідомлення", systemImage: "envelope") }.frame(minHeight: OrbitSpacing.minTarget)
-                Button { navigate(.calendar) } label: { Label("Календар школи", systemImage: "calendar") }.frame(minHeight: OrbitSpacing.minTarget)
-                Button { navigate(.tasks) } label: { Label("Усі задачі", systemImage: "checklist") }.frame(minHeight: OrbitSpacing.minTarget)
+            Section {
                 NavigationLink { SchoolBrainView() } label: { Label("Запитати про школу", systemImage: "sparkles") }.frame(minHeight: OrbitSpacing.minTarget)
-            } header: { SchoolSectionHeader(title: "Розділи", systemImage: "square.grid.2x2") }
+            }
         }
+        .listSectionSpacing(.compact)
         .refreshable { await store.load() }
     }
 
@@ -316,70 +492,68 @@ private struct SchoolOverviewView: View {
         return hasData ? "Не вдалося оновити: \(failed). Показано раніше завантажені дані — вони можуть бути застарілими." : "Не вдалося завантажити: \(failed). Відсутність записів нижче не означає, що нічого немає."
     }
 
-    private func digestSection(groups: SchoolTaskGroups, tomorrowCount: Int, events: [SchoolHubEvent]) -> some View {
-        let lines = SchoolHubLogic.digest(.init(
-            unreadLetters: store.letters.filter(\.unread).count, tomorrowEvents: tomorrowCount,
-            overdueTasks: groups.overdue.count, datedTasks: groups.dated.count,
-            undatedTasks: groups.undated.count + groups.undatedOlder.count,
-            unclassifiedEvents: SchoolHubLogic.counts(events)[.unclassified] ?? 0
-        ))
-        return Section {
-            if lines.isEmpty {
-                SchoolNotice(text: store.itemsLoadedOnce ? "У завантажених даних немає нового, що вимагає уваги." : "Дані ще не завантажено.", systemImage: "list.bullet.clipboard")
-            } else {
-                ForEach(lines, id: \.self) { Text($0).font(.subheadline) }
-            }
-        } header: { SchoolSectionHeader(title: "Коротко", systemImage: "text.alignleft") } footer: { Text("Складено з завантажених даних без AI.") }
-    }
-
     private func tomorrowSection(events: [SchoolHubEvent], tasks: [SchoolHubTask], prep: [SchoolHubTask]) -> some View {
         Section {
             if events.isEmpty && tasks.isEmpty {
-                SchoolNotice(text: store.calendarPhase == .loaded && store.itemsPhase == .loaded ? "У завантажених даних на завтра (\(SchoolHubFormat.long(tomorrow))) подій і задач немає." : "Дані на завтра недоступні — календар або задачі не завантажено.", systemImage: "moon.zzz")
+                SchoolNotice(text: store.calendarPhase == .loaded && store.itemsPhase == .loaded ? "У завантажених даних на завтра подій і задач немає." : "Дані на завтра недоступні — календар або задачі не завантажено.", systemImage: "moon.zzz")
+                    .listRowBackground(Color.accentColor.opacity(0.10))
             }
             ForEach(events) { event in
                 if let source = store.calendarEvent(uid: event.uid) {
                     NavigationLink { SchoolEventDetailView(event: source) } label: { SchoolEventRow(event: event) }
+                        .listRowBackground(Color.accentColor.opacity(0.10))
                 }
             }
-            ForEach(tasks) { SchoolTaskRow(store: store, task: $0) }
+            ForEach(tasks) { SchoolTaskRow(store: store, task: $0, today: today).listRowBackground(Color.accentColor.opacity(0.10)) }
             if !prep.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Підготуватись (за текстами джерел)").font(.subheadline.weight(.semibold))
-                    ForEach(prep) { Label($0.action ?? $0.title, systemImage: "circle.dotted").font(.subheadline) }
-                }.accessibilityElement(children: .combine)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Підготуватись (за текстами джерел)").font(.footnote.weight(.semibold))
+                    ForEach(prep) { Label($0.action ?? $0.title, systemImage: "circle.dotted").font(.footnote) }
+                }
+                .accessibilityElement(children: .combine)
+                .listRowBackground(Color.accentColor.opacity(0.10))
             }
         } header: { SchoolSectionHeader(title: "Завтра · \(SchoolHubFormat.long(tomorrow))", systemImage: "sunrise") }
     }
 
     private func attentionSection(groups: SchoolTaskGroups) -> some View {
-        let urgent = groups.overdue + groups.undated
+        let weekHorizon = SchoolHubLogic.addDays(7, to: today) ?? today
+        let soon = groups.dated.filter { task in
+            guard let key = SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) else { return false }
+            return key <= weekHorizon
+        }
+        let urgent = groups.overdue + soon + groups.undated
+        let shown = Array(urgent.prefix(4))
+        let rest = urgent.count - shown.count
         return Section {
             if urgent.isEmpty && groups.undatedOlder.isEmpty {
                 SchoolNotice(text: store.itemsPhase == .loaded ? "Відкритих задач без дати чи прострочених у завантажених листах немає." : "Задачі не завантажено.", systemImage: "checkmark.circle")
             }
-            ForEach(urgent) { SchoolTaskRow(store: store, task: $0, overdue: groups.overdue.contains($0)) }
+            ForEach(shown) { SchoolTaskRow(store: store, task: $0, overdue: groups.overdue.contains($0), today: today) }
+            if rest > 0 {
+                Button { navigate(.tasks) } label: { Text("Ще \(rest) · усі справи").font(.footnote.weight(.semibold)) }.frame(minHeight: OrbitSpacing.minTarget)
+            }
             if !groups.undatedOlder.isEmpty {
                 DisclosureGroup("Старіші без дати (\(groups.undatedOlder.count)) · лишаються відкритими") {
-                    ForEach(groups.undatedOlder) { SchoolTaskRow(store: store, task: $0) }
-                }.frame(minHeight: OrbitSpacing.minTarget)
+                    ForEach(groups.undatedOlder) { SchoolTaskRow(store: store, task: $0, today: today) }
+                }.font(.footnote).frame(minHeight: OrbitSpacing.minTarget)
             }
-        } header: { SchoolSectionHeader(title: "Потребує уваги", systemImage: "exclamationmark.circle", count: urgent.count + groups.undatedOlder.count) }
+        } header: {
+            SchoolSectionHeader(title: "Потребує уваги", count: urgent.count + groups.undatedOlder.count, linkTitle: "Усі справи") { navigate(.tasks) }
+        }
     }
 
     private var newSection: some View {
-        let unread = store.items.filter(\.unread).prefix(3)
+        let allUnread = store.items.filter(\.unread)
+        let unread = allUnread.prefix(3)
         return Section {
             if unread.isEmpty { SchoolNotice(text: store.itemsPhase == .loaded ? "Непрочитаних у Orbit немає." : "Листи не завантажено.", systemImage: "envelope.open") }
             ForEach(Array(unread)) { item in
-                NavigationLink { SchoolDetailView(item: item) } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(item.titlePlainText?.isEmpty == false ? item.titlePlainText! : (item.title.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.title)).font(.headline).lineLimit(2)
-                        Text(item.translationUkrainian ?? item.previewPlainText ?? item.originalGerman).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                    }.frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
-                }
+                NavigationLink { SchoolDetailView(item: item) } label: { SchoolLetterRow(item: item) }
             }
-        } header: { SchoolSectionHeader(title: "Нове", systemImage: "envelope.badge", count: store.items.filter(\.unread).count) }
+        } header: {
+            SchoolSectionHeader(title: "Нове від школи", count: allUnread.count, linkTitle: "Усе") { navigate(.letters) }
+        }
     }
 
     private func upcomingSection(events: [SchoolHubEvent]) -> some View {
@@ -387,7 +561,7 @@ private struct SchoolOverviewView: View {
         let upcoming = events.filter { event in
             guard SchoolHubLogic.isDayRelevant(event), let key = SchoolHubLogic.dayKey(for: event.startsAt, allDay: event.allDay) else { return false }
             return key > tomorrow && key <= horizon
-        }.sorted { ($0.startsAt ?? "") < ($1.startsAt ?? "") }.prefix(5)
+        }.sorted { ($0.startsAt ?? "") < ($1.startsAt ?? "") }.prefix(3)
         return Section {
             if upcoming.isEmpty { SchoolNotice(text: store.calendarPhase == .loaded ? "У завантаженому календарі найближчих 14 днів подій немає." : "Календар не завантажено.", systemImage: "calendar") }
             ForEach(Array(upcoming)) { event in
@@ -395,25 +569,61 @@ private struct SchoolOverviewView: View {
                     NavigationLink { SchoolEventDetailView(event: source) } label: { SchoolEventRow(event: event, showDay: true) }
                 }
             }
-        } header: { SchoolSectionHeader(title: "Найближчі події", systemImage: "calendar.badge.clock") }
+        } header: {
+            SchoolSectionHeader(title: "Найближчі події", linkTitle: "Календар") { navigate(.calendar) }
+        }
     }
 }
 
 // MARK: - Rows
+
+private struct SchoolLetterRow: View {
+    let item: OrbitSchoolItem
+    var body: some View {
+        let title = item.titlePlainText?.isEmpty == false ? item.titlePlainText! : (item.title.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.title)
+        let sender = item.sender.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.sender
+        var meta = [sender]
+        if let date = item.sourceTimestamp ?? item.importedAt { meta.append(SchoolHubFormat.formatter("d MMM").string(from: date)) }
+        if let count = item.tasks?.count, count > 0 { meta.append("\(count) справ") }
+        return HStack(alignment: .top, spacing: 10) {
+            Circle().fill(item.unread ? Color.accentColor : .clear).frame(width: 8, height: 8).padding(.top, 6).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.callout.weight(item.unread ? .semibold : .regular)).lineLimit(2)
+                Text(meta.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(item.unread ? "Непрочитано" : "")
+    }
+}
 
 private struct SchoolEventRow: View {
     let event: SchoolHubEvent
     var showDay = false
     var body: some View {
         let relevance = SchoolHubLogic.relevance(of: event)
-        VStack(alignment: .leading, spacing: 4) {
-            Text(event.title).font(.headline).lineLimit(3).fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 6) {
-                if showDay, let key = SchoolHubLogic.dayKey(for: event.startsAt, allDay: event.allDay) { Text(SchoolHubFormat.long(key)) ; Text("·") }
-                Text(SchoolHubFormat.time(event))
-                if !event.location.isEmpty { Text("· \(event.location)").lineLimit(1) }
-            }.font(.subheadline).foregroundStyle(.secondary)
-            SchoolRelevanceMarker(relevance: relevance)
+        let key = SchoolHubLogic.dayKey(for: event.startsAt, allDay: event.allDay)
+        HStack(alignment: .top, spacing: 12) {
+            Group {
+                if showDay, let key {
+                    VStack(spacing: 0) {
+                        Text(SchoolHubFormat.dayNumber(key)).font(.title3.weight(.bold)).foregroundStyle(Color.accentColor)
+                        Text(SchoolHubFormat.month(key)).font(.caption2).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(SchoolHubFormat.time(event)).font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(Color.accentColor).lineLimit(2).minimumScaleFactor(0.8)
+                }
+            }
+            .frame(width: 46)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(event.title).font(.callout.weight(.medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    SchoolRelevanceMarker(relevance: relevance)
+                    if showDay { Text("· \(SchoolHubFormat.time(event))").font(.caption).foregroundStyle(.secondary) }
+                    if !event.location.isEmpty { Text("· \(event.location)").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                }
+            }
         }
         .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -424,29 +634,44 @@ private struct SchoolTaskRow: View {
     let store: SchoolHubStore
     let task: SchoolHubTask
     var overdue = false
+    var today = SchoolHubLogic.dayKey(of: Date())
 
     var body: some View {
         let item = store.item(id: task.sourceItemId)
         let evidence = SchoolHubLogic.evidence(forTask: task, sourceLoaded: item != nil, activeNames: store.studentNames, sourceText: item?.originalPlainText ?? item?.originalGerman ?? "")
-        let row = VStack(alignment: .leading, spacing: 5) {
-            Text(task.title).font(.headline).fixedSize(horizontal: false, vertical: true)
-            if let action = task.action, action != task.title { Text(action).font(.subheadline).fixedSize(horizontal: false, vertical: true) }
-            HStack(spacing: 6) {
-                if let due = SchoolHubFormat.due(task) { Label(due, systemImage: overdue ? "clock.badge.exclamationmark" : "calendar").foregroundStyle(overdue ? Color.red : Color.secondary) }
-                else { Label("Без дати", systemImage: "calendar.badge.questionmark").foregroundStyle(.secondary) }
-                if let target = task.target, !target.isEmpty { Text("· \(target)").foregroundStyle(.secondary) }
-            }.font(.caption)
-            if let reason = task.reason, !reason.isEmpty { Text(reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-            HStack(spacing: 6) {
-                SchoolEvidenceBadge(evidence: evidence)
-                if let item { Label(item.type == "letter" ? "Лист" : "Повідомлення", systemImage: item.type == "letter" ? "envelope" : "message").font(.caption).foregroundStyle(.secondary) }
+        let dueKey = SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay)
+        let days = dueKey.flatMap { SchoolHubFormat.daysFrom(today, to: $0) }
+        let warn = overdue || (days.map { $0 <= 2 } ?? false)
+        let row = VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(task.title).font(.callout.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                SchoolTrustGlyph(evidence: evidence)
             }
+            metaLine(dueKey: dueKey, days: days, warn: warn, item: item, evidence: evidence)
+            if let action = task.action, action != task.title { Text(action).font(.footnote).foregroundStyle(Color.primary.opacity(0.85)).lineLimit(3).fixedSize(horizontal: false, vertical: true) }
+            if let reason = task.reason, !reason.isEmpty { Text(reason).font(.caption).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
             if let conflict = SchoolHubLogic.nameConflict(in: (item?.originalPlainText ?? item?.originalGerman ?? "") + " " + task.title, activeNames: store.studentNames) {
                 Label("У тексті згадано «\(conflict)» — перевірте, що це про вашу дитину.", systemImage: "person.fill.questionmark").font(.caption).foregroundStyle(.orange)
             }
         }
         .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
         if let item { NavigationLink { SchoolDetailView(item: item) } label: { row } } else { row }
+    }
+
+    private func metaLine(dueKey: String?, days: Int?, warn: Bool, item: OrbitSchoolItem?, evidence: SchoolEvidence) -> some View {
+        var due = "Без дати"
+        if let dueKey {
+            due = SchoolHubFormat.shortDay(dueKey)
+            if let days { due += " · " + SchoolHubFormat.relative(days) }
+        }
+        var rest: [String] = []
+        if let target = task.target, !target.isEmpty { rest.append(target) }
+        if let item { rest.append(item.type == "letter" ? "Лист" : "Повідомлення") }
+        if evidence == .needsVerification { rest.append("потребує перевірки") }
+        let dueColor: Color = overdue ? .red : (warn ? Color(red: 0.70, green: 0.42, blue: 0.0) : .secondary)
+        return (Text(Image(systemName: dueKey == nil ? "calendar.badge.questionmark" : (overdue ? "clock.badge.exclamationmark" : "calendar"))).foregroundStyle(dueColor) + Text(" " + due).foregroundStyle(dueColor).fontWeight(warn ? .semibold : .regular) + Text(rest.isEmpty ? "" : " · " + rest.joined(separator: " · ")).foregroundStyle(.secondary))
+            .font(.caption)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -463,23 +688,24 @@ private struct SchoolTaskListView: View {
             } else if store.itemsPhase == .loading && !store.itemsLoadedOnce {
                 Section { ProgressView().frame(maxWidth: .infinity) }
             }
-            Section { SchoolNotice(text: "Позначити виконання поки неможливо: Orbit ще не має спільного сховища виконання. Задачі лишаються відкритими.", systemImage: "info.circle") }
-            group("З датою", systemImage: "calendar", tasks: groups.dated)
-            group("Прострочені", systemImage: "clock.badge.exclamationmark", tasks: groups.overdue, overdue: true)
-            group("Без дати", systemImage: "calendar.badge.questionmark", tasks: groups.undated)
+            group("Прострочені", tasks: groups.overdue, overdue: true, today: today)
+            group("З датою", tasks: groups.dated, today: today)
+            group("Без дати", tasks: groups.undated, today: today)
             if !groups.undatedOlder.isEmpty {
-                Section { DisclosureGroup("Старіші без дати (\(groups.undatedOlder.count)) · лишаються відкритими") { ForEach(groups.undatedOlder) { SchoolTaskRow(store: store, task: $0) } }.frame(minHeight: OrbitSpacing.minTarget) }
+                Section { DisclosureGroup("Старіші без дати (\(groups.undatedOlder.count)) · лишаються відкритими") { ForEach(groups.undatedOlder) { SchoolTaskRow(store: store, task: $0, today: today) } }.font(.footnote).frame(minHeight: OrbitSpacing.minTarget) }
             }
             if store.itemsPhase == .loaded && store.hubTasks.isEmpty {
                 ContentUnavailableView("Задач у завантажених листах немає", systemImage: "checklist", description: Text("Це лише те, що Orbit уже отримав зі школи."))
             }
+            Section { SchoolNotice(text: "Позначити виконання поки неможливо: Orbit ще не має спільного сховища виконання. Задачі лишаються відкритими.", systemImage: "info.circle") }
         }
+        .listSectionSpacing(.compact)
         .refreshable { await store.load() }
     }
 
-    @ViewBuilder private func group(_ title: String, systemImage: String, tasks: [SchoolHubTask], overdue: Bool = false) -> some View {
+    @ViewBuilder private func group(_ title: String, tasks: [SchoolHubTask], overdue: Bool = false, today: String) -> some View {
         if !tasks.isEmpty {
-            Section { ForEach(tasks) { SchoolTaskRow(store: store, task: $0, overdue: overdue) } } header: { SchoolSectionHeader(title: title, systemImage: systemImage, count: tasks.count) }
+            Section { ForEach(tasks) { SchoolTaskRow(store: store, task: $0, overdue: overdue, today: today) } } header: { SchoolSectionHeader(title: title, count: tasks.count) }
         }
     }
 }
@@ -497,10 +723,15 @@ private struct SchoolWeekCalendarView: View {
         let filtered = SchoolHubLogic.filter(events, by: filter)
         let dayEvents = SchoolHubLogic.events(filtered, on: selected)
         let counts = SchoolHubLogic.counts(events)
+        let later = filtered.filter { event in
+            guard SchoolHubLogic.isDayRelevant(event), let key = SchoolHubLogic.dayKey(for: event.startsAt, allDay: event.allDay) else { return false }
+            return key > selected
+        }.sorted { ($0.startsAt ?? "") < ($1.startsAt ?? "") }.prefix(3)
         List {
             Section {
+                weekHeader(week: week)
                 weekStrip(week: week, events: filtered)
-                Picker("Фільтр подій", selection: $filter) { ForEach(SchoolEventFilter.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                filterChips(events: events)
                 if (counts[.unclassified] ?? 0) > 0 {
                     SchoolNotice(text: "Без класифікації: \(counts[.unclassified] ?? 0) — показано у «Усі» та «Можливо», вони не вважаються нерелевантними.", systemImage: "circle.dashed")
                 }
@@ -515,43 +746,82 @@ private struct SchoolWeekCalendarView: View {
                 ForEach(dayEvents) { event in
                     if let source = store.calendarEvent(uid: event.uid) { NavigationLink { SchoolEventDetailView(event: source) } label: { SchoolEventRow(event: event) } }
                 }
-            } header: { SchoolSectionHeader(title: SchoolHubFormat.long(selected), systemImage: "list.bullet", count: dayEvents.count) }
+            } header: { SchoolSectionHeader(title: SchoolHubFormat.long(selected), count: dayEvents.count) }
+            if !later.isEmpty {
+                Section {
+                    ForEach(Array(later)) { event in
+                        if let source = store.calendarEvent(uid: event.uid) { NavigationLink { SchoolEventDetailView(event: source) } label: { SchoolEventRow(event: event, showDay: true) } }
+                    }
+                } header: { SchoolSectionHeader(title: "Далі") }
+            }
             let undated = SchoolHubLogic.undatedEvents(filtered)
             if !undated.isEmpty {
-                Section { ForEach(undated) { event in if let source = store.calendarEvent(uid: event.uid) { NavigationLink { SchoolEventDetailView(event: source) } label: { SchoolEventRow(event: event) } } } } header: { SchoolSectionHeader(title: "Без дати", systemImage: "calendar.badge.questionmark", count: undated.count) }
+                Section { ForEach(undated) { event in if let source = store.calendarEvent(uid: event.uid) { NavigationLink { SchoolEventDetailView(event: source) } label: { SchoolEventRow(event: event) } } } } header: { SchoolSectionHeader(title: "Без дати", count: undated.count) }
             }
         }
+        .listSectionSpacing(.compact)
         .refreshable { await store.load() }
     }
 
-    private func weekStrip(week: [String], events: [SchoolHubEvent]) -> some View {
-        HStack(spacing: 2) {
+    private func weekHeader(week: [String]) -> some View {
+        HStack {
             stepButton("chevron.left", label: "Попередній тиждень", days: -7)
+            Spacer()
+            Text("\(SchoolHubFormat.shortDay(week.first ?? selected)) — \(SchoolHubFormat.shortDay(week.last ?? selected)) · тиждень").font(.footnote.weight(.semibold))
+            Spacer()
+            stepButton("chevron.right", label: "Наступний тиждень", days: 7)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func weekStrip(week: [String], events: [SchoolHubEvent]) -> some View {
+        HStack(spacing: 4) {
             ForEach(week, id: \.self) { day in
-                let count = SchoolHubLogic.events(events, on: day).count
+                let dayList = SchoolHubLogic.events(events, on: day)
+                let count = dayList.count
                 let isSelected = day == selected
                 Button { withAnimation(.easeOut(duration: 0.15)) { selected = day } } label: {
-                    VStack(spacing: 2) {
-                        Text(SchoolHubFormat.weekday(day)).font(.caption2)
+                    VStack(spacing: 3) {
+                        Text(SchoolHubFormat.weekdayShort(day)).font(.caption2.weight(.medium))
                         Text(SchoolHubFormat.dayNumber(day)).font(.callout.weight(.semibold))
-                        Circle().fill(count > 0 ? (isSelected ? Color.white : Color.accentColor) : .clear).frame(width: 5, height: 5)
+                        HStack(spacing: 2) {
+                            ForEach(0..<min(3, count), id: \.self) { _ in Circle().fill(isSelected ? Color.white : Color.accentColor).frame(width: 4, height: 4) }
+                        }.frame(height: 4)
                     }
-                    .frame(maxWidth: .infinity, minHeight: OrbitSpacing.minTarget)
+                    .frame(maxWidth: .infinity, minHeight: 62)
                     .foregroundStyle(isSelected ? Color.white : Color.primary)
-                    .background(isSelected ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: OrbitRadius.chip))
+                    .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(SchoolHubFormat.long(day)), подій: \(count)")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
-            stepButton("chevron.right", label: "Наступний тиждень", days: 7)
         }
         .sensoryFeedback(.selection, trigger: selected)
     }
 
+    private func filterChips(events: [SchoolHubEvent]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(SchoolEventFilter.allCases) { item in
+                    let isSelected = item == filter
+                    Button { withAnimation(.easeOut(duration: 0.15)) { filter = item } } label: {
+                        Text("\(item.title) · \(SchoolHubLogic.filter(events, by: item).count)")
+                            .font(.footnote.weight(.semibold))
+                            .padding(.horizontal, 12).frame(minHeight: 34)
+                            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                            .background(isSelected ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.10), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+        }
+    }
+
     private func stepButton(_ icon: String, label: String, days: Int) -> some View {
         Button { withAnimation(.easeOut(duration: 0.15)) { selected = SchoolHubLogic.addDays(days, to: selected) ?? selected } } label: {
-            Image(systemName: icon).frame(width: 28, height: OrbitSpacing.minTarget)
+            Image(systemName: icon).frame(width: 36, height: OrbitSpacing.minTarget)
         }
         .buttonStyle(.plain).foregroundStyle(Color.accentColor).accessibilityLabel(label)
     }

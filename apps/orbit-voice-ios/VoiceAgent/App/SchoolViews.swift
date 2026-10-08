@@ -70,6 +70,7 @@ struct SchoolInboxView: View {
             ForEach(items) { item in NavigationLink { SchoolDetailView(item: item) } label: { schoolRow(item) } }
         }
         .navigationTitle("Школа")
+        .listSectionSpacing(.compact)
         .refreshable { await load() }
         .task { await load(); await refreshNotificationPermission() }
         .onAppear { Task { await refreshNotificationPermission() } }
@@ -90,12 +91,24 @@ struct SchoolInboxView: View {
         }
     }
     private func schoolRow(_ item: OrbitSchoolItem) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack { Image(systemName: item.type == "letter" ? "envelope" : "message"); Text(item.sender.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.sender).font(.subheadline); Spacer(); if item.unread { Circle().fill(.blue).frame(width: 8, height: 8).accessibilityLabel("Непрочитане") } }
-            Text(item.titlePlainText?.isEmpty == false ? item.titlePlainText! : (item.title.isEmpty ? String((item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).prefix(80)) : item.title)).font(.headline)
-            Text(item.sourceTimestamp ?? item.importedAt ?? .now, format: .dateTime.day().month(.wide).year()).font(.caption).foregroundStyle(.secondary)
-            Text(item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-        }.padding(.vertical, 4)
+        let sender = item.sender.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.sender
+        let title = item.titlePlainText?.isEmpty == false ? item.titlePlainText! : (item.title.isEmpty ? String((item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).prefix(80)) : item.title)
+        return HStack(alignment: .top, spacing: 10) {
+            Circle().fill(item.unread ? Color.accentColor : .clear).frame(width: 8, height: 8).padding(.top, 6).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.callout.weight(item.unread ? .semibold : .regular)).lineLimit(2)
+                HStack(spacing: 4) {
+                    Image(systemName: item.type == "letter" ? "envelope" : "message").imageScale(.small)
+                    Text(sender).lineLimit(1)
+                    Text("·")
+                    Text(item.sourceTimestamp ?? item.importedAt ?? .now, format: .dateTime.day().month(.abbreviated))
+                }.font(.caption).foregroundStyle(.secondary)
+                Text(item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+            }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(item.unread ? "Непрочитано" : "")
     }
     private func load() async { loading = true; defer { loading = false }; do { items = try await MainProductAPI.shared.schoolItems(filter: filter).items; error = nil } catch { self.error = "Не вдалося завантажити шкільні матеріали." } }
     private func refreshNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.authorizationStatus() }
@@ -248,11 +261,15 @@ struct SchoolDetailView: View {
     let item: OrbitSchoolItem
     @State private var calendarMessage: String?
     @State private var pendingCalendarEvent: OrbitSchoolEvent?
+    @State private var showOriginal = false
     var body: some View {
         List {
             if !displayTitle.isEmpty { Section { Text(displayTitle).font(.title3.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) } }
-            Section("ОРИГІНАЛ") { Text(item.originalPlainText ?? item.originalGerman).textSelection(.enabled) }
-            Section("ПЕРЕКЛАД ORBIT (УКРАЇНСЬКА)") { Text(item.translationUkrainian ?? "Переклад ще готується.").textSelection(.enabled) }
+            Section {
+                Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал").tag(true) }.pickerStyle(.segmented)
+                if showOriginal { Text(item.originalPlainText ?? item.originalGerman).textSelection(.enabled) }
+                else { Text(item.translationUkrainian ?? "Переклад ще готується.").textSelection(.enabled) }
+            } header: { Text(showOriginal ? "ОРИГІНАЛ (НІМЕЦЬКА)" : "ПЕРЕКЛАД ORBIT (УКРАЇНСЬКА)") }
             Section { Text(item.important ?? "Перевірте оригінал: структурований підсумок ще готується.").textSelection(.enabled) } header: { Text("ВАЖЛИВО") } footer: { Label("Інтерпретація Orbit, не цитата джерела. Точна цитата ще не верифікована — звіряйте з оригіналом вище.", systemImage: "sparkles") }
             if let tasks = item.tasks, !tasks.isEmpty { Section { ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in VStack(alignment: .leading, spacing: 4) { Text(task.title ?? task.action ?? "Задача").font(.headline); if let action = task.action, action != task.title { Text(action).font(.subheadline) }; if let due = task.dueAt, !due.isEmpty { Text(due.count == 10 ? OrbitSchoolCivilDate.formatted(due) : (OrbitSchoolDateDecoding.date(from: due).map(schoolLocalizedInstant) ?? due)).font(.caption).foregroundStyle(.secondary) } else { Text("Без дати — лишається відкритою").font(.caption).foregroundStyle(.secondary) } }.accessibilityElement(children: .combine) } } header: { Text("ЗАДАЧІ З ЦЬОГО ЛИСТА") } footer: { Label("Інтерпретація Orbit — перевірте за оригіналом.", systemImage: "sparkles") } }
             Section("ДЖЕРЕЛО") {
@@ -268,6 +285,7 @@ struct SchoolDetailView: View {
         }
         .navigationTitle("Школа")
         .navigationBarTitleDisplayMode(.inline)
+        .listSectionSpacing(.compact)
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
