@@ -350,15 +350,35 @@ struct SchoolHubView: View {
     private var hub: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                breadcrumb
+                schoolNav
                 header
                 if searching { searchField }
-                schoolNav
                 content
             }
             .background(OrbitColors.canvas)
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showDigest) { SchoolDigestSheet(store: store) }
         }
+    }
+
+    private var breadcrumb: some View {
+        HStack(spacing: 7) {
+            ZStack {
+                Circle().stroke(Color.accentColor, lineWidth: 1.5)
+                Text("·").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
+            }
+            .frame(width: 15, height: 15)
+            Text("Orbit").foregroundStyle(.secondary)
+            Text("›").foregroundStyle(.secondary)
+            Text("Школа").fontWeight(.semibold)
+            Spacer()
+        }
+        .font(.caption2)
+        .frame(height: 28)
+        .padding(.horizontal, OrbitSpacing.large)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Orbit, Школа")
     }
 
     private var header: some View {
@@ -376,7 +396,8 @@ struct SchoolHubView: View {
             Button { showDigest = true } label: { Image(systemName: "text.alignleft").frame(width: OrbitSpacing.minTarget, height: OrbitSpacing.minTarget) }
                 .accessibilityLabel("Коротко і рівні довіри")
         }
-        .padding(.leading, OrbitSpacing.large).padding(.trailing, 4)
+        .padding(.horizontal, OrbitSpacing.large)
+        .padding(.bottom, 2)
     }
 
     private var searchField: some View {
@@ -392,7 +413,7 @@ struct SchoolHubView: View {
         }
         .padding(.horizontal, 12).frame(minHeight: 40)
         .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, OrbitSpacing.large).padding(.bottom, 6)
+        .padding(.horizontal, OrbitSpacing.large).padding(.bottom, 5)
     }
 
     private var schoolNav: some View {
@@ -471,6 +492,7 @@ private struct SchoolOverviewView: View {
                 NavigationLink { SchoolBrainView() } label: { Label("Запитати про школу", systemImage: "sparkles") }.frame(minHeight: OrbitSpacing.minTarget)
             }
         }
+        .listStyle(.plain)
         .listSectionSpacing(.compact)
         .refreshable { await store.load() }
     }
@@ -488,14 +510,14 @@ private struct SchoolOverviewView: View {
 
     private var staleText: String {
         let hasData = store.itemsLoadedOnce || store.calendarLoadedOnce
-        let failed = [store.itemsPhase == .failed ? "листи й задачі" : nil, store.calendarPhase == .failed ? "календар" : nil].compactMap { $0 }.joined(separator: ", ")
+        let failed = [store.itemsPhase == .failed ? "листи й справи" : nil, store.calendarPhase == .failed ? "календар" : nil].compactMap { $0 }.joined(separator: ", ")
         return hasData ? "Не вдалося оновити: \(failed). Показано раніше завантажені дані — вони можуть бути застарілими." : "Не вдалося завантажити: \(failed). Відсутність записів нижче не означає, що нічого немає."
     }
 
     private func tomorrowSection(events: [SchoolHubEvent], tasks: [SchoolHubTask], prep: [SchoolHubTask]) -> some View {
         Section {
             if events.isEmpty && tasks.isEmpty {
-                SchoolNotice(text: store.calendarPhase == .loaded && store.itemsPhase == .loaded ? "У завантажених даних на завтра подій і задач немає." : "Дані на завтра недоступні — календар або задачі не завантажено.", systemImage: "moon.zzz")
+                SchoolNotice(text: store.calendarPhase == .loaded && store.itemsPhase == .loaded ? "У завантажених даних на завтра подій і справ немає." : "Дані на завтра недоступні — календар або справи не завантажено.", systemImage: "moon.zzz")
                     .listRowBackground(Color.accentColor.opacity(0.10))
             }
             ForEach(events) { event in
@@ -527,7 +549,7 @@ private struct SchoolOverviewView: View {
         let rest = urgent.count - shown.count
         return Section {
             if urgent.isEmpty && groups.undatedOlder.isEmpty {
-                SchoolNotice(text: store.itemsPhase == .loaded ? "Відкритих задач без дати чи прострочених у завантажених листах немає." : "Задачі не завантажено.", systemImage: "checkmark.circle")
+                SchoolNotice(text: store.itemsPhase == .loaded ? "Відкритих справ без дати чи прострочених у завантажених листах немає." : "Справи не завантажено.", systemImage: "checkmark.circle")
             }
             ForEach(shown) { SchoolTaskRow(store: store, task: $0, overdue: groups.overdue.contains($0), today: today) }
             if rest > 0 {
@@ -642,20 +664,25 @@ private struct SchoolTaskRow: View {
         let dueKey = SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay)
         let days = dueKey.flatMap { SchoolHubFormat.daysFrom(today, to: $0) }
         let warn = overdue || (days.map { $0 <= 2 } ?? false)
-        let row = VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(task.title).font(.callout.weight(.medium)).fixedSize(horizontal: false, vertical: true)
-                SchoolTrustGlyph(evidence: evidence)
+        let row = HStack(alignment: .center, spacing: 10) {
+            Circle()
+                .stroke(Color.secondary.opacity(0.7), lineWidth: 1.8)
+                .frame(width: 21, height: 21)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(task.title).font(.callout.weight(.medium)).lineLimit(2)
+                    SchoolTrustGlyph(evidence: evidence)
+                }
+                metaLine(dueKey: dueKey, days: days, warn: warn, item: item, evidence: evidence)
             }
-            metaLine(dueKey: dueKey, days: days, warn: warn, item: item, evidence: evidence)
-            if let action = task.action, action != task.title { Text(action).font(.footnote).foregroundStyle(Color.primary.opacity(0.85)).lineLimit(3).fixedSize(horizontal: false, vertical: true) }
-            if let reason = task.reason, !reason.isEmpty { Text(reason).font(.caption).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
-            if let conflict = SchoolHubLogic.nameConflict(in: (item?.originalPlainText ?? item?.originalGerman ?? "") + " " + task.title, activeNames: store.studentNames) {
-                Label("У тексті згадано «\(conflict)» — перевірте, що це про вашу дитину.", systemImage: "person.fill.questionmark").font(.caption).foregroundStyle(.orange)
-            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary).accessibilityHidden(true)
         }
-        .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
-        if let item { NavigationLink { SchoolDetailView(item: item) } label: { row } } else { row }
+        .frame(minHeight: 56, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(task.title). Відкрито. Виконання ще не підтримується спільним сховищем.")
+        if let item { NavigationLink(destination: SchoolDetailView(item: item)) { row }.buttonStyle(.plain) } else { row }
     }
 
     private func metaLine(dueKey: String?, days: Int?, warn: Bool, item: OrbitSchoolItem?, evidence: SchoolEvidence) -> some View {
@@ -666,11 +693,10 @@ private struct SchoolTaskRow: View {
         }
         var rest: [String] = []
         if let target = task.target, !target.isEmpty { rest.append(target) }
-        if let item { rest.append(item.type == "letter" ? "Лист" : "Повідомлення") }
-        if evidence == .needsVerification { rest.append("потребує перевірки") }
+        if evidence == .needsVerification { rest.append("перевірити") }
         let dueColor: Color = overdue ? .red : (warn ? Color(red: 0.70, green: 0.42, blue: 0.0) : .secondary)
         return (Text(Image(systemName: dueKey == nil ? "calendar.badge.questionmark" : (overdue ? "clock.badge.exclamationmark" : "calendar"))).foregroundStyle(dueColor) + Text(" " + due).foregroundStyle(dueColor).fontWeight(warn ? .semibold : .regular) + Text(rest.isEmpty ? "" : " · " + rest.joined(separator: " · ")).foregroundStyle(.secondary))
-            .font(.caption)
+            .font(.caption2)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -684,7 +710,7 @@ private struct SchoolTaskListView: View {
         let groups = SchoolHubLogic.groupTasks(store.hubTasks, today: today, sourceDates: store.sourceDates, now: Date())
         List {
             if store.itemsPhase == .failed {
-                Section { SchoolNotice(text: store.itemsLoadedOnce ? "Не вдалося оновити задачі — показано раніше завантажене." : "Не вдалося завантажити задачі.", systemImage: "exclamationmark.triangle.fill"); Button("Повторити") { Task { await store.load() } }.frame(minHeight: OrbitSpacing.minTarget) }
+                Section { SchoolNotice(text: store.itemsLoadedOnce ? "Не вдалося оновити справи — показано раніше завантажене." : "Не вдалося завантажити справи.", systemImage: "exclamationmark.triangle.fill"); Button("Повторити") { Task { await store.load() } }.frame(minHeight: OrbitSpacing.minTarget) }
             } else if store.itemsPhase == .loading && !store.itemsLoadedOnce {
                 Section { ProgressView().frame(maxWidth: .infinity) }
             }
@@ -695,9 +721,9 @@ private struct SchoolTaskListView: View {
                 Section { DisclosureGroup("Старіші без дати (\(groups.undatedOlder.count)) · лишаються відкритими") { ForEach(groups.undatedOlder) { SchoolTaskRow(store: store, task: $0, today: today) } }.font(.footnote).frame(minHeight: OrbitSpacing.minTarget) }
             }
             if store.itemsPhase == .loaded && store.hubTasks.isEmpty {
-                ContentUnavailableView("Задач у завантажених листах немає", systemImage: "checklist", description: Text("Це лише те, що Orbit уже отримав зі школи."))
+                ContentUnavailableView("Справ у завантажених листах немає", systemImage: "checklist", description: Text("Це лише те, що Orbit уже отримав зі школи."))
             }
-            Section { SchoolNotice(text: "Позначити виконання поки неможливо: Orbit ще не має спільного сховища виконання. Задачі лишаються відкритими.", systemImage: "info.circle") }
+            Section { SchoolNotice(text: "Виконання справ і дошка будуть доступні після появи спільного сховища стану (School Tasks Phase B).", systemImage: "info.circle") }
         }
         .listSectionSpacing(.compact)
         .refreshable { await store.load() }
@@ -901,7 +927,7 @@ private struct SchoolSearchResultsView: View {
                 Section { ForEach(events) { event in if let source = store.calendarEvent(uid: event.uid) { NavigationLink { SchoolEventDetailView(event: source) } label: { SchoolEventRow(event: event, showDay: true) } } } } header: { SchoolSectionHeader(title: "Події", systemImage: "calendar", count: events.count) }
             }
             if !tasks.isEmpty {
-                Section { ForEach(tasks) { SchoolTaskRow(store: store, task: $0) } } header: { SchoolSectionHeader(title: "Задачі", systemImage: "checklist", count: tasks.count) }
+                Section { ForEach(tasks) { SchoolTaskRow(store: store, task: $0) } } header: { SchoolSectionHeader(title: "Справи", systemImage: "checklist", count: tasks.count) }
             }
         }
     }

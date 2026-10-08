@@ -87,7 +87,7 @@ struct SchoolHubLogicTests {
 
         // Digest is deterministic and silent about zero values
         let digest = SchoolHubLogic.digest(.init(unreadLetters: 2, tomorrowEvents: 0, overdueTasks: 1, datedTasks: 0, undatedTasks: 3, unclassifiedEvents: 0))
-        precondition(digest == ["Непрочитаних листів і повідомлень: 2", "Прострочених задач: 1", "Відкритих задач без дати: 3"])
+        precondition(digest == ["Непрочитаних листів і повідомлень: 2", "Прострочених справ: 1", "Відкритих справ без дати: 3"])
         precondition(SchoolHubLogic.digest(.init(unreadLetters: 0, tomorrowEvents: 0, overdueTasks: 0, datedTasks: 0, undatedTasks: 0, unclassifiedEvents: 0)).isEmpty)
 
         // Preparation only lists explicit task actions due on that day
@@ -95,7 +95,7 @@ struct SchoolHubLogicTests {
         precondition(prep.map(\.id) == ["2"])
 
         // Navigation: exactly four internal sections, no tab-bar duplication
-        precondition(SchoolHubSection.allCases.map(\.title) == ["Огляд", "Листи", "Календар", "Задачі"])
+        precondition(SchoolHubSection.allCases.map(\.title) == ["Огляд", "Листи", "Календар", "Справи"])
 
         // Profile isolation: scope changes invalidate in-flight work from the previous profile
         let own = SchoolHubLoadGate.scopeKey(personId: "oleksandr", impersonating: false)

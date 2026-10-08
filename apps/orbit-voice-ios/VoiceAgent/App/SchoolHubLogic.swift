@@ -8,7 +8,7 @@ nonisolated enum SchoolHubSection: String, CaseIterable, Identifiable {
         case .overview: "Огляд"
         case .letters: "Листи"
         case .calendar: "Календар"
-        case .tasks: "Задачі"
+        case .tasks: "Справи"
         }
     }
 }
@@ -270,7 +270,7 @@ nonisolated enum SchoolHubLogic {
 
     // MARK: Search (client-side, loaded data only)
 
-    static let searchScopeNote = "Пошук лише серед завантажених листів, подій і задач"
+    static let searchScopeNote = "Пошук лише серед завантажених листів, подій і справ"
 
     static func matches(_ query: String, in fields: [String?]) -> Bool {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
@@ -303,9 +303,9 @@ nonisolated enum SchoolHubLogic {
         var lines: [String] = []
         if input.unreadLetters > 0 { lines.append("Непрочитаних листів і повідомлень: \(input.unreadLetters)") }
         if input.tomorrowEvents > 0 { lines.append("Подій на завтра: \(input.tomorrowEvents)") }
-        if input.overdueTasks > 0 { lines.append("Прострочених задач: \(input.overdueTasks)") }
-        if input.datedTasks > 0 { lines.append("Задач з датою: \(input.datedTasks)") }
-        if input.undatedTasks > 0 { lines.append("Відкритих задач без дати: \(input.undatedTasks)") }
+        if input.overdueTasks > 0 { lines.append("Прострочених справ: \(input.overdueTasks)") }
+        if input.datedTasks > 0 { lines.append("Справ з датою: \(input.datedTasks)") }
+        if input.undatedTasks > 0 { lines.append("Відкритих справ без дати: \(input.undatedTasks)") }
         if input.unclassifiedEvents > 0 { lines.append("Подій без класифікації: \(input.unclassifiedEvents)") }
         return lines
     }
@@ -337,4 +337,3 @@ struct SchoolHubLoadGate: Equatable {
 
     func accepts(_ token: Int?) -> Bool { token != nil && token == generation }
 }
-

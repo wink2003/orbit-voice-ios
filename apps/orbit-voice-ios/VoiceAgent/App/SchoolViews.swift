@@ -259,38 +259,88 @@ struct SchoolDetailLoaderView: View { let itemID: String; @State private var ite
 
 struct SchoolDetailView: View {
     let item: OrbitSchoolItem
+    @Environment(\.dismiss) private var dismiss
     @State private var calendarMessage: String?
     @State private var pendingCalendarEvent: OrbitSchoolEvent?
     @State private var showOriginal = false
     var body: some View {
-        List {
-            if !displayTitle.isEmpty { Section { Text(displayTitle).font(.title3.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) } }
-            Section {
-                Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал").tag(true) }.pickerStyle(.segmented)
-                if showOriginal { Text(item.originalPlainText ?? item.originalGerman).textSelection(.enabled) }
-                else { Text(item.translationUkrainian ?? "Переклад ще готується.").textSelection(.enabled) }
-            } header: { Text(showOriginal ? "ОРИГІНАЛ (НІМЕЦЬКА)" : "ПЕРЕКЛАД ORBIT (УКРАЇНСЬКА)") }
-            Section { Text(item.important ?? "Перевірте оригінал: структурований підсумок ще готується.").textSelection(.enabled) } header: { Text("ВАЖЛИВО") } footer: { Label("Інтерпретація Orbit, не цитата джерела. Точна цитата ще не верифікована — звіряйте з оригіналом вище.", systemImage: "sparkles") }
-            if let tasks = item.tasks, !tasks.isEmpty { Section { ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in VStack(alignment: .leading, spacing: 4) { Text(task.title ?? task.action ?? "Задача").font(.headline); if let action = task.action, action != task.title { Text(action).font(.subheadline) }; if let due = task.dueAt, !due.isEmpty { Text(due.count == 10 ? OrbitSchoolCivilDate.formatted(due) : (OrbitSchoolDateDecoding.date(from: due).map(schoolLocalizedInstant) ?? due)).font(.caption).foregroundStyle(.secondary) } else { Text("Без дати — лишається відкритою").font(.caption).foregroundStyle(.secondary) } }.accessibilityElement(children: .combine) } } header: { Text("ЗАДАЧІ З ЦЬОГО ЛИСТА") } footer: { Label("Інтерпретація Orbit — перевірте за оригіналом.", systemImage: "sparkles") } }
-            Section("ДЖЕРЕЛО") {
-                LabeledContent("Система", value: item.source == "schulmanager" ? "Schulmanager (лише читання)" : item.source)
-                LabeledContent("Тип", value: item.type == "letter" ? "Лист" : "Повідомлення")
-                if !item.sender.isEmpty { LabeledContent("Відправник", value: item.sender) }
-                if let date = item.sourceTimestamp { LabeledContent("Надіслано") { Text(date, format: .dateTime.day().month(.wide).year().hour().minute()) } }
-                if let date = item.importedAt { LabeledContent("Отримано Orbit") { Text(date, format: .dateTime.day().month(.wide).year().hour().minute()) } }
-                LabeledContent("Стан в Orbit", value: item.unread ? "Не прочитано в Orbit" : "Прочитано в Orbit")
-                if !item.attachments.isEmpty { ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in Label(file.filename, systemImage: "paperclip") } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Button { dismiss() } label: { Label("Листи", systemImage: "chevron.left").font(.body) }
+                    .frame(minHeight: 44, alignment: .leading)
+                if !displayTitle.isEmpty { Text(displayTitle).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
+                Text([item.sender.isEmpty ? nil : item.sender, item.sourceTimestamp.map { $0.formatted(date: .abbreviated, time: .omitted) }].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+                if let tasks = item.tasks, !tasks.isEmpty {
+                    detailHeader("Що потрібно")
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in
+                            HStack(alignment: .top, spacing: 10) {
+                                Circle().stroke(Color.secondary, lineWidth: 1.6).frame(width: 19, height: 19).accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(task.title ?? task.action ?? "Справа").font(.callout.weight(.medium))
+                                    if let action = task.action, action != task.title { Text(action).font(.caption).foregroundStyle(.secondary) }
+                                    Text(task.dueAt.map { $0.count == 10 ? OrbitSchoolCivilDate.formatted($0) : (OrbitSchoolDateDecoding.date(from: $0).map(schoolLocalizedInstant) ?? $0) } ?? "Без дати · лишається відкритою")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .padding(.vertical, 9)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("\(task.title ?? task.action ?? "Справа"). Виконання ще не підтримується.")
+                            if tasks.last?.key != task.key { Divider() }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
+                } else {
+                    detailHeader("Що потрібно")
+                    Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
+                }
+                detailHeader("Текст листа")
+                Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
+                    .pickerStyle(.segmented).padding(.bottom, 8)
+                Text(showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian ?? "Переклад ще готується."))
+                    .font(.body).lineSpacing(3).textSelection(.enabled)
+                detailHeader("Короткий підсумок")
+                Text(item.important ?? "Підсумок відсутній — перевірте оригінал листа.")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                Label("Підсумок Orbit (ШІ), не слова школи. Звіряйте з оригіналом.", systemImage: "sparkles")
+                    .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                detailHeader("Джерело")
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(item.source == "schulmanager" ? "Schulmanager · лише читання" : item.source).font(.footnote)
+                    if !item.sender.isEmpty { Text("Відправник: \(item.sender)").font(.caption).foregroundStyle(.secondary) }
+                    Text(item.unread ? "Стан в Orbit: непрочитано" : "Стан в Orbit: прочитано").font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in Label(file.filename, systemImage: "paperclip").font(.caption) }
+                }
+                if !item.events.isEmpty {
+                    detailHeader("Дати / дедлайни")
+                    ForEach(item.events) { event in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(event.title).font(.callout.weight(.medium))
+                            if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)).font(.caption) }
+                            if let location = event.location { Text(location).font(.caption).foregroundStyle(.secondary) }
+                            Button("Додати до календаря") { Task { await add(event) } }.buttonStyle(.bordered)
+                        }.padding(.vertical, 5)
+                    }
+                }
             }
-            if !item.events.isEmpty { Section("ДАТИ / ДЕДЛАЙНИ") { ForEach(item.events) { event in VStack(alignment: .leading, spacing: 6) { Text(event.title).font(.headline); if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location { Text(location).foregroundStyle(.secondary) }; Button("Додати до календаря") { Task { await add(event) } }.buttonStyle(.borderedProminent) } } } }
+            .padding(.horizontal, 16).padding(.bottom, 24)
         }
+        .background(OrbitColors.canvas)
         .navigationTitle("Школа")
-        .navigationBarTitleDisplayMode(.inline)
-        .listSectionSpacing(.compact)
+        .navigationBarHidden(true)
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
     }
     private var displayTitle: String { item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title }
+    private func detailHeader(_ title: String) -> some View {
+        Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            .tracking(0.6).padding(.top, 20).padding(.bottom, 6)
+            .accessibilityAddTraits(.isHeader)
+    }
     private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String { guard let start = event.startsAt else { return "Дата не визначена" }; if let end = event.endsAt, end != start { return "\(start.formatted(date: .long, time: .shortened)) – \(end.formatted(date: .long, time: .shortened))" }; return start.formatted(date: .long, time: .shortened) }
     private var calendarPreviewMessage: String { guard let event = pendingCalendarEvent else { return "" }; var lines = [event.title]; if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location, !location.isEmpty { lines.append(location) }; return lines.joined(separator: "\n") }
     private func add(_ event: OrbitSchoolEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false); if preview.duplicate == true { calendarMessage = "Подію вже додано." } else if preview.requiresConfirmation == true { pendingCalendarEvent = event } else { calendarMessage = "Не вдалося підготувати подію." } } catch { calendarMessage = "Не вдалося додати подію." } }
