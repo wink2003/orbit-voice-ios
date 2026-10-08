@@ -83,6 +83,15 @@ jobs:
             -o "$RUNNER_TEMP/orbit-school-date-tests"
           "$RUNNER_TEMP/orbit-school-date-tests"
 
+      - name: Test Main timezone hint
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/OrbitTimezoneHint.swift \
+            apps/orbit-voice-ios/Tests/OrbitTimezoneHintTests.swift \
+            -o "$RUNNER_TEMP/orbit-timezone-hint-tests"
+          "$RUNNER_TEMP/orbit-timezone-hint-tests"
+
       - name: Test School items decoding regression
         run: |
           set -euo pipefail

@@ -122,6 +122,11 @@ final class OrbitChatAPI {
         request.httpMethod = method
         request.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        #if os(iOS)
+        // Contextual hint only: Core validates it and binds it to the
+        // authenticated profile; it is never an identity or auth field.
+        request.setValue(OrbitTimezoneHint.currentIdentifier(), forHTTPHeaderField: "X-Orbit-Timezone")
+        #endif
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(body)
