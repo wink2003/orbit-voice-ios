@@ -184,7 +184,6 @@ jobs:
         run: |
           set -euo pipefail
           xcrun swiftc \
-            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolDateDecoding.swift \
             apps/orbit-voice-ios/VoiceAgent/App/SchoolHubLogic.swift \
             apps/orbit-voice-ios/Tests/SchoolHubLogicTests.swift \
             -o "$RUNNER_TEMP/orbit-school-hub-logic-tests"

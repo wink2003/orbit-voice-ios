@@ -158,8 +158,16 @@ nonisolated enum SchoolHubLogic {
     static func dayKey(for value: String?, allDay: Bool) -> String? {
         guard let value, !value.isEmpty else { return nil }
         if allDay || value.count == 10 { return String(value.prefix(10)) }
-        guard let instant = OrbitSchoolDateDecoding.date(from: value) else { return nil }
+        guard let instant = instant(from: value) else { return nil }
         return dayKey(of: instant)
+    }
+
+    static func instant(from value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     static func weekDays(containing key: String) -> [String] {
