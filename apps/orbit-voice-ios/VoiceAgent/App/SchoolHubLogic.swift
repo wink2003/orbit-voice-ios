@@ -316,3 +316,25 @@ nonisolated enum SchoolHubLogic {
         self.tasks(tasks, dueOn: day).filter { !($0.action ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
     }
 }
+
+/// Profile isolation: data is only valid for the scope it was requested under.
+struct SchoolHubLoadGate: Equatable {
+    private(set) var scopeKey: String?
+    private(set) var generation = 0
+
+    static func scopeKey(personId: String?, impersonating: Bool) -> String {
+        "\(personId ?? "-")|\(impersonating ? "imp" : "own")"
+    }
+
+    /// Starts a new scope; every outstanding token becomes stale.
+    mutating func reset(to key: String) {
+        scopeKey = key
+        generation += 1
+    }
+
+    /// Token for a request started now; nil until a scope is set.
+    func token() -> Int? { scopeKey == nil ? nil : generation }
+
+    func accepts(_ token: Int?) -> Bool { token != nil && token == generation }
+}
+

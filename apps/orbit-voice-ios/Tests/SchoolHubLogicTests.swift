@@ -97,6 +97,25 @@ struct SchoolHubLogicTests {
         // Navigation: exactly four internal sections, no tab-bar duplication
         precondition(SchoolHubSection.allCases.map(\.title) == ["Огляд", "Листи", "Календар", "Задачі"])
 
+        // Profile isolation: scope changes invalidate in-flight work from the previous profile
+        let own = SchoolHubLoadGate.scopeKey(personId: "oleksandr", impersonating: false)
+        let imp = SchoolHubLoadGate.scopeKey(personId: "viktoriia", impersonating: true)
+        let back = SchoolHubLoadGate.scopeKey(personId: "oleksandr", impersonating: false)
+        precondition(own != imp && own == back)
+        precondition(SchoolHubLoadGate.scopeKey(personId: "x", impersonating: true) != SchoolHubLoadGate.scopeKey(personId: "x", impersonating: false))
+        var gate = SchoolHubLoadGate()
+        precondition(gate.token() == nil && !gate.accepts(nil), "no loads before a scope is set")
+        gate.reset(to: own)
+        let ownToken = gate.token()
+        precondition(gate.accepts(ownToken))
+        gate.reset(to: imp)
+        precondition(!gate.accepts(ownToken), "late response from previous profile must be rejected")
+        let impToken = gate.token()
+        precondition(gate.accepts(impToken) && gate.scopeKey == imp)
+        gate.reset(to: back)
+        precondition(!gate.accepts(impToken) && !gate.accepts(ownToken), "end of impersonation invalidates impersonated loads and the original token")
+        precondition(gate.accepts(gate.token()) && gate.scopeKey == own)
+
         print("school hub logic tests passed")
     }
 }

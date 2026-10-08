@@ -13,6 +13,15 @@ final class SchoolHubStore {
     var studentNames: [String] = []
     var itemsLoadedOnce = false
     var calendarLoadedOnce = false
+    private(set) var gate = SchoolHubLoadGate()
+    var scopeKey: String? { gate.scopeKey }
+
+    func reset(to key: String) {
+        gate.reset(to: key)
+        items = []; events = []; studentNames = []
+        itemsLoadedOnce = false; calendarLoadedOnce = false
+        itemsPhase = .idle; calendarPhase = .idle
+    }
 
     var letters: [SchoolHubLetter] {
         items.map { item in
@@ -48,41 +57,54 @@ final class SchoolHubStore {
     func calendarEvent(uid: String) -> OrbitSchulmanagerCalendarEvent? { events.first { $0.uid == uid } }
 
     func load() async {
+        guard let token = gate.token() else { return }
         itemsPhase = .loading
         calendarPhase = .loading
-        async let itemsResult: Void = loadItems()
-        async let calendarResult: Void = loadCalendar()
-        async let namesResult: Void = loadNames()
+        async let itemsResult: Void = loadItems(token)
+        async let calendarResult: Void = loadCalendar(token)
+        async let namesResult: Void = loadNames(token)
         _ = await (itemsResult, calendarResult, namesResult)
     }
 
-    private func loadItems() async {
+    private func loadItems(_ token: Int) async {
         do {
-            items = try await MainProductAPI.shared.schoolItems(filter: "all").items
+            let result = try await MainProductAPI.shared.schoolItems(filter: "all").items
+            guard gate.accepts(token) else { return }
+            items = result
             itemsLoadedOnce = true
             itemsPhase = .loaded
         } catch is CancellationError {
+            guard gate.accepts(token) else { return }
             itemsPhase = itemsLoadedOnce ? .loaded : .idle
-        } catch { itemsPhase = .failed }
+        } catch {
+            guard gate.accepts(token) else { return }
+            itemsPhase = .failed
+        }
     }
 
-    private func loadCalendar() async {
+    private func loadCalendar(_ token: Int) async {
         let now = Date()
         do {
-            events = try await MainProductAPI.shared.schulmanagerCalendar(
+            let result = try await MainProductAPI.shared.schulmanagerCalendar(
                 scope: "all",
                 from: now.addingTimeInterval(-30 * 86400),
                 to: now.addingTimeInterval(120 * 86400)
             )
+            guard gate.accepts(token) else { return }
+            events = result
             calendarLoadedOnce = true
             calendarPhase = .loaded
         } catch is CancellationError {
+            guard gate.accepts(token) else { return }
             calendarPhase = calendarLoadedOnce ? .loaded : .idle
-        } catch { calendarPhase = .failed }
+        } catch {
+            guard gate.accepts(token) else { return }
+            calendarPhase = .failed
+        }
     }
 
-    private func loadNames() async {
-        if let profiles = try? await MainProductAPI.shared.familyProfiles() {
+    private func loadNames(_ token: Int) async {
+        if let profiles = try? await MainProductAPI.shared.familyProfiles(), gate.accepts(token) {
             studentNames = profiles.filter(\.isMinor).map(\.displayName)
         }
     }
@@ -189,8 +211,31 @@ struct SchoolHubView: View {
     @State private var store = SchoolHubStore()
     @State private var section: SchoolHubSection = .overview
     @State private var search = ""
+    @EnvironmentObject private var authentication: OrbitAuthentication
+
+    private var scopeKey: String {
+        SchoolHubLoadGate.scopeKey(personId: authentication.personId, impersonating: authentication.impersonating)
+    }
 
     var body: some View {
+        Group {
+            if store.scopeKey == scopeKey {
+                hub
+            } else {
+                ProgressView("Завантаження школи…").frame(maxWidth: .infinity, maxHeight: .infinity).background(OrbitColors.canvas)
+            }
+        }
+        .task(id: scopeKey) {
+            if store.scopeKey != scopeKey {
+                section = .overview
+                search = ""
+                store.reset(to: scopeKey)
+            }
+            await store.load()
+        }
+    }
+
+    private var hub: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 Picker("Розділ школи", selection: $section.animation(.easeOut(duration: 0.15))) {
@@ -205,7 +250,6 @@ struct SchoolHubView: View {
             .navigationTitle("Школа")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $search, prompt: "Шукати в завантаженому")
-            .task { await store.load() }
         }
     }
 
