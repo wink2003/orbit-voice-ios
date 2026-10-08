@@ -28,7 +28,7 @@ struct AppView: View {
             OrbitChatsView()
                 .tabItem { Label(OrbitMainTab.chats.title, systemImage: OrbitMainTab.chats.systemImage) }
                 .tag(OrbitMainTab.chats)
-            SchoolInboxView()
+            SchoolHubView()
                 .tabItem { Label(OrbitMainTab.school.title, systemImage: OrbitMainTab.school.systemImage) }
                 .tag(OrbitMainTab.school)
             OrbitCalendarView()

@@ -34,7 +34,9 @@ struct OrbitSchoolItem: Decodable, Identifiable, Hashable {
     let id: String; let type: String; let source: String; let externalId: String; let title: String; let sender: String
     let originalGerman: String; let originalPlainText: String?; let previewPlainText: String?; let titlePlainText: String?; let translationUkrainian: String?; let important: String?; let sourceTimestamp: Date?; let importedAt: Date?
     let orbitReadAt: Date?; let unread: Bool; let attachments: [OrbitSchoolAttachment]; let events: [OrbitSchoolEvent]; let threadId: String?; let subscriptionId: String?
+    let tasks: [OrbitSchoolItemTask]?
 }
+struct OrbitSchoolItemTask: Decodable, Hashable { let key: String?; let title: String?; let action: String?; let dueAt: String?; let allDay: Bool?; let importance: String?; let target: String?; let confidence: Double?; let reason: String? }
 struct OrbitSchoolAttachment: Decodable, Hashable { let id: String?; let filename: String; let contentType: String?; let inline: Bool? }
 struct OrbitSchoolItemsResponse: Decodable { let items: [OrbitSchoolItem]; let unreadCount: Int }
 struct OrbitSchulmanagerCalendarEvent: Decodable, Identifiable, Hashable { let uid: String; let title: String; let description: String; let location: String; let startsAt: String?; let endsAt: String?; let allDay: Bool; let timeZone: String?; let recurrenceRule: String?; let relevanceClass: String?; let audienceClass: String?; let relevanceReason: String?; var id: String { uid } }

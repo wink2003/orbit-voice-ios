@@ -180,6 +180,19 @@ jobs:
             -o "$RUNNER_TEMP/orbit-today-logic-tests"
           "$RUNNER_TEMP/orbit-today-logic-tests"
 
+      - name: Test School Hub logic
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolDateDecoding.swift \
+            apps/orbit-voice-ios/VoiceAgent/App/SchoolHubLogic.swift \
+            apps/orbit-voice-ios/Tests/SchoolHubLogicTests.swift \
+            -o "$RUNNER_TEMP/orbit-school-hub-logic-tests"
+          "$RUNNER_TEMP/orbit-school-hub-logic-tests"
+          if grep -n "TabView\|\.tabItem" apps/orbit-voice-ios/VoiceAgent/App/SchoolHubViews.swift apps/orbit-voice-ios/VoiceAgent/App/SchoolViews.swift; then
+            echo "School Hub must not add a second tab bar"; exit 1
+          fi
+
       - name: Test chat presentation
         run: |
           set -euo pipefail

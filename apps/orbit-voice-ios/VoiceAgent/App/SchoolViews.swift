@@ -22,6 +22,13 @@ private func schoolUkrainianDate(_ date: Date) -> String {
 private func schoolLocalizedDate(_ value: String) -> String {
     OrbitSchoolCivilDate.formatted(value)
 }
+private func schoolLocalizedInstant(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "uk_UA")
+    formatter.timeZone = SchoolHubLogic.schoolTimeZone
+    formatter.dateFormat = "EEE, d MMM, HH:mm"
+    return formatter.string(from: date)
+}
 private func schoolAllDayRange(_ event: OrbitSchoolEvent) -> String {
     guard let start = event.startsAt else { return "Дата не визначена" }
     guard let end = event.endsAt else { return schoolUkrainianDate(start) }
@@ -35,6 +42,7 @@ private func schoolAllDayRange(_ event: OrbitSchoolEvent) -> String {
 
 struct SchoolInboxView: View {
     private let embeddedInNavigation: Bool
+    private let hubMode: Bool
     @State private var items: [OrbitSchoolItem] = []
     @State private var filter = "all"
     @State private var error: String?
@@ -42,7 +50,7 @@ struct SchoolInboxView: View {
     @State private var notificationPermission = SchoolNotificationPermission.notDetermined
     @State private var notificationDiagnosticMessage: String?
 
-    init(embeddedInNavigation: Bool = false) { self.embeddedInNavigation = embeddedInNavigation }
+    init(embeddedInNavigation: Bool = false, hubMode: Bool = false) { self.embeddedInNavigation = embeddedInNavigation; self.hubMode = hubMode }
 
     var body: some View {
         Group {
@@ -52,7 +60,7 @@ struct SchoolInboxView: View {
     }
     private var schoolList: some View {
         List {
-            Section { NavigationLink { SchoolBrainView() } label: { Label("Запитати про школу", systemImage: "sparkles") }; NavigationLink { SchoolCalendarView() } label: { Label("Календар школи", systemImage: "calendar") }; NavigationLink { SchoolTasksView() } label: { Label("Наступні 10 днів", systemImage: "checklist") } }
+            if !hubMode { Section { NavigationLink { SchoolBrainView() } label: { Label("Запитати про школу", systemImage: "sparkles") }; NavigationLink { SchoolCalendarView() } label: { Label("Календар школи", systemImage: "calendar") }; NavigationLink { SchoolTasksView() } label: { Label("Наступні 10 днів", systemImage: "checklist") } } }
             Picker("Показати", selection: $filter) {
                 Text("Усі").tag("all"); Text("Листи").tag("letters"); Text("Чати").tag("messages"); Text("Нові").tag("unread")
             }.pickerStyle(.segmented)
@@ -244,8 +252,18 @@ struct SchoolDetailView: View {
         List {
             if !displayTitle.isEmpty { Section { Text(displayTitle).font(.title3.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) } }
             Section("ОРИГІНАЛ") { Text(item.originalPlainText ?? item.originalGerman).textSelection(.enabled) }
-            Section("ПЕРЕКЛАД") { Text(item.translationUkrainian ?? "Переклад ще готується.").textSelection(.enabled) }
-            Section("ВАЖЛИВО") { Text(item.important ?? "Перевірте оригінал: структурований підсумок ще готується.").textSelection(.enabled) }
+            Section("ПЕРЕКЛАД ORBIT (УКРАЇНСЬКА)") { Text(item.translationUkrainian ?? "Переклад ще готується.").textSelection(.enabled) }
+            Section { Text(item.important ?? "Перевірте оригінал: структурований підсумок ще готується.").textSelection(.enabled) } header: { Text("ВАЖЛИВО") } footer: { Label("Інтерпретація Orbit, не цитата джерела. Точна цитата ще не верифікована — звіряйте з оригіналом вище.", systemImage: "sparkles") }
+            if let tasks = item.tasks, !tasks.isEmpty { Section { ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in VStack(alignment: .leading, spacing: 4) { Text(task.title ?? task.action ?? "Задача").font(.headline); if let action = task.action, action != task.title { Text(action).font(.subheadline) }; if let due = task.dueAt, !due.isEmpty { Text(due.count == 10 ? OrbitSchoolCivilDate.formatted(due) : (OrbitSchoolDateDecoding.date(from: due).map(schoolLocalizedInstant) ?? due)).font(.caption).foregroundStyle(.secondary) } else { Text("Без дати — лишається відкритою").font(.caption).foregroundStyle(.secondary) } }.accessibilityElement(children: .combine) } } header: { Text("ЗАДАЧІ З ЦЬОГО ЛИСТА") } footer: { Label("Інтерпретація Orbit — перевірте за оригіналом.", systemImage: "sparkles") } }
+            Section("ДЖЕРЕЛО") {
+                LabeledContent("Система", value: item.source == "schulmanager" ? "Schulmanager (лише читання)" : item.source)
+                LabeledContent("Тип", value: item.type == "letter" ? "Лист" : "Повідомлення")
+                if !item.sender.isEmpty { LabeledContent("Відправник", value: item.sender) }
+                if let date = item.sourceTimestamp { LabeledContent("Надіслано") { Text(date, format: .dateTime.day().month(.wide).year().hour().minute()) } }
+                if let date = item.importedAt { LabeledContent("Отримано Orbit") { Text(date, format: .dateTime.day().month(.wide).year().hour().minute()) } }
+                LabeledContent("Стан в Orbit", value: item.unread ? "Не прочитано в Orbit" : "Прочитано в Orbit")
+                if !item.attachments.isEmpty { ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in Label(file.filename, systemImage: "paperclip") } }
+            }
             if !item.events.isEmpty { Section("ДАТИ / ДЕДЛАЙНИ") { ForEach(item.events) { event in VStack(alignment: .leading, spacing: 6) { Text(event.title).font(.headline); if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location { Text(location).foregroundStyle(.secondary) }; Button("Додати до календаря") { Task { await add(event) } }.buttonStyle(.borderedProminent) } } } }
         }
         .navigationTitle("Школа")
