@@ -444,3 +444,32 @@ struct MainOrbit3FamilyView: View {
         }
     }
 }
+
+#Preview("Main Orbit 3 · Home") {
+    MainOrbit3HomeView(open: { _ in })
+        .environmentObject(OrbitAuthentication())
+}
+
+#Preview("Main Orbit 3 · Family") {
+    MainOrbit3FamilyView()
+}
+
+#Preview("Main Orbit 3 · School") {
+    SchoolHubView()
+}
+
+#Preview("Main Orbit 3 · School inbox") {
+    SchoolInboxView()
+}
+
+#Preview("Main Orbit 3 · School detail") {
+    SchoolDetailLoaderView(itemID: "preview")
+}
+
+#Preview("Main Orbit 3 · Orbit chat") {
+    OrbitChatsView()
+}
+
+#Preview("Main Orbit 3 · Calendar") {
+    OrbitCalendarView()
+}
