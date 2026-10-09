@@ -18,25 +18,23 @@ struct AppView: View {
         .task { await authentication.refreshIdentity() }
     }
 
-    // Exactly five tabs: UIKit never creates the system "More" controller, so each
-    // tab owns a single NavigationStack. Voice is an explicit action inside Chats.
+    // Main Orbit 3.0 keeps four daily destinations. Calendar, contacts, memory,
+    // settings and server diagnostics remain contextual surfaces instead of
+    // competing with the four jobs users return to every day.
     private var tabs: some View {
         TabView(selection: $selectedTab) {
-            OrbitTodayView(isSelected: selectedTab == .today) { selectedTab = $0 }
-                .tabItem { Label(OrbitMainTab.today.title, systemImage: OrbitMainTab.today.systemImage) }
-                .tag(OrbitMainTab.today)
-            OrbitChatsView()
-                .tabItem { Label(OrbitMainTab.chats.title, systemImage: OrbitMainTab.chats.systemImage) }
-                .tag(OrbitMainTab.chats)
+            MainOrbit3HomeView(open: { selectedTab = $0 })
+                .tabItem { Label(OrbitMainTab.home.title, systemImage: OrbitMainTab.home.systemImage) }
+                .tag(OrbitMainTab.home)
             SchoolHubView()
                 .tabItem { Label(OrbitMainTab.school.title, systemImage: OrbitMainTab.school.systemImage) }
                 .tag(OrbitMainTab.school)
-            OrbitCalendarView()
-                .tabItem { Label(OrbitMainTab.calendar.title, systemImage: OrbitMainTab.calendar.systemImage) }
-                .tag(OrbitMainTab.calendar)
-            OrbitMoreView()
-                .tabItem { Label(OrbitMainTab.more.title, systemImage: OrbitMainTab.more.systemImage) }
-                .tag(OrbitMainTab.more)
+            OrbitChatsView()
+                .tabItem { Label(OrbitMainTab.orbit.title, systemImage: OrbitMainTab.orbit.systemImage) }
+                .tag(OrbitMainTab.orbit)
+            MainOrbit3FamilyView()
+                .tabItem { Label(OrbitMainTab.family.title, systemImage: OrbitMainTab.family.systemImage) }
+                .tag(OrbitMainTab.family)
         }
         .environment(\.namespace, namespace)
         .preferredColorScheme(preferredColorScheme)

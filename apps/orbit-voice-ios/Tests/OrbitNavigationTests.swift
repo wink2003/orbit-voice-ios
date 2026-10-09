@@ -3,9 +3,9 @@ import Foundation
 @main
 struct OrbitNavigationTests {
     static func main() {
-        precondition(OrbitNavigation.visibleTabs().map(\.title) == ["Сьогодні", "Чати", "Школа", "Календар", "Ще"], "five tabs in order")
-        precondition(OrbitNavigation.visibleTabs().count == 5, "exactly five tabs, no system More")
-        precondition(OrbitNavigation.defaultTab == .today, "default tab is Today")
+        precondition(OrbitNavigation.visibleTabs().map(\.title) == ["Головна", "Школа", "Orbit", "Сім’я"], "four daily destinations in order")
+        precondition(OrbitNavigation.visibleTabs().count == 4, "four primary destinations")
+        precondition(OrbitNavigation.defaultTab == .home, "default tab is Home")
         precondition(!OrbitNavigation.moreDestinations(isOwner: false).contains(.admin), "admin hidden for non-owner")
         precondition(OrbitNavigation.moreDestinations(isOwner: true).contains(.admin), "admin shown for owner")
         precondition(OrbitNavigation.moreDestinations(isOwner: false).map(\.title) == ["Пам’ять", "Сім’я", "Контакти", "Налаштування"], "more entries")

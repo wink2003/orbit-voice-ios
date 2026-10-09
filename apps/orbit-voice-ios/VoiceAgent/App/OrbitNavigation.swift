@@ -1,12 +1,18 @@
 import Foundation
 
 nonisolated enum OrbitMainTab: String, CaseIterable, Identifiable {
+    case home, orbit, family
+    // Legacy values remain source-compatible for older contextual views and
+    // tests. They are no longer part of the visible 3.0 shell.
     case today, chats, school, calendar, more
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .home: "Головна"
+        case .orbit: "Orbit"
+        case .family: "Сім’я"
         case .today: "Сьогодні"
         case .chats: "Чати"
         case .school: "Школа"
@@ -17,6 +23,9 @@ nonisolated enum OrbitMainTab: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .home: "sun.max.fill"
+        case .orbit: "sparkles"
+        case .family: "person.3.fill"
         case .today: "sun.max"
         case .chats: "message"
         case .school: "graduationcap"
@@ -43,10 +52,10 @@ nonisolated enum OrbitMoreDestination: String, CaseIterable, Identifiable {
 }
 
 nonisolated enum OrbitNavigation {
-    static let defaultTab: OrbitMainTab = .today
+    static let defaultTab: OrbitMainTab = .home
 
-    // Always exactly five tabs, so UIKit never creates the system "More" controller.
-    static func visibleTabs() -> [OrbitMainTab] { OrbitMainTab.allCases }
+    // Keep the primary shell compact so UIKit never creates the system "More" controller.
+    static func visibleTabs() -> [OrbitMainTab] { [.home, .school, .orbit, .family] }
 
     // The server stays authoritative; this only hides an entry the backend would reject.
     static func moreDestinations(isOwner: Bool) -> [OrbitMoreDestination] {
