@@ -201,12 +201,12 @@ struct MainOrbit3HomeView: View {
                 }
             } else {
                 ForEach(Array(attentionTasks.prefix(2))) { task in
-                    NavigationLink { SchoolInboxView(initialFilter: "all") } label: {
+                    NavigationLink { SchoolInboxView() } label: {
                         Orbit3AttentionRow(icon: "checklist", title: task.title, detail: dueText(task.dueAt), tint: Orbit3Theme.warm)
                     }.buttonStyle(.plain)
                 }
                 ForEach(Array(schoolItems.filter(\.unread).prefix(2))) { item in
-                    NavigationLink { SchoolItemDetailView(item: item) } label: {
+                    NavigationLink { SchoolDetailView(item: item) } label: {
                         Orbit3AttentionRow(icon: item.type == "letter" ? "envelope" : "bubble.left", title: schoolTitle(item), detail: item.sender.isEmpty ? "Нове шкільне оновлення" : item.sender, tint: Orbit3Theme.school)
                     }.buttonStyle(.plain)
                 }
@@ -297,7 +297,10 @@ struct MainOrbit3HomeView: View {
             schoolTasks = try await tasks.tasks
         } catch {
             errorMessage = "Деякі дані Orbit тимчасово недоступні. Доступні розділи залишаються відкритими."
-            _ = await (messagesResult, calendar, items, tasks)
+            _ = try? await messagesResult
+            _ = try? await calendar
+            _ = try? await items
+            _ = try? await tasks
         }
     }
 }
