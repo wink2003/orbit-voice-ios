@@ -1,0 +1,56 @@
+name: Nova Today Simulator Screenshot
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/main-nova-shell-today
+    paths:
+      - "apps/orbit-voice-ios/**"
+      - ".github/workflows/visual-nova-simulator.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  screenshot:
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Debug simulator app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-nova-simulator" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            build
+
+      - name: Launch synthetic fixture and capture screenshot
+        run: |
+          set -euo pipefail
+          device=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ { print $2; exit }')
+          test -n "$device"
+          xcrun simctl boot "$device" 2>/dev/null || true
+          xcrun simctl bootstatus "$device" -b
+          app="$RUNNER_TEMP/orbit-nova-simulator/Build/Products/Debug-iphonesimulator/VoiceAgent.app"
+          test -d "$app"
+          xcrun simctl install "$device" "$app"
+          xcrun simctl launch "$device" net.opik.orbit.voice --orbit-nova-fixture
+          sleep 3
+          mkdir -p "$RUNNER_TEMP/orbit-nova-screenshot"
+          xcrun simctl io "$device" screenshot "$RUNNER_TEMP/orbit-nova-screenshot/nova-today.png"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-Nova-Today-simulator-screenshot
+          path: ${{ runner.temp }}/orbit-nova-screenshot/nova-today.png
+          retention-days: 7
+          if-no-files-found: error

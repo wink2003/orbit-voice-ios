@@ -331,6 +331,7 @@ struct SchoolDetailView: View {
         .background(OrbitColors.canvas)
         .navigationTitle("Школа")
         .navigationBarHidden(true)
+        .safeAreaPadding(.bottom, 16)
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
