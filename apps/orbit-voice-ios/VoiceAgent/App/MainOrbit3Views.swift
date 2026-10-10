@@ -185,7 +185,7 @@ struct MainOrbit3HomeView: View {
     private var attentionCount: Int { attentionTasks.count + unreadCount }
     private var briefingText: String {
         if attentionCount == 0 { return "Немає відкритих шкільних справ або непрочитаних оновлень у доступних джерелах." }
-        return "(attentionCount) елементів із вашого доступного контексту можуть потребувати уваги."
+        return "\(attentionCount) елементів із вашого доступного контексту можуть потребувати уваги."
     }
 
     @ViewBuilder private var attentionSection: some View {

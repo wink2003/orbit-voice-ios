@@ -23,7 +23,7 @@ struct AppView: View {
     // competing with the four jobs users return to every day.
     private var tabs: some View {
         TabView(selection: $selectedTab) {
-            MainOrbit3HomeView(open: { selectedTab = $0 })
+            OrbitTodayView(open: { selectedTab = $0 })
                 .tabItem { Label(OrbitMainTab.home.title, systemImage: OrbitMainTab.home.systemImage) }
                 .tag(OrbitMainTab.home)
             SchoolHubView()
