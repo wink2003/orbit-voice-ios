@@ -489,6 +489,7 @@ private struct SchoolOverviewView: View {
             attentionSection(groups: groups)
             newSection
             upcomingSection(events: events)
+            sourcesSection
             Section {
                 NavigationLink { SchoolBrainView() } label: { Label("Запитати про школу", systemImage: "sparkles") }.frame(minHeight: OrbitSpacing.minTarget)
             }
@@ -596,6 +597,19 @@ private struct SchoolOverviewView: View {
             SchoolSectionHeader(title: "Найближчі події", linkTitle: "Календар") { navigate(.calendar) }
         }
     }
+
+    private var sourcesSection: some View {
+        Section {
+            LabeledContent("Schulmanager") {
+                Label("Лише читання", systemImage: "checkmark.circle.fill").foregroundStyle(NovaTodayTokens.teal)
+            }
+            Text("Листи, дати й вкладення показані з авторизованого джерела. Orbit не надсилає відповіді й не змінює Schulmanager.")
+                .font(.footnote).foregroundStyle(.secondary)
+            LabeledContent("Microsoft Teams") {
+                Label("Не підключено", systemImage: "minus.circle").foregroundStyle(.secondary)
+            }
+        } header: { SchoolSectionHeader(title: "Джерела") }
+    }
 }
 
 // MARK: - Rows
@@ -692,7 +706,7 @@ private struct SchoolTaskRow: View {
             due = SchoolHubFormat.shortDay(dueKey)
             if let days { due += " · " + SchoolHubFormat.relative(days) }
         }
-        var rest: [String] = []
+        var rest: [String] = ["Schulmanager"]
         if let target = task.target, !target.isEmpty { rest.append(target) }
         if evidence == .needsVerification { rest.append("перевірити") }
         let dueColor: Color = overdue ? .red : (warn ? Color(red: 0.70, green: 0.42, blue: 0.0) : .secondary)
