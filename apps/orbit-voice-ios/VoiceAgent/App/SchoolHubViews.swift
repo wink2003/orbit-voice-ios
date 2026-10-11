@@ -1110,9 +1110,12 @@ private struct SchoolTaskListView: View {
         let searched = query.isEmpty ? store.hubTasks : SchoolHubLogic.searchTasks(store.hubTasks, query: query)
         return searched.filter { task in
             switch filter {
-            case .all: true
-            case .dated: SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) != nil
-            case .undated: SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) == nil
+            case .all:
+                return true
+            case .dated:
+                return SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) != nil
+            case .undated:
+                return SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) == nil
             case .verification:
                 let item = store.item(id: task.sourceItemId)
                 return SchoolHubLogic.evidence(forTask: task, sourceLoaded: item != nil, activeNames: store.studentNames, sourceText: item?.originalPlainText ?? item?.originalGerman ?? "") == .needsVerification
