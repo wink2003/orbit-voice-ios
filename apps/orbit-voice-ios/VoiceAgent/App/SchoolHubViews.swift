@@ -60,7 +60,7 @@ final class SchoolHubStore {
                 )
             }
         }
-        items.flatMap { item in
+        return items.flatMap { item in
             (item.tasks ?? []).enumerated().compactMap { index, task -> SchoolHubTask? in
                 guard let title = (task.title ?? task.action), !title.isEmpty else { return nil }
                 return SchoolHubTask(id: "\(item.id):\(task.key ?? String(index))", title: title, action: task.action, dueAt: task.dueAt, allDay: task.allDay ?? true, importance: task.importance, target: task.target, confidence: task.confidence, reason: task.reason, sourceItemId: item.id)
