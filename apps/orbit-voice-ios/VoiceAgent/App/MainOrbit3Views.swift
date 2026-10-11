@@ -361,12 +361,12 @@ struct MainOrbit3FamilyView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("СІМЕЙНИЙ ПРОСТІР").font(.caption.weight(.bold)).tracking(1.8).foregroundStyle(.purple)
-                        Text("Разом, але приватно").font(.largeTitle.weight(.bold)).tracking(-0.4)
-                        Text("Контекст родини, спільні повідомлення і межі доступу в одному спокійному місці.")
+                        Text("FAMILY · AUTHORIZED CONTEXT").font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(NovaTodayTokens.teal)
+                        Text("Разом, але приватно").font(.system(.largeTitle, design: .rounded).weight(.bold)).tracking(-0.6)
+                        Text("Профілі, спільний ритм і межі доступу — без змішування особистих даних.")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
-                    Orbit3Card(tint: .purple) {
+                    Orbit3Card(tint: NovaTodayTokens.teal) {
                         VStack(alignment: .leading, spacing: 14) {
                             Orbit3SectionTitle(title: "Профілі родини", detail: "Доступ визначається сервером")
                             if profiles.isEmpty && isLoading { Orbit3LoadingRows() }
@@ -398,7 +398,7 @@ struct MainOrbit3FamilyView: View {
                         familyLink("Календар", "calendar", OrbitCalendarView())
                         familyLink("Пам’ять", "brain.head.profile", MemoryCenterView())
                     }
-                    Orbit3Card(tint: .secondary) {
+                    Orbit3Card(tint: NovaTodayTokens.indigo) {
                         Label("Приватність за замовчуванням", systemImage: "lock.shield.fill").font(.subheadline.weight(.semibold))
                         Text("Особисті дані показуються лише в межах авторизованого профілю та сімейного доступу.")
                             .font(.caption).foregroundStyle(.secondary).padding(.top, 3)
@@ -406,7 +406,7 @@ struct MainOrbit3FamilyView: View {
                 }
                 .padding(16)
             }
-            .background(Orbit3Theme.canvas.ignoresSafeArea())
+            .background(NovaTodayTokens.canvas.ignoresSafeArea())
             .navigationTitle("Сім’я")
             .navigationBarTitleDisplayMode(.inline)
             .task { await load() }

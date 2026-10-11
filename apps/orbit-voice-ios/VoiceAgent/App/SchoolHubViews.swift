@@ -356,7 +356,7 @@ struct SchoolHubView: View {
                 if searching { searchField }
                 content
             }
-            .background(OrbitColors.canvas)
+            .background(NovaTodayTokens.canvas)
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showDigest) { SchoolDigestSheet(store: store) }
         }
@@ -369,9 +369,7 @@ struct SchoolHubView: View {
                 Text("·").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
             }
             .frame(width: 15, height: 15)
-            Text("Orbit").foregroundStyle(.secondary)
-            Text("›").foregroundStyle(.secondary)
-            Text("Школа").fontWeight(.semibold)
+            Text("SCHOOL · READ ONLY").fontWeight(.bold).tracking(1.1).foregroundStyle(NovaTodayTokens.teal)
             Spacer()
         }
         .font(.caption2)
@@ -383,8 +381,10 @@ struct SchoolHubView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Capsule().fill(Color.accentColor).frame(width: 3, height: 26)
-            Text("Школа").font(.largeTitle.weight(.bold)).minimumScaleFactor(0.7).lineLimit(1).accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Шкільний простір").font(.system(.largeTitle, design: .rounded).weight(.bold)).minimumScaleFactor(0.7).lineLimit(1).accessibilityAddTraits(.isHeader)
+                Text("Джерела, дати й справи без запису в Schulmanager").font(.caption).foregroundStyle(.secondary)
+            }
             Spacer()
             Button {
                 withAnimation(.easeOut(duration: 0.15)) {
@@ -397,7 +397,7 @@ struct SchoolHubView: View {
                 .accessibilityLabel("Коротко і рівні довіри")
         }
         .padding(.horizontal, OrbitSpacing.large)
-        .padding(.bottom, 2)
+        .padding(.bottom, 8)
     }
 
     private var searchField: some View {
@@ -447,7 +447,8 @@ struct SchoolHubView: View {
             }
         }
         .padding(2)
-        .background(Color.secondary.opacity(0.14), in: RoundedRectangle(cornerRadius: 11))
+        .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(NovaTodayTokens.teal.opacity(0.18), lineWidth: 1) }
         .padding(.horizontal, OrbitSpacing.large).padding(.bottom, 6)
         .sensoryFeedback(.selection, trigger: section)
     }

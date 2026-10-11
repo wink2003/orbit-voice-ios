@@ -26,41 +26,34 @@ struct OrbitChatsView: View {
                         Button("Оновити") { Task { await load() } }
                     }
                 } else {
-                    List(chats) { chat in
-                        Button { selectedChat = chat } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: chat.kind == "family" ? "person.3.fill" : "sparkles")
-                                    .font(.headline)
-                                    .foregroundStyle(.white)
-                                    .frame(width: 38, height: 38)
-                                    .background(chat.kind == "family" ? Color.teal : Color.indigo, in: Circle())
-                                VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(OrbitChatPresentation.displayTitle(kind: chat.kind, title: chat.title)).font(.headline)
-                                    Spacer()
-                                    if let updatedAt = chat.updatedAt {
-                                        Text(updatedAt, style: .relative)
-                                            .font(.caption2)
-                                            .foregroundStyle(.tertiary)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            NovaScreenHeading(eyebrow: "ORBIT · CORE AGENT", title: "Розмови", detail: "Контекст, джерела й підтвердження у звичних безпечних межах")
+                            ForEach(chats) { chat in
+                                Button { selectedChat = chat } label: {
+                                    NovaSurface(tint: chat.kind == "family" ? NovaTodayTokens.teal : NovaTodayTokens.indigo) {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: chat.kind == "family" ? "person.3.fill" : "sparkles")
+                                                .font(.headline).foregroundStyle(.white).frame(width: 38, height: 38)
+                                                .background(chat.kind == "family" ? NovaTodayTokens.teal : NovaTodayTokens.indigo, in: Circle())
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                HStack { Text(OrbitChatPresentation.displayTitle(kind: chat.kind, title: chat.title)).font(.headline); Spacer(); if let updatedAt = chat.updatedAt { Text(updatedAt, style: .relative).font(.caption2).foregroundStyle(.tertiary) } }
+                                                Text(chat.lastMessage ?? chat.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                                            }
+                                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                                        }
                                     }
                                 }
-                                    Text(chat.lastMessage ?? chat.subtitle)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                }
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
+                                .buttonStyle(.plain)
                             }
-                            .padding(.vertical, 3)
                         }
-                        .buttonStyle(.plain)
+                        .padding(18)
+                        .padding(.bottom, 14)
                     }
-                    .listStyle(.insetGrouped)
+                    .background(NovaTodayTokens.canvas)
                 }
             }
-            .navigationTitle("Чати")
+            .navigationTitle("Orbit")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

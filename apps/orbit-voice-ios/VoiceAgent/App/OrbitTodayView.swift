@@ -215,7 +215,7 @@ struct OrbitTodayView: View {
     private var freshness: some View {
         Group {
             if let label = OrbitFreshness.label(from: loadedAt) {
-                Label("Дані оновлено (label)", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
+                Label("Дані оновлено \(label)", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
             }
         }
     }
@@ -318,6 +318,47 @@ enum NovaTodayTokens {
     static let night = Color(red: 0.10, green: 0.13, blue: 0.28)
     static let canvas = Color(uiColor: UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(red: 0.045, green: 0.05, blue: 0.07, alpha: 1) : UIColor(red: 0.965, green: 0.968, blue: 0.982, alpha: 1) })
     static let surface = Color(uiColor: .systemBackground)
+}
+
+/// Shared Nova presentation primitives. They intentionally contain no data or
+/// action policy, so every destination keeps its existing authorized store.
+struct NovaSurface<Content: View>: View {
+    let tint: Color
+    let content: Content
+
+    init(tint: Color = NovaTodayTokens.indigo, @ViewBuilder content: () -> Content) {
+        self.tint = tint
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(alignment: .leading) {
+                Capsule().fill(tint).frame(width: 4).padding(.vertical, 15)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(tint.opacity(0.18), lineWidth: 1)
+            }
+    }
+}
+
+struct NovaScreenHeading: View {
+    let eyebrow: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(eyebrow).font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(NovaTodayTokens.indigo)
+            Text(title).font(.system(.largeTitle, design: .rounded).weight(.bold)).tracking(-0.6)
+            Text(detail).font(.subheadline).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
 }
 
 private struct NovaTodaySectionHeader<Accessory: View>: View {

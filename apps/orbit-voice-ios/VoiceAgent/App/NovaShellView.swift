@@ -38,10 +38,10 @@ struct NovaShellView: View {
 
 private struct NovaDock: View {
     @Binding var selection: OrbitMainTab
-    private let items: [OrbitMainTab] = [.home, .school, .orbit, .family]
+    private let items: [OrbitMainTab] = [.home, .orbit, .school, .family]
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             ForEach(items) { item in
                 Button { selection = item } label: {
                     VStack(spacing: 4) {
@@ -56,8 +56,7 @@ private struct NovaDock: View {
                     .foregroundStyle(selection == item ? NovaTodayTokens.indigo : .secondary)
                     .background {
                         if selection == item {
-                            Capsule(style: .continuous)
-                                .fill(NovaTodayTokens.indigo.opacity(0.12))
+                            Capsule(style: .continuous).fill(NovaTodayTokens.indigo.opacity(0.12))
                         }
                     }
                     .contentShape(Rectangle())
@@ -67,10 +66,10 @@ private struct NovaDock: View {
                 .accessibilityAddTraits(selection == item ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 7)
-        .padding(.bottom, 7)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) { Rectangle().fill(NovaTodayTokens.indigo.opacity(0.10)).frame(height: 1) }
     }
 }
