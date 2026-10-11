@@ -398,6 +398,22 @@ struct MainOrbit3FamilyView: View {
                         familyLink("Календар", "calendar", OrbitCalendarView())
                         familyLink("Пам’ять", "brain.head.profile", MemoryCenterView())
                     }
+                    HStack(spacing: 10) {
+                        familyLink("Контакти", "person.crop.circle.badge.plus", OrbitContactsView())
+                        familyLink("Налаштування", "gearshape", OrbitSettingsView())
+                    }
+                    NavigationLink { OrbitToolsView() } label: {
+                        Orbit3Card(tint: NovaTodayTokens.indigo) {
+                            Label("Інтеграції та межі дій", systemImage: "slider.horizontal.3")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            Text("Стан підключень і доступ до дій через Orbit з підтвердженням.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 2)
+                        }
+                    }
+                    .buttonStyle(.plain)
                     Orbit3Card(tint: NovaTodayTokens.indigo) {
                         Label("Приватність за замовчуванням", systemImage: "lock.shield.fill").font(.subheadline.weight(.semibold))
                         Text("Особисті дані показуються лише в межах авторизованого профілю та сімейного доступу.")
