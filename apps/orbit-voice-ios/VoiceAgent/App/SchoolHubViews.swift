@@ -946,8 +946,8 @@ private struct SchoolTaskRow: View {
         let days = dueKey.flatMap { SchoolHubFormat.daysFrom(today, to: $0) }
         let warn = overdue || (days.map { $0 <= 2 } ?? false)
         let row = HStack(alignment: .center, spacing: 10) {
-            Circle()
-                .stroke(Color.secondary.opacity(0.7), lineWidth: 1.8)
+            Image(systemName: "circle.dotted")
+                .foregroundStyle(Color.secondary.opacity(0.8))
                 .frame(width: 21, height: 21)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -963,7 +963,8 @@ private struct SchoolTaskRow: View {
         .frame(minHeight: 56, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(task.title). Відкрито. Виконання ще не підтримується спільним сховищем.")
-        if let item { NavigationLink(destination: SchoolDetailView(item: item)) { row }.buttonStyle(.plain) } else { row }
+        NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: { row }
+            .buttonStyle(.plain)
     }
 
     private func metaLine(dueKey: String?, days: Int?, warn: Bool, item: OrbitSchoolItem?, evidence: SchoolEvidence) -> some View {
@@ -982,14 +983,94 @@ private struct SchoolTaskRow: View {
     }
 }
 
+private struct SchoolTaskDetailView: View {
+    let store: SchoolHubStore
+    let task: SchoolHubTask
+
+    private var source: OrbitSchoolItem? { store.item(id: task.sourceItemId) }
+    private var dueKey: String? { SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) }
+
+    var body: some View {
+        List {
+            Section {
+                Text(task.title)
+                    .font(.title3.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                if let action = task.action, action != task.title {
+                    Text(action).font(.body).textSelection(.enabled)
+                }
+            }
+            Section("Термін") {
+                if let dueKey {
+                    Label(SchoolHubFormat.long(dueKey), systemImage: "calendar")
+                } else {
+                    Label("Термін не вказано в джерелі", systemImage: "calendar.badge.questionmark")
+                        .foregroundStyle(.secondary)
+                }
+                if let target = task.target, !target.isEmpty {
+                    LabeledContent("Кого стосується", value: target)
+                }
+                if let importance = task.importance, !importance.isEmpty {
+                    LabeledContent("Позначка джерела", value: importance)
+                }
+            }
+            if let reason = task.reason, !reason.isEmpty {
+                Section("Контекст") { Text(reason).textSelection(.enabled) }
+            }
+            Section("Джерело") {
+                LabeledContent("Система", value: "Schulmanager · лише читання")
+                if let source {
+                    NavigationLink { SchoolDetailView(item: source) } label: {
+                        Label("Відкрити лист або повідомлення", systemImage: source.type == "letter" ? "envelope" : "message")
+                    }
+                } else {
+                    Label("Пов’язаний лист зараз недоступний", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Label("Позначити виконаним стане доступно, коли Orbit отримає захищене синхронізоване збереження стану. Зараз справа не змінюється.", systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Справа")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - Tasks
 
 private struct SchoolTaskListView: View {
     let store: SchoolHubStore
+    @State private var query = ""
+    @State private var filter: TaskFilter = .all
+
+    private enum TaskFilter: String, CaseIterable, Identifiable {
+        case all, dated, undated, verification
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .all: "Усі"
+            case .dated: "З терміном"
+            case .undated: "Без терміну"
+            case .verification: "Перевірити"
+            }
+        }
+    }
+
     var body: some View {
         let today = SchoolHubLogic.dayKey(of: Date())
-        let groups = SchoolHubLogic.groupTasks(store.hubTasks, today: today, sourceDates: store.sourceDates, now: Date())
+        let tasks = filteredTasks
+        let schedule = SchoolHubLogic.scheduleTasks(tasks, today: today, sourceDates: store.sourceDates, now: Date())
         List {
+            Section {
+                Picker("Показати", selection: $filter) {
+                    ForEach(TaskFilter.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.menu)
+            } header: { Text("Фільтр") }
             if store.tasksPhase == .failed {
                 Section {
                     SchoolNotice(
@@ -1001,19 +1082,42 @@ private struct SchoolTaskListView: View {
             } else if store.tasksPhase == .loading && !store.tasksLoadedOnce {
                 Section { ProgressView().frame(maxWidth: .infinity) }
             }
-            group("Прострочені", tasks: groups.overdue, overdue: true, today: today)
-            group("З датою", tasks: groups.dated, today: today)
-            group("Без дати", tasks: groups.undated, today: today)
-            if !groups.undatedOlder.isEmpty {
-                Section { DisclosureGroup("Старіші без дати (\(groups.undatedOlder.count)) · лишаються відкритими") { ForEach(groups.undatedOlder) { SchoolTaskRow(store: store, task: $0, today: today) } }.font(.footnote).frame(minHeight: OrbitSpacing.minTarget) }
+            group("Прострочені", tasks: schedule.overdue, overdue: true, today: today)
+            group("Сьогодні", tasks: schedule.today, today: today)
+            group("Завтра", tasks: schedule.tomorrow, today: today)
+            group("Цього тижня", tasks: schedule.thisWeek, today: today)
+            group("Пізніше", tasks: schedule.later, today: today)
+            group("Без дати", tasks: schedule.undated, today: today)
+            if !schedule.undatedOlder.isEmpty {
+                Section { DisclosureGroup("Старіші без дати (\(schedule.undatedOlder.count)) · лишаються відкритими") { ForEach(schedule.undatedOlder) { SchoolTaskRow(store: store, task: $0, today: today) } }.font(.footnote).frame(minHeight: OrbitSpacing.minTarget) }
             }
-            if store.tasksPhase == .loaded && store.hubTasks.isEmpty {
-                ContentUnavailableView("Відкритих справ немає", systemImage: "checklist", description: Text("Це лише справи, які повернуло авторизоване шкільне джерело."))
+            if store.tasksPhase == .loaded && tasks.isEmpty {
+                ContentUnavailableView(
+                    query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Відкритих справ немає" : "Справ не знайдено",
+                    systemImage: query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "checklist" : "magnifyingglass",
+                    description: Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Це лише справи, які повернуло авторизоване шкільне джерело." : "Спробуйте інший запит або фільтр.")
+                )
             }
             Section { SchoolNotice(text: "Позначення виконання ще не синхронізується між пристроями. Orbit не показує локальну позначку як збережену.", systemImage: "info.circle") }
         }
         .listSectionSpacing(.compact)
+        .searchable(text: $query, prompt: "Шукати справи")
         .refreshable { await store.load() }
+    }
+
+    private var filteredTasks: [SchoolHubTask] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searched = query.isEmpty ? store.hubTasks : SchoolHubLogic.searchTasks(store.hubTasks, query: query)
+        return searched.filter { task in
+            switch filter {
+            case .all: true
+            case .dated: SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) != nil
+            case .undated: SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) == nil
+            case .verification:
+                let item = store.item(id: task.sourceItemId)
+                return SchoolHubLogic.evidence(forTask: task, sourceLoaded: item != nil, activeNames: store.studentNames, sourceText: item?.originalPlainText ?? item?.originalGerman ?? "") == .needsVerification
+            }
+        }
     }
 
     @ViewBuilder private func group(_ title: String, tasks: [SchoolHubTask], overdue: Bool = false, today: String) -> some View {

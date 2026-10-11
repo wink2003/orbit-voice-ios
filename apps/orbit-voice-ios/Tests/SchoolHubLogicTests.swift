@@ -57,6 +57,18 @@ struct SchoolHubLogicTests {
         precondition(groups.undated.map(\.id) == ["3", "5"] && groups.undatedOlder.map(\.id) == ["4"])
         precondition(groups.overdue.count + groups.dated.count + groups.undated.count + groups.undatedOlder.count == tasks.count)
 
+        // Parent-facing chronology keeps every open task in exactly one honest bucket.
+        let scheduled = SchoolHubLogic.scheduleTasks(
+            [task("late", due: "2026-10-07"), task("today", due: "2026-10-08"), task("tomorrow", due: "2026-10-09"), task("week", due: "2026-10-11"), task("later", due: "2026-10-12"), task("none", due: nil)],
+            today: "2026-10-08", sourceDates: ["s1": now], now: now
+        )
+        precondition(scheduled.overdue.map(\.id) == ["late"])
+        precondition(scheduled.today.map(\.id) == ["today"])
+        precondition(scheduled.tomorrow.map(\.id) == ["tomorrow"])
+        precondition(scheduled.thisWeek.map(\.id) == ["week"])
+        precondition(scheduled.later.map(\.id) == ["later"])
+        precondition(scheduled.undated.map(\.id) == ["none"])
+
         // Evidence: never source-verified from confidence; missing source or low confidence needs verification
         precondition(SchoolHubLogic.evidence(forTask: task("x", due: nil, confidence: 0.99), sourceLoaded: true) == .interpretation)
         precondition(SchoolHubLogic.evidence(forTask: task("x", due: nil, confidence: 0.99), sourceLoaded: false) == .needsVerification)

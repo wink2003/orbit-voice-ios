@@ -45,6 +45,7 @@ struct SchoolInboxView: View {
     private let hubMode: Bool
     @State private var items: [OrbitSchoolItem] = []
     @State private var filter = "all"
+    @State private var query = ""
     @State private var error: String?
     @State private var loading = false
     @State private var notificationPermission = SchoolNotificationPermission.notDetermined
@@ -72,17 +73,38 @@ struct SchoolInboxView: View {
             } header: { Text("Фільтр") }
             Section { notificationSection } header: { Text("Сповіщення") }
             if loading { ProgressView().frame(maxWidth: .infinity) }
-            if items.isEmpty && !loading { ContentUnavailableView("Шкільних матеріалів не знайдено", systemImage: "graduationcap", description: Text("Для цього профілю або фільтра немає отриманих листів чи повідомлень. Час останньої синхронізації тут не показується.")) }
-            ForEach(items) { item in NavigationLink { SchoolDetailView(item: item) } label: { schoolRow(item) } }
+            if visibleItems.isEmpty && !loading {
+                ContentUnavailableView(
+                    query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Шкільних матеріалів не знайдено" : "Нічого не знайдено",
+                    systemImage: query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "graduationcap" : "magnifyingglass",
+                    description: Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Для цього профілю або фільтра немає отриманих листів чи повідомлень." : "Спробуйте інший запит або фільтр.")
+                )
+            }
+            ForEach(visibleItems) { item in NavigationLink { SchoolDetailView(item: item) } label: { schoolRow(item) } }
         }
         .navigationTitle("Вхідні")
         .listSectionSpacing(.compact)
+        .searchable(text: $query, prompt: "Шукати листи й повідомлення")
         .refreshable { await load() }
         .task { await load(); await refreshNotificationPermission() }
         .onAppear { Task { await refreshNotificationPermission() } }
         .onChange(of: filter) { _, _ in Task { await load() } }
         .alert("Школа недоступна", isPresented: .constant(error != nil)) { Button("Повторити") { error = nil; Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
         .alert("Сповіщення Orbit", isPresented: .constant(notificationDiagnosticMessage != nil)) { Button("Гаразд") { notificationDiagnosticMessage = nil } } message: { Text(notificationDiagnosticMessage ?? "") }
+    }
+    private var visibleItems: [OrbitSchoolItem] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filtered: [OrbitSchoolItem]
+        if query.isEmpty {
+            filtered = items
+        } else {
+            filtered = items.filter { item in
+                [item.title, item.titlePlainText, item.sender, item.previewPlainText, item.originalPlainText, item.originalGerman, item.translationUkrainian]
+                    .compactMap { $0 }
+                    .contains { $0.localizedStandardContains(query) }
+            }
+        }
+        return filtered.sorted { ($0.sourceTimestamp ?? $0.importedAt ?? .distantPast) > ($1.sourceTimestamp ?? $1.importedAt ?? .distantPast) }
     }
     @ViewBuilder private var notificationSection: some View {
         switch notificationPermission {
@@ -261,7 +283,39 @@ struct SchoolTasksView: View {
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "uk_UA"); formatter.timeZone = TimeZone(identifier: "Europe/Berlin"); formatter.dateFormat = "d MMMM, EEEE"; return formatter.string(from: adjusted)
     }
 }
-struct SchoolDetailLoaderView: View { let itemID: String; @State private var item: OrbitSchoolItem?; var body: some View { Group { if let item { SchoolDetailView(item: item) } else { ProgressView() } }.task { item = try? await MainProductAPI.shared.schoolItem(id: itemID) } } }
+struct SchoolDetailLoaderView: View {
+    let itemID: String
+    @State private var item: OrbitSchoolItem?
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if let item {
+                SchoolDetailView(item: item)
+            } else if failed {
+                ContentUnavailableView("Лист недоступний", systemImage: "exclamationmark.triangle", description: Text("Не вдалося відкрити цей матеріал. Перевірте з’єднання й спробуйте ще раз."))
+                    .overlay(alignment: .bottom) {
+                        Button("Повторити") { Task { await load() } }
+                            .buttonStyle(.borderedProminent)
+                            .padding(.bottom, 28)
+                    }
+            } else {
+                ProgressView("Відкриваємо лист…")
+            }
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        failed = false
+        do {
+            item = try await MainProductAPI.shared.schoolItem(id: itemID)
+        } catch is CancellationError {
+        } catch {
+            failed = true
+        }
+    }
+}
 
 struct SchoolDetailView: View {
     let item: OrbitSchoolItem
@@ -280,7 +334,10 @@ struct SchoolDetailView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in
                             HStack(alignment: .top, spacing: 10) {
-                                Circle().stroke(Color.secondary, lineWidth: 1.6).frame(width: 19, height: 19).accessibilityHidden(true)
+                                Image(systemName: "list.bullet.circle")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 19, height: 19)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(task.title ?? task.action ?? "Справа").font(.callout.weight(.medium))
                                     if let action = task.action, action != task.title { Text(action).font(.caption).foregroundStyle(.secondary) }

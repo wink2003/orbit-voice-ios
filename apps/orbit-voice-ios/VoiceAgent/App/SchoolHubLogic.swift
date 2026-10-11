@@ -126,6 +126,16 @@ nonisolated struct SchoolTaskGroups: Equatable {
     var undatedOlder: [SchoolHubTask] = []
 }
 
+nonisolated struct SchoolTaskSchedule: Equatable {
+    var overdue: [SchoolHubTask] = []
+    var today: [SchoolHubTask] = []
+    var tomorrow: [SchoolHubTask] = []
+    var thisWeek: [SchoolHubTask] = []
+    var later: [SchoolHubTask] = []
+    var undated: [SchoolHubTask] = []
+    var undatedOlder: [SchoolHubTask] = []
+}
+
 nonisolated enum SchoolHubLogic {
     static let schoolTimeZone = TimeZone(identifier: "Europe/Berlin")!
     static let olderUndatedDays = 14
@@ -235,6 +245,22 @@ nonisolated enum SchoolHubLogic {
 
     static func tasks(_ tasks: [SchoolHubTask], dueOn day: String) -> [SchoolHubTask] {
         tasks.filter { dayKey(for: $0.dueAt, allDay: $0.allDay) == day }
+    }
+
+    /// A parent-facing chronology. Date-less tasks stay visible and are never assigned a guessed deadline.
+    static func scheduleTasks(_ tasks: [SchoolHubTask], today: String, sourceDates: [String: Date], now: Date) -> SchoolTaskSchedule {
+        let groups = groupTasks(tasks, today: today, sourceDates: sourceDates, now: now)
+        let tomorrow = addDays(1, to: today) ?? today
+        let weekEnd = weekDays(containing: today).last ?? today
+        var schedule = SchoolTaskSchedule(overdue: groups.overdue, undated: groups.undated, undatedOlder: groups.undatedOlder)
+        for task in groups.dated {
+            guard let due = dayKey(for: task.dueAt, allDay: task.allDay) else { continue }
+            if due == today { schedule.today.append(task) }
+            else if due == tomorrow { schedule.tomorrow.append(task) }
+            else if due <= weekEnd { schedule.thisWeek.append(task) }
+            else { schedule.later.append(task) }
+        }
+        return schedule
     }
 
     static func evidence(forEvent event: SchoolHubEvent) -> SchoolEvidence {
