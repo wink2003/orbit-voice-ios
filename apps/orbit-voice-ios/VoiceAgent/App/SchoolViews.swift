@@ -60,16 +60,22 @@ struct SchoolInboxView: View {
     }
     private var schoolList: some View {
         List {
-            if !hubMode { Section { NavigationLink { SchoolBrainView() } label: { Label("Запитати про школу", systemImage: "sparkles") }; NavigationLink { SchoolCalendarView() } label: { Label("Календар школи", systemImage: "calendar") }; NavigationLink { SchoolTasksView() } label: { Label("Наступні 10 днів", systemImage: "checklist") } } }
-            Picker("Показати", selection: $filter) {
-                Text("Усі").tag("all"); Text("Листи").tag("letters"); Text("Чати").tag("messages"); Text("Нові").tag("unread")
-            }.pickerStyle(.segmented)
-            notificationSection
+            Section {
+                NovaDestinationHeader(eyebrow: "ШКІЛЬНІ ПОВІДОМЛЕННЯ", title: "Вхідні", detail: "Листи й повідомлення з оригіналом, перекладом та джерелом.", tint: NovaTodayTokens.teal, symbol: "envelope")
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                    .listRowBackground(Color.clear)
+            }
+            Section {
+                Picker("Показати", selection: $filter) {
+                    Text("Усі").tag("all"); Text("Листи").tag("letters"); Text("Повідомлення").tag("messages"); Text("Непрочитані").tag("unread")
+                }.pickerStyle(.menu)
+            } header: { Text("Фільтр") }
+            Section { notificationSection } header: { Text("Сповіщення") }
             if loading { ProgressView().frame(maxWidth: .infinity) }
             if items.isEmpty && !loading { ContentUnavailableView("Шкільних матеріалів не знайдено", systemImage: "graduationcap", description: Text("Для цього профілю або фільтра немає отриманих листів чи повідомлень. Час останньої синхронізації тут не показується.")) }
             ForEach(items) { item in NavigationLink { SchoolDetailView(item: item) } label: { schoolRow(item) } }
         }
-        .navigationTitle("Школа")
+        .navigationTitle("Вхідні")
         .listSectionSpacing(.compact)
         .refreshable { await load() }
         .task { await load(); await refreshNotificationPermission() }
@@ -266,8 +272,6 @@ struct SchoolDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Button { dismiss() } label: { Label("Листи", systemImage: "chevron.left").font(.body) }
-                    .frame(minHeight: 44, alignment: .leading)
                 if !displayTitle.isEmpty { Text(displayTitle).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
                 Text([item.sender.isEmpty ? nil : item.sender, item.sourceTimestamp.map { $0.formatted(date: .abbreviated, time: .omitted) }].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
@@ -329,8 +333,8 @@ struct SchoolDetailView: View {
             .padding(.horizontal, 16).padding(.bottom, 24)
         }
         .background(OrbitColors.canvas)
-        .navigationTitle("Школа")
-        .navigationBarHidden(true)
+        .navigationTitle(item.type == "letter" ? "Лист" : "Повідомлення")
+        .navigationBarTitleDisplayMode(.inline)
         .safeAreaPadding(.bottom, 16)
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }

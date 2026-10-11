@@ -512,7 +512,7 @@ private struct LegacySchoolHubView: View {
 /// Parent-focused School command center. It owns only presentation and routes;
 /// all school records continue to come from the existing authorized API client.
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, brain, teams }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, brain, teams, letter(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -536,10 +536,14 @@ struct SchoolHubView: View {
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .inbox: SchoolInboxView()
-                case .tasks: SchoolTasksView()
-                case .calendar: SchoolCalendarView()
+                case .tasks: SchoolTaskListView(store: store).navigationTitle("Справи").navigationBarTitleDisplayMode(.inline)
+                case .calendar: SchoolWeekCalendarView(store: store).navigationTitle("Дати").navigationBarTitleDisplayMode(.inline)
                 case .brain: SchoolBrainView()
                 case .teams: SchoolTeamsFutureView()
+                case let .letter(id): SchoolDetailLoaderView(itemID: id)
+                case let .event(id):
+                    if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
+                    else { ContentUnavailableView("Подія недоступна", systemImage: "calendar.badge.exclamationmark") }
                 }
             }
         }
@@ -594,7 +598,7 @@ private struct SchoolCommandCenter: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("SCHOOL ORGANIZER").font(.caption2.weight(.bold)).tracking(1.4).foregroundStyle(NovaTodayTokens.teal)
+            Text("ОРГАНІЗАТОР ШКОЛИ").font(.caption2.weight(.bold)).tracking(1.1).foregroundStyle(NovaTodayTokens.teal)
             Text("Школа").font(.system(.largeTitle, design: .rounded).weight(.bold))
             Text("Що потребує уваги, що далі і де знайти першоджерело.")
                 .font(.subheadline).foregroundStyle(.secondary)
@@ -639,9 +643,9 @@ private struct SchoolCommandCenter: View {
 
     private var routesSection: some View {
         HStack(spacing: 10) {
-            routeCard("Вхідні", detail: unread == 0 ? "Усе прочитано" : "(unread) нових", icon: "envelope", tint: NovaTodayTokens.teal, route: .inbox)
+            routeCard("Вхідні", detail: unread == 0 ? "Усе прочитано" : "\(unread) нових", icon: "envelope", tint: NovaTodayTokens.teal, route: .inbox)
             routeCard("Справи", detail: taskCountText, icon: "checklist", tint: NovaTodayTokens.coral, route: .tasks)
-            routeCard("Дати", detail: upcoming.isEmpty ? "Немає далі" : "(upcoming.count) подій", icon: "calendar", tint: NovaTodayTokens.indigo, route: .calendar)
+            routeCard("Дати", detail: upcoming.isEmpty ? "Немає далі" : "\(upcoming.count) подій", icon: "calendar", tint: NovaTodayTokens.indigo, route: .calendar)
         }
     }
 
@@ -666,7 +670,7 @@ private struct SchoolCommandCenter: View {
             } else {
                 NovaSurface(tint: NovaTodayTokens.indigo) {
                     ForEach(Array(upcoming.prefix(4).enumerated()), id: \.element.id) { index, event in
-                        Button { open(.calendar) } label: {
+                        Button { open(.event(event.uid)) } label: {
                             HStack(alignment: .top, spacing: 12) {
                                 VStack(spacing: 3) { Text(eventDay(event)).font(.headline.weight(.bold)); Text(eventMonth(event)).font(.caption2.weight(.bold)).foregroundStyle(NovaTodayTokens.indigo) }.frame(width: 38)
                                 VStack(alignment: .leading, spacing: 3) { Text(event.title).font(.subheadline.weight(.semibold)).lineLimit(2); Text(eventTime(event)).font(.caption).foregroundStyle(.secondary) }
@@ -684,7 +688,7 @@ private struct SchoolCommandCenter: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { sectionTitle("Останні повідомлення", detail: "Оригінал і переклад доступні всередині"); Spacer(); Button("Усі") { open(.inbox) }.font(.footnote.weight(.semibold)) }
             if let letter = store.letters.sorted(by: { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }).first {
-                Button { open(.inbox) } label: {
+                Button { open(.letter(letter.id)) } label: {
                     NovaSurface(tint: NovaTodayTokens.teal) {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: letter.type == "letter" ? "envelope" : "bubble.left").foregroundStyle(NovaTodayTokens.teal).frame(width: 22)
@@ -710,7 +714,7 @@ private struct SchoolCommandCenter: View {
 
     private var priorityTitle: String { groups.overdue.isEmpty ? (attentionTasks.isEmpty ? "Спокійний день" : "Підготовка до школи") : "Є прострочені справи" }
     private var priorityDetail: String { groups.overdue.isEmpty ? (attentionTasks.isEmpty ? "У джерелах немає відкритих справ із терміном." : "Перегляньте найближчу дію перед наступною подією.") : "Відкрийте справи, щоб перевірити першоджерело і термін." }
-    private var taskCountText: String { let count = groups.overdue.count + groups.dated.count + groups.undated.count + groups.undatedOlder.count; return count == 0 ? "Відкритих немає" : "(count) відкритих" }
+    private var taskCountText: String { let count = groups.overdue.count + groups.dated.count + groups.undated.count + groups.undatedOlder.count; return count == 0 ? "Відкритих немає" : "\(count) відкритих" }
     private func sectionTitle(_ title: String, detail: String) -> some View { VStack(alignment: .leading, spacing: 2) { Text(title).font(.title3.weight(.bold)); Text(detail).font(.caption).foregroundStyle(.secondary) } }
     private func emptyRow(_ title: String, icon: String) -> some View { Label(title, systemImage: icon).font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 78, alignment: .leading).padding(.horizontal, 14).background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous)) }
     private func taskDue(_ task: SchoolHubTask) -> String { guard let value = task.dueAt, let key = SchoolHubLogic.dayKey(for: value, allDay: task.allDay) else { return "Термін не вказаний · джерело: Schulmanager" }; return SchoolHubFormat.shortDay(key) + " · джерело: Schulmanager" }
@@ -723,7 +727,7 @@ private struct SchoolCommandCenter: View {
 private struct SchoolTeamsFutureView: View {
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 18) {
-            NovaDestinationHeader(eyebrow: "FUTURE SOURCE", title: "Microsoft Teams", detail: "Підключення ще не налаштоване для цієї сім’ї.", tint: NovaTodayTokens.indigo, symbol: "person.2.badge.gearshape")
+            NovaDestinationHeader(eyebrow: "МАЙБУТНЄ ДЖЕРЕЛО", title: "Microsoft Teams", detail: "Підключення ще не налаштоване для цієї сім’ї.", tint: NovaTodayTokens.indigo, symbol: "person.2.badge.gearshape")
             NovaSurface(tint: NovaTodayTokens.indigo) { Text("Коли безпечна інтеграція буде доступна, тут можуть з’явитися завдання, матеріали, оголошення й календар Teams. Orbit не підключатиме обліковий запис і не запитуватиме доступ без окремого підтвердження.").font(.subheadline).foregroundStyle(.secondary) }
         }.padding(16) }.background(NovaTodayTokens.canvas.ignoresSafeArea()).navigationTitle("Джерела")
     }
@@ -1006,7 +1010,7 @@ private struct SchoolTaskListView: View {
             if store.tasksPhase == .loaded && store.hubTasks.isEmpty {
                 ContentUnavailableView("Відкритих справ немає", systemImage: "checklist", description: Text("Це лише справи, які повернуло авторизоване шкільне джерело."))
             }
-            Section { SchoolNotice(text: "Виконання справ і дошка будуть доступні після появи спільного сховища стану (School Tasks Phase B).", systemImage: "info.circle") }
+            Section { SchoolNotice(text: "Позначення виконання ще не синхронізується між пристроями. Orbit не показує локальну позначку як збережену.", systemImage: "info.circle") }
         }
         .listSectionSpacing(.compact)
         .refreshable { await store.load() }
