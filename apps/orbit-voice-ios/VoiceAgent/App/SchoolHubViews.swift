@@ -10,17 +10,20 @@ final class SchoolHubStore {
     var calendarPhase: Phase = .idle
     var items: [OrbitSchoolItem] = []
     var events: [OrbitSchulmanagerCalendarEvent] = []
+    var canonicalTasks: [OrbitSchoolTask] = []
     var studentNames: [String] = []
     var itemsLoadedOnce = false
     var calendarLoadedOnce = false
+    var tasksLoadedOnce = false
+    var tasksPhase: Phase = .idle
     private(set) var gate = SchoolHubLoadGate()
     var scopeKey: String? { gate.scopeKey }
 
     func reset(to key: String) {
         gate.reset(to: key)
-        items = []; events = []; studentNames = []
-        itemsLoadedOnce = false; calendarLoadedOnce = false
-        itemsPhase = .idle; calendarPhase = .idle
+        items = []; events = []; canonicalTasks = []; studentNames = []
+        itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false
+        itemsPhase = .idle; calendarPhase = .idle; tasksPhase = .idle
     }
 
     var letters: [SchoolHubLetter] {
@@ -41,6 +44,22 @@ final class SchoolHubStore {
     }
 
     var hubTasks: [SchoolHubTask] {
+        if tasksLoadedOnce {
+            return canonicalTasks.map { task in
+                SchoolHubTask(
+                    id: task.id,
+                    title: task.title,
+                    action: task.action,
+                    dueAt: task.dueAt,
+                    allDay: task.allDay,
+                    importance: task.importance,
+                    target: task.target,
+                    confidence: task.confidence,
+                    reason: task.reason,
+                    sourceItemId: task.sourceItemId
+                )
+            }
+        }
         items.flatMap { item in
             (item.tasks ?? []).enumerated().compactMap { index, task -> SchoolHubTask? in
                 guard let title = (task.title ?? task.action), !title.isEmpty else { return nil }
@@ -60,10 +79,12 @@ final class SchoolHubStore {
         guard let token = gate.token() else { return }
         itemsPhase = .loading
         calendarPhase = .loading
+        tasksPhase = .loading
         async let itemsResult: Void = loadItems(token)
         async let calendarResult: Void = loadCalendar(token)
+        async let tasksResult: Void = loadTasks(token)
         async let namesResult: Void = loadNames(token)
-        _ = await (itemsResult, calendarResult, namesResult)
+        _ = await (itemsResult, calendarResult, tasksResult, namesResult)
     }
 
     private func loadItems(_ token: Int) async {
@@ -100,6 +121,25 @@ final class SchoolHubStore {
         } catch {
             guard gate.accepts(token) else { return }
             calendarPhase = .failed
+        }
+    }
+
+    private func loadTasks(_ token: Int) async {
+        do {
+            let result = try await MainProductAPI.shared.schoolTasks()
+            guard gate.accepts(token) else { return }
+            canonicalTasks = result.tasks
+            tasksLoadedOnce = true
+            tasksPhase = .loaded
+        } catch is CancellationError {
+            guard gate.accepts(token) else { return }
+            tasksPhase = tasksLoadedOnce ? .loaded : .idle
+        } catch {
+            guard gate.accepts(token) else { return }
+            // The letter payload still supplies a read-only fallback.  We keep
+            // that state visible rather than pretending that the task endpoint
+            // returned an empty list.
+            tasksPhase = .failed
         }
     }
 
@@ -724,9 +764,15 @@ private struct SchoolTaskListView: View {
         let today = SchoolHubLogic.dayKey(of: Date())
         let groups = SchoolHubLogic.groupTasks(store.hubTasks, today: today, sourceDates: store.sourceDates, now: Date())
         List {
-            if store.itemsPhase == .failed {
-                Section { SchoolNotice(text: store.itemsLoadedOnce ? "Не вдалося оновити справи — показано раніше завантажене." : "Не вдалося завантажити справи.", systemImage: "exclamationmark.triangle.fill"); Button("Повторити") { Task { await store.load() } }.frame(minHeight: OrbitSpacing.minTarget) }
-            } else if store.itemsPhase == .loading && !store.itemsLoadedOnce {
+            if store.tasksPhase == .failed {
+                Section {
+                    SchoolNotice(
+                        text: store.itemsLoadedOnce ? "Не вдалося оновити централізований список справ. Показано справи, витягнуті з уже завантажених листів — вони можуть бути неповними." : "Не вдалося завантажити справи.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    Button("Повторити") { Task { await store.load() } }.frame(minHeight: OrbitSpacing.minTarget)
+                }
+            } else if store.tasksPhase == .loading && !store.tasksLoadedOnce {
                 Section { ProgressView().frame(maxWidth: .infinity) }
             }
             group("Прострочені", tasks: groups.overdue, overdue: true, today: today)
@@ -735,8 +781,8 @@ private struct SchoolTaskListView: View {
             if !groups.undatedOlder.isEmpty {
                 Section { DisclosureGroup("Старіші без дати (\(groups.undatedOlder.count)) · лишаються відкритими") { ForEach(groups.undatedOlder) { SchoolTaskRow(store: store, task: $0, today: today) } }.font(.footnote).frame(minHeight: OrbitSpacing.minTarget) }
             }
-            if store.itemsPhase == .loaded && store.hubTasks.isEmpty {
-                ContentUnavailableView("Справ у завантажених листах немає", systemImage: "checklist", description: Text("Це лише те, що Orbit уже отримав зі школи."))
+            if store.tasksPhase == .loaded && store.hubTasks.isEmpty {
+                ContentUnavailableView("Відкритих справ немає", systemImage: "checklist", description: Text("Це лише справи, які повернуло авторизоване шкільне джерело."))
             }
             Section { SchoolNotice(text: "Виконання справ і дошка будуть доступні після появи спільного сховища стану (School Tasks Phase B).", systemImage: "info.circle") }
         }

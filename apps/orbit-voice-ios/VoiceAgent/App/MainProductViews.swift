@@ -179,6 +179,15 @@ struct OrbitCalendarView: View {
         NavigationStack {
             List {
                 Section {
+                    NovaDestinationHeader(
+                        eyebrow: "FAMILY RHYTHM · AUTHORIZED",
+                        title: "Календар",
+                        detail: "Події вашої сім’ї та підключених календарів.",
+                        tint: NovaTodayTokens.indigo,
+                        symbol: "calendar"
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                    .listRowBackground(Color.clear)
                     NavigationLink { SchoolCalendarView() } label: { Label("Шкільні події — окремий календар школи", systemImage: "graduationcap") }
                         .frame(minHeight: OrbitSpacing.minTarget)
                 } footer: { Text("Тут сімейні та підключені зовнішні події. Шкільні події з вкладки «Школа» потрапляють сюди лише після вашого підтвердження.") }
@@ -481,6 +490,17 @@ struct OrbitToolsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    NovaDestinationHeader(
+                        eyebrow: "ORBIT · READ-ONLY STATUS",
+                        title: "Інтеграції",
+                        detail: "Стан сервісів і безпечні точки входу Orbit.",
+                        tint: NovaTodayTokens.indigo,
+                        symbol: "slider.horizontal.3"
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                    .listRowBackground(Color.clear)
+                }
                 Section("Дії") {
                     NavigationLink { OrbitChatsView() } label: { Label("Виконати дію через Orbit", systemImage: "paperplane") }
                     Text("Orbit підготує дію в чаті та попросить підтвердження, якщо воно потрібне.")
@@ -541,6 +561,17 @@ struct OrbitContactsView: View {
 
     var body: some View {
         List {
+            Section {
+                NovaDestinationHeader(
+                    eyebrow: "CONTACTS · AUTHORIZED",
+                    title: "Контакти",
+                    detail: "Явно збережені ідентичності для безпечних пропозицій у Orbit.",
+                    tint: NovaTodayTokens.indigo,
+                    symbol: "person.crop.circle.badge.plus"
+                )
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                .listRowBackground(Color.clear)
+            }
             if isLoading && contacts.isEmpty {
                 ProgressView("Завантажую контакти…")
             } else if contacts.isEmpty {
@@ -807,6 +838,17 @@ struct MemoryCenterView: View {
                 } else {
                     List {
                         if let response {
+                            Section {
+                                NovaDestinationHeader(
+                                    eyebrow: "MEMORY · PROVENANCE",
+                                    title: "Пам’ять",
+                                    detail: "Факти з часом, джерелом і межами профілю.",
+                                    tint: NovaTodayTokens.indigo,
+                                    symbol: "brain.head.profile"
+                                )
+                                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                                .listRowBackground(Color.clear)
+                            }
                             if !response.assertions.isEmpty {
                                 Section("Факти та вподобання") {
                                     ForEach(response.assertions) { assertion in
@@ -1270,6 +1312,17 @@ struct OrbitSettingsView: View {
 
     var body: some View {
             List {
+                Section {
+                    NovaDestinationHeader(
+                        eyebrow: "ORBIT · THIS IPHONE",
+                        title: "Налаштування",
+                        detail: "Приватність, голос і вигляд застосунку на цьому пристрої.",
+                        tint: NovaTodayTokens.indigo,
+                        symbol: "gearshape"
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                    .listRowBackground(Color.clear)
+                }
                 Section("Профіль") {
                     Label(authentication.displayName ?? "Активний профіль", systemImage: "person.crop.circle")
                     Button("Змінити профіль на цьому iPhone", role: .destructive) { showsChangeUserConfirmation = true }

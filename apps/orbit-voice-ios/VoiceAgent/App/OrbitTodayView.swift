@@ -361,6 +361,49 @@ struct NovaScreenHeading: View {
     }
 }
 
+/// A compact, shared entry treatment for contextual Nova destinations.
+/// It deliberately contains no data or navigation state, so Calendar, Memory,
+/// Contacts and Settings can retain their proven models and authorization paths.
+struct NovaDestinationHeader: View {
+    let eyebrow: String
+    let title: String
+    let detail: String
+    let tint: Color
+    let symbol: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(tint)
+                .frame(width: 42, height: 42)
+                .background(tint.opacity(0.12), in: Circle())
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(eyebrow)
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(tint)
+                Text(title)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(tint.opacity(0.20), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct NovaTodaySectionHeader<Accessory: View>: View {
     let eyebrow: String
     let title: String
