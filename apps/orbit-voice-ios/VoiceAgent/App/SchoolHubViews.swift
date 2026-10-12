@@ -50,7 +50,7 @@ final class SchoolHubStore {
         if tasksLoadedOnce {
             sourceTasks = canonicalTasks.map { task in
                 let state = actionTasks.first { $0.kind == "source" && $0.sourceItemId == task.sourceItemId && $0.sourceTaskKey == task.key }
-                SchoolHubTask(
+                return SchoolHubTask(
                     id: task.id,
                     title: task.title,
                     action: task.action,
