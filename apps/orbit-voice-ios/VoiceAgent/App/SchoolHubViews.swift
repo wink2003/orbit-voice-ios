@@ -1200,7 +1200,7 @@ private struct SchoolTaskDetailView: View {
                     Task {
                         defer { updating = false }
                         do { try await store.setTaskStatus(task, completed: task.status == "completed" ? false : true) }
-                        catch { _ in error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
+                        catch { self.error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
                     }
                 } label: {
                     Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle")
@@ -1287,18 +1287,18 @@ private struct SchoolChecklistView: View {
     private func load() async {
         loading = true; defer { loading = false }
         do { checklists = try await MainProductAPI.shared.schoolActionChecklists().checklists }
-        catch { _ in error = "Не вдалося завантажити чеклісти." }
+        catch { self.error = "Не вдалося завантажити чеклісти." }
     }
     private func createChecklist() {
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines); guard !title.isEmpty else { return }
-        Task { do { _ = try await MainProductAPI.shared.createSchoolActionChecklist(title: title, sourceItemId: sourceItemId, sourceTaskId: sourceTaskId); newTitle = ""; await load() } catch { _ in error = "Не вдалося створити чекліст." } }
+        Task { do { _ = try await MainProductAPI.shared.createSchoolActionChecklist(title: title, sourceItemId: sourceItemId, sourceTaskId: sourceTaskId); newTitle = ""; await load() } catch { self.error = "Не вдалося створити чекліст." } }
     }
     private func addItem(_ checklist: OrbitSchoolActionChecklist) {
         let title = newItem.trimmingCharacters(in: .whitespacesAndNewlines); guard !title.isEmpty else { return }
-        Task { do { _ = try await MainProductAPI.shared.addSchoolChecklistItem(checklistId: checklist.id, title: title); newItem = ""; await load() } catch { _ in error = "Не вдалося додати пункт." } }
+        Task { do { _ = try await MainProductAPI.shared.addSchoolChecklistItem(checklistId: checklist.id, title: title); newItem = ""; await load() } catch { self.error = "Не вдалося додати пункт." } }
     }
     private func update(_ item: OrbitSchoolActionChecklistItem, completed: Bool) async {
-        do { _ = try await MainProductAPI.shared.updateSchoolChecklistItem(id: item.id, completed: completed); await load() } catch { _ in error = "Не вдалося оновити пункт." }
+        do { _ = try await MainProductAPI.shared.updateSchoolChecklistItem(id: item.id, completed: completed); await load() } catch { self.error = "Не вдалося оновити пункт." }
     }
     private func progress(_ checklist: OrbitSchoolActionChecklist) -> String {
         let done = checklist.items.filter { $0.completedAt != nil }.count
@@ -1340,14 +1340,14 @@ private struct SchoolNotesView: View {
 
     private func load() async {
         do { notes = try await MainProductAPI.shared.schoolActionNotes().notes.filter { $0.entityType == entityType && $0.entityId == entityId } }
-        catch { _ in error = "Не вдалося завантажити нотатки." }
+        catch { self.error = "Не вдалося завантажити нотатки." }
     }
     private func create() {
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !content.isEmpty else { return }
-        Task { do { _ = try await MainProductAPI.shared.createSchoolActionNote(entityType: entityType, entityId: entityId, content: content); draft = ""; await load() } catch { _ in error = "Не вдалося зберегти нотатку." } }
+        Task { do { _ = try await MainProductAPI.shared.createSchoolActionNote(entityType: entityType, entityId: entityId, content: content); draft = ""; await load() } catch { self.error = "Не вдалося зберегти нотатку." } }
     }
     private func update(_ note: OrbitSchoolActionNote, content: String) async {
-        do { _ = try await MainProductAPI.shared.updateSchoolActionNote(id: note.id, content: content); await load() } catch { _ in error = "Не вдалося оновити нотатку." }
+        do { _ = try await MainProductAPI.shared.updateSchoolActionNote(id: note.id, content: content); await load() } catch { self.error = "Не вдалося оновити нотатку." }
     }
 }
 
@@ -1427,7 +1427,7 @@ private struct SchoolFamilyTaskEditorView: View {
         Task {
             defer { saving = false }
             do { try await store.createFamilyTask(title: trimmedTitle, description: trimmedDescription, planningDate: date); dismiss() }
-            catch { _ in error = "Не вдалося зберегти сімейну справу. Перевірте з’єднання й повторіть." }
+            catch { self.error = "Не вдалося зберегти сімейну справу. Перевірте з’єднання й повторіть." }
         }
     }
 }
