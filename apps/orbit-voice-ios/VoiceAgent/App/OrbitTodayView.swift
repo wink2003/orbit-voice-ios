@@ -305,7 +305,7 @@ struct NovaTodayFixture {
         )
         return NovaTodayFixture(
             calendar: [event], school: OrbitSchoolItemsResponse(items: [item], unreadCount: 1),
-            tasks: OrbitSchoolTasksResponse(from: "demo", to: "demo", coverage: "all", tasks: [task], importantEvents: []), loadedAt: now
+            tasks: OrbitSchoolTasksResponse(from: "demo", to: "demo", coverage: "all", truncated: false, tasks: [task], importantEvents: []), loadedAt: now
         )
     }()
 #endif

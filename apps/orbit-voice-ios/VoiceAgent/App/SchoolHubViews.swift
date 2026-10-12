@@ -16,6 +16,7 @@ final class SchoolHubStore {
     var calendarLoadedOnce = false
     var tasksLoadedOnce = false
     var taskCoverage: String?
+    var taskCoverageTruncated = false
     var tasksPhase: Phase = .idle
     var actionTasksPhase: Phase = .idle
     var actionTasks: [OrbitSchoolActionTask] = []
@@ -25,7 +26,7 @@ final class SchoolHubStore {
     func reset(to key: String) {
         gate.reset(to: key)
         items = []; events = []; canonicalTasks = []; actionTasks = []; studentNames = []
-        itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false; taskCoverage = nil
+        itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false; taskCoverage = nil; taskCoverageTruncated = false
         itemsPhase = .idle; calendarPhase = .idle; tasksPhase = .idle; actionTasksPhase = .idle
     }
 
@@ -148,6 +149,7 @@ final class SchoolHubStore {
             guard gate.accepts(token) else { return }
             canonicalTasks = result.tasks
             taskCoverage = result.coverage
+            taskCoverageTruncated = result.truncated ?? false
             tasksLoadedOnce = true
             tasksPhase = .loaded
         } catch is CancellationError {
@@ -926,6 +928,8 @@ private struct SchoolOverviewView: View {
             }
         } else if store.itemsPhase == .loading && !store.itemsLoadedOnce {
             Section { ProgressView("Завантажуємо школу…").frame(maxWidth: .infinity) }
+        } else if store.taskCoverageTruncated {
+            Section { SchoolNotice(text: "Показано перші 2 000 шкільних справ; відкрийте пошук або історію пізніше для решти записів.", systemImage: "exclamationmark.triangle") }
         } else if store.taskCoverage != nil && store.taskCoverage != "all" {
             Section { SchoolNotice(text: "Показано обмежене вікно шкільних справ; частина далеких або безстрокових записів може бути поза ним.", systemImage: "calendar.badge.exclamationmark") }
         }
