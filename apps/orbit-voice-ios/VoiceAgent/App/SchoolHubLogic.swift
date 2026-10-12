@@ -84,6 +84,10 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     let confidence: Double?
     let reason: String?
     let sourceItemId: String
+    var kind: String = "source"
+    var actionID: String? = nil
+    var status: String = "open"
+    var planningDate: String? = nil
 }
 
 nonisolated struct SchoolHubLetter: Hashable, Identifiable {

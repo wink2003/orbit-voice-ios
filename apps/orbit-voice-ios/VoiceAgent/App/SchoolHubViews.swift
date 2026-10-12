@@ -16,14 +16,16 @@ final class SchoolHubStore {
     var calendarLoadedOnce = false
     var tasksLoadedOnce = false
     var tasksPhase: Phase = .idle
+    var actionTasksPhase: Phase = .idle
+    var actionTasks: [OrbitSchoolActionTask] = []
     private(set) var gate = SchoolHubLoadGate()
     var scopeKey: String? { gate.scopeKey }
 
     func reset(to key: String) {
         gate.reset(to: key)
-        items = []; events = []; canonicalTasks = []; studentNames = []
+        items = []; events = []; canonicalTasks = []; actionTasks = []; studentNames = []
         itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false
-        itemsPhase = .idle; calendarPhase = .idle; tasksPhase = .idle
+        itemsPhase = .idle; calendarPhase = .idle; tasksPhase = .idle; actionTasksPhase = .idle
     }
 
     var letters: [SchoolHubLetter] {
@@ -44,8 +46,10 @@ final class SchoolHubStore {
     }
 
     var hubTasks: [SchoolHubTask] {
+        let sourceTasks: [SchoolHubTask]
         if tasksLoadedOnce {
-            return canonicalTasks.map { task in
+            sourceTasks = canonicalTasks.map { task in
+                let state = actionTasks.first { $0.kind == "source" && $0.sourceItemId == task.sourceItemId && $0.sourceTaskKey == task.key }
                 SchoolHubTask(
                     id: task.id,
                     title: task.title,
@@ -56,17 +60,27 @@ final class SchoolHubStore {
                     target: task.target,
                     confidence: task.confidence,
                     reason: task.reason,
-                    sourceItemId: task.sourceItemId
+                    sourceItemId: task.sourceItemId,
+                    actionID: state?.id,
+                    status: state?.status ?? "open",
+                    planningDate: state?.planningDate
                 )
             }
-        }
-        return items.flatMap { item in
-            (item.tasks ?? []).enumerated().compactMap { index, task -> SchoolHubTask? in
-                guard let title = (task.title ?? task.action), !title.isEmpty else { return nil }
-                return SchoolHubTask(id: "\(item.id):\(task.key ?? String(index))", title: title, action: task.action, dueAt: task.dueAt, allDay: task.allDay ?? true, importance: task.importance, target: task.target, confidence: task.confidence, reason: task.reason, sourceItemId: item.id)
+        } else {
+            sourceTasks = items.flatMap { item in
+                (item.tasks ?? []).enumerated().compactMap { index, task -> SchoolHubTask? in
+                    guard let title = (task.title ?? task.action), !title.isEmpty else { return nil }
+                    return SchoolHubTask(id: "\(item.id):\(task.key ?? String(index))", title: title, action: task.action, dueAt: task.dueAt, allDay: task.allDay ?? true, importance: task.importance, target: task.target, confidence: task.confidence, reason: task.reason, sourceItemId: item.id)
+                }
             }
         }
+        let familyTasks = actionTasks.filter { $0.kind == "family" }.map { task in
+            SchoolHubTask(id: "family:\(task.id)", title: task.title, action: task.description.isEmpty ? nil : task.description, dueAt: task.schoolDueAt ?? task.planningDate, allDay: task.schoolDueAt == nil, importance: nil, target: nil, confidence: 1, reason: "Створено родиною в Orbit", sourceItemId: task.sourceItemId ?? "", kind: "family", actionID: task.id, status: task.status, planningDate: task.planningDate)
+        }
+        return sourceTasks + familyTasks
     }
+
+    var openHubTasks: [SchoolHubTask] { hubTasks.filter { $0.status != "completed" } }
 
     var sourceDates: [String: Date] {
         Dictionary(items.compactMap { item in (item.sourceTimestamp ?? item.importedAt).map { (item.id, $0) } }, uniquingKeysWith: { first, _ in first })
@@ -83,8 +97,9 @@ final class SchoolHubStore {
         async let itemsResult: Void = loadItems(token)
         async let calendarResult: Void = loadCalendar(token)
         async let tasksResult: Void = loadTasks(token)
+        async let actionTasksResult: Void = loadActionTasks(token)
         async let namesResult: Void = loadNames(token)
-        _ = await (itemsResult, calendarResult, tasksResult, namesResult)
+        _ = await (itemsResult, calendarResult, tasksResult, actionTasksResult, namesResult)
     }
 
     private func loadItems(_ token: Int) async {
@@ -147,6 +162,93 @@ final class SchoolHubStore {
         if let profiles = try? await MainProductAPI.shared.familyProfiles(), gate.accepts(token) {
             studentNames = profiles.filter(\.isMinor).map(\.displayName)
         }
+    }
+
+    private func loadActionTasks(_ token: Int) async {
+        do {
+            let result = try await MainProductAPI.shared.schoolActionTasks()
+            guard gate.accepts(token) else { return }
+            actionTasks = result.tasks
+            actionTasksPhase = .loaded
+        } catch is CancellationError {
+            guard gate.accepts(token) else { return }
+            actionTasksPhase = actionTasks.isEmpty ? .idle : .loaded
+        } catch {
+            guard gate.accepts(token) else { return }
+            actionTasksPhase = .failed
+        }
+    }
+
+    func setTaskStatus(_ task: SchoolHubTask, completed: Bool) async throws {
+        let updated: OrbitSchoolActionTask
+        if task.kind == "family", let actionID = task.actionID {
+            updated = completed ? try await MainProductAPI.shared.completeSchoolActionTask(id: actionID) : try await MainProductAPI.shared.reopenSchoolActionTask(id: actionID)
+        } else {
+            guard !task.sourceItemId.isEmpty else { return }
+            let sourceKey = task.id.hasPrefix("\(task.sourceItemId):") ? String(task.id.dropFirst(task.sourceItemId.count + 1)) : task.id
+            updated = completed ? try await MainProductAPI.shared.completeSourceSchoolTask(itemId: task.sourceItemId, taskKey: sourceKey) : try await MainProductAPI.shared.reopenSourceSchoolTask(itemId: task.sourceItemId, taskKey: sourceKey)
+        }
+        if let index = actionTasks.firstIndex(where: { $0.id == updated.id }) { actionTasks[index] = updated }
+    }
+
+    func createFamilyTask(title: String, description: String, planningDate: String?) async throws {
+        _ = try await MainProductAPI.shared.createSchoolActionTask(title: title, description: description, planningDate: planningDate)
+        actionTasks = try await MainProductAPI.shared.schoolActionTasks().tasks
+    }
+}
+
+private struct SchoolActionHistoryView: View {
+    @State private var phase: SchoolHubStore.Phase = .loading
+    @State private var entries: [OrbitSchoolActionHistoryEntry] = []
+
+    var body: some View {
+        List {
+            if phase == .failed {
+                SchoolNotice(text: "Історія змін тимчасово недоступна. Спробуйте ще раз.", systemImage: "exclamationmark.triangle")
+                Button("Повторити") { load() }.frame(minHeight: OrbitSpacing.minTarget)
+            } else if phase == .loading {
+                ProgressView().frame(maxWidth: .infinity)
+            } else if entries.isEmpty {
+                ContentUnavailableView("Історія порожня", systemImage: "clock.arrow.circlepath", description: Text("Тут з’являться зміни сімейних справ, чеклістів і нотаток."))
+            } else {
+                ForEach(entries) { entry in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(historyTitle(entry)).font(.subheadline.weight(.semibold))
+                        Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+                }
+            }
+        }
+        .navigationTitle("Історія змін")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await reload() }
+        .refreshable { await reload() }
+    }
+
+    private func load() { Task { await reload() } }
+
+    private func reload() async {
+        phase = .loading
+        do {
+            entries = try await MainProductAPI.shared.schoolActionHistory().history
+            phase = .loaded
+        } catch {
+            phase = .failed
+        }
+    }
+
+    private func historyTitle(_ entry: OrbitSchoolActionHistoryEntry) -> String {
+        let action: String
+        switch entry.action {
+        case "created": action = "Створено"
+        case "completed": action = "Позначено виконаним"
+        case "reopened": action = "Повернуто у відкриті"
+        case "updated": action = "Оновлено"
+        case "archived": action = "Приховано"
+        default: action = entry.action
+        }
+        return "\(action) · \(entry.entityType)"
     }
 }
 
@@ -512,7 +614,7 @@ private struct LegacySchoolHubView: View {
 /// Parent-focused School command center. It owns only presentation and routes;
 /// all school records continue to come from the existing authorized API client.
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, letter(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, letter(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -546,6 +648,7 @@ struct SchoolHubView: View {
                 case .briefing: SchoolTasksView()
                 case .brain: SchoolBrainView()
                 case .teams: SchoolTeamsFutureView()
+                case .history: SchoolActionHistoryView()
                 case let .letter(id): SchoolDetailLoaderView(itemID: id)
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
@@ -566,7 +669,7 @@ private struct SchoolCommandCenter: View {
 
     private var now: Date { .now }
     private var today: String { SchoolHubLogic.dayKey(of: now) }
-    private var groups: SchoolTaskGroups { SchoolHubLogic.groupTasks(store.hubTasks, today: today, sourceDates: store.sourceDates, now: now) }
+    private var groups: SchoolTaskGroups { SchoolHubLogic.groupTasks(store.openHubTasks, today: today, sourceDates: store.sourceDates, now: now) }
     private var upcoming: [SchoolHubEvent] {
         store.hubEvents
             .filter(SchoolHubLogic.isDayRelevant)
@@ -580,7 +683,7 @@ private struct SchoolCommandCenter: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 header
-                if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed { availabilityNotice }
+                if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed || store.actionTasksPhase == .failed { availabilityNotice }
                 prioritySection
                 preparationSection
                 routesSection
@@ -601,6 +704,7 @@ private struct SchoolCommandCenter: View {
                     Button { open(.timeline) } label: { Label("Хронологія", systemImage: "list.bullet.indent") }
                     Button { open(.briefing) } label: { Label("Огляд від Orbit", systemImage: "sparkles") }
                     Button { open(.brain) } label: { Label("Запитати Orbit", systemImage: "bubble.left.and.text.bubble.right") }
+                    Button { open(.history) } label: { Label("Історія змін", systemImage: "clock.arrow.circlepath") }
                 } label: { Image(systemName: "ellipsis.circle") }
                     .accessibilityLabel("Інструменти школи")
             }
@@ -664,7 +768,7 @@ private struct SchoolCommandCenter: View {
     @ViewBuilder private var preparationSection: some View {
         let today = SchoolHubLogic.dayKey(of: now)
         let tomorrow = SchoolHubLogic.addDays(1, to: today) ?? today
-        let preparation = SchoolHubLogic.preparation(for: tomorrow, tasks: store.hubTasks)
+        let preparation = SchoolHubLogic.preparation(for: tomorrow, tasks: store.openHubTasks)
         if !preparation.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -980,6 +1084,7 @@ private struct SchoolTaskRow: View {
     let task: SchoolHubTask
     var overdue = false
     var today = SchoolHubLogic.dayKey(of: Date())
+    @State private var actionError: String?
 
     var body: some View {
         let item = store.item(id: task.sourceItemId)
@@ -988,8 +1093,8 @@ private struct SchoolTaskRow: View {
         let days = dueKey.flatMap { SchoolHubFormat.daysFrom(today, to: $0) }
         let warn = overdue || (days.map { $0 <= 2 } ?? false)
         let row = HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "circle.dotted")
-                .foregroundStyle(Color.secondary.opacity(0.8))
+            Image(systemName: task.status == "completed" ? "checkmark.circle.fill" : "circle.dotted")
+                .foregroundStyle(task.status == "completed" ? NovaTodayTokens.teal : Color.secondary.opacity(0.8))
                 .frame(width: 21, height: 21)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -1004,9 +1109,24 @@ private struct SchoolTaskRow: View {
         }
         .frame(minHeight: 56, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(task.title). Відкрито. Виконання ще не підтримується спільним сховищем.")
+        .accessibilityLabel("\(task.title). \(task.status == "completed" ? "Виконано." : "Відкрито.")")
         NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: { row }
             .buttonStyle(.plain)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button {
+                    Task {
+                        do { try await store.setTaskStatus(task, completed: task.status != "completed") }
+                        catch { actionError = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
+                    }
+                } label: {
+                    Label(task.status == "completed" ? "Відкрити" : "Готово", systemImage: task.status == "completed" ? "arrow.uturn.backward" : "checkmark")
+                }.tint(task.status == "completed" ? .orange : NovaTodayTokens.teal)
+            }
+        .alert("Стан справи", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
+            Button("Гаразд") { actionError = nil }
+        } message: {
+            Text(actionError ?? "")
+        }
     }
 
     private func metaLine(dueKey: String?, days: Int?, warn: Bool, item: OrbitSchoolItem?, evidence: SchoolEvidence) -> some View {
@@ -1028,6 +1148,8 @@ private struct SchoolTaskRow: View {
 private struct SchoolTaskDetailView: View {
     let store: SchoolHubStore
     let task: SchoolHubTask
+    @State private var updating = false
+    @State private var error: String?
 
     private var source: OrbitSchoolItem? { store.item(id: task.sourceItemId) }
     private var dueKey: String? { SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) }
@@ -1072,13 +1194,241 @@ private struct SchoolTaskDetailView: View {
                 }
             }
             Section {
-                Label("Позначити виконаним стане доступно, коли Orbit отримає захищене синхронізоване збереження стану. Зараз справа не змінюється.", systemImage: "info.circle")
+                Button {
+                    guard !updating else { return }
+                    updating = true
+                    Task {
+                        defer { updating = false }
+                        do { try await store.setTaskStatus(task, completed: task.status == "completed" ? false : true) }
+                        catch { error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
+                    }
+                } label: {
+                    Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle")
+                }
+                .disabled(updating)
+                .frame(minHeight: OrbitSpacing.minTarget)
+                if updating { ProgressView().frame(maxWidth: .infinity) }
+            } header: { Text("Стан Orbit") } footer: {
+                Text(task.kind == "family" ? "Це сімейна справа Orbit і не змінює шкільне джерело." : "Стан зберігається в Orbit окремо від Schulmanager.")
+            }
+            Section("Підготовка й нотатки") {
+                NavigationLink { SchoolChecklistView(sourceItemId: task.sourceItemId.isEmpty ? nil : task.sourceItemId, sourceTaskId: task.actionID) } label: {
+                    Label("Чекліст підготовки", systemImage: "checklist.checked")
+                }
+                NavigationLink { SchoolNotesView(entityType: "task", entityId: task.id) } label: {
+                    Label("Сімейні нотатки", systemImage: "note.text")
+                }
+            }
+            Section {
+                Label("Стан збережено окремо в Orbit і не змінює запис у Schulmanager.", systemImage: "info.circle")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Справа")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Стан справи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+    }
+}
+
+private struct SchoolChecklistView: View {
+    let sourceItemId: String?
+    let sourceTaskId: String?
+    @State private var checklists: [OrbitSchoolActionChecklist] = []
+    @State private var newTitle = ""
+    @State private var newItem = ""
+    @State private var loading = false
+    @State private var error: String?
+
+    private var visible: [OrbitSchoolActionChecklist] {
+        checklists.filter { $0.sourceItemId == sourceItemId || (sourceTaskId != nil && $0.sourceTaskId == sourceTaskId) }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                TextField("Нова підготовка", text: $newTitle)
+                Button("Створити чекліст") { createChecklist() }.disabled(newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } header: { Text("Сімейна підготовка") } footer: { Text("Пункти чекліста належать родині Orbit і не змінюють шкільне джерело.") }
+            if visible.isEmpty && !loading {
+                ContentUnavailableView("Чеклістів ще немає", systemImage: "checklist", description: Text("Створіть перший список підготовки для цієї справи."))
+            }
+            ForEach(visible) { checklist in
+                Section {
+                    ForEach(checklist.items) { item in
+                        Button {
+                            Task { await update(item, completed: item.completedAt == nil) }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: item.completedAt == nil ? "circle" : "checkmark.circle.fill")
+                                    .foregroundStyle(item.completedAt == nil ? .secondary : NovaTodayTokens.teal)
+                                Text(item.title).strikethrough(item.completedAt != nil).foregroundStyle(item.completedAt == nil ? .primary : .secondary)
+                                Spacer()
+                            }
+                        }.buttonStyle(.plain).frame(minHeight: OrbitSpacing.minTarget)
+                    }
+                    HStack {
+                        TextField("Додати пункт", text: $newItem)
+                        Button("Додати") { addItem(checklist) }.disabled(newItem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                } header: {
+                    HStack { Text(checklist.title); Spacer(); Text(progress(checklist)).font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+            if loading { ProgressView().frame(maxWidth: .infinity) }
+        }
+        .navigationTitle("Підготовка")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+        .alert("Підготовка", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+    }
+
+    private func load() async {
+        loading = true; defer { loading = false }
+        do { checklists = try await MainProductAPI.shared.schoolActionChecklists().checklists }
+        catch { error = "Не вдалося завантажити чеклісти." }
+    }
+    private func createChecklist() {
+        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines); guard !title.isEmpty else { return }
+        Task { do { _ = try await MainProductAPI.shared.createSchoolActionChecklist(title: title, sourceItemId: sourceItemId, sourceTaskId: sourceTaskId); newTitle = ""; await load() } catch { error = "Не вдалося створити чекліст." } }
+    }
+    private func addItem(_ checklist: OrbitSchoolActionChecklist) {
+        let title = newItem.trimmingCharacters(in: .whitespacesAndNewlines); guard !title.isEmpty else { return }
+        Task { do { _ = try await MainProductAPI.shared.addSchoolChecklistItem(checklistId: checklist.id, title: title); newItem = ""; await load() } catch { error = "Не вдалося додати пункт." } }
+    }
+    private func update(_ item: OrbitSchoolActionChecklistItem, completed: Bool) async {
+        do { _ = try await MainProductAPI.shared.updateSchoolChecklistItem(id: item.id, completed: completed); await load() } catch { error = "Не вдалося оновити пункт." }
+    }
+    private func progress(_ checklist: OrbitSchoolActionChecklist) -> String {
+        let done = checklist.items.filter { $0.completedAt != nil }.count
+        return "\(done)/\(checklist.items.count)"
+    }
+}
+
+private struct SchoolNotesView: View {
+    let entityType: String
+    let entityId: String
+    @State private var notes: [OrbitSchoolActionNote] = []
+    @State private var draft = ""
+    @State private var editing: OrbitSchoolActionNote?
+    @State private var error: String?
+
+    var body: some View {
+        List {
+            Section {
+                TextField("Нова нотатка", text: $draft, axis: .vertical).lineLimit(2...5)
+                Button("Зберегти нотатку") { create() }.disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } header: { Text("Сімейні нотатки") } footer: { Text("Нотатки приватні для поточного Orbit-профілю й чітко відокремлені від тексту школи.") }
+            if notes.isEmpty { ContentUnavailableView("Нотаток ще немає", systemImage: "note.text", description: Text("Збережіть власне рішення або пояснення батьків.")) }
+            ForEach(notes) { note in
+                Button { editing = note } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(note.content).foregroundStyle(.primary).multilineTextAlignment(.leading)
+                        Text(note.updatedAt, format: .dateTime.day().month(.abbreviated).hour().minute()).font(.caption).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
+                }.buttonStyle(.plain)
+            }
+        }
+        .navigationTitle("Нотатки")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+        .sheet(item: $editing) { note in SchoolNoteEditor(note: note) { content in await update(note, content: content) } }
+        .alert("Нотатки", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+    }
+
+    private func load() async {
+        do { notes = try await MainProductAPI.shared.schoolActionNotes().notes.filter { $0.entityType == entityType && $0.entityId == entityId } }
+        catch { error = "Не вдалося завантажити нотатки." }
+    }
+    private func create() {
+        let content = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !content.isEmpty else { return }
+        Task { do { _ = try await MainProductAPI.shared.createSchoolActionNote(entityType: entityType, entityId: entityId, content: content); draft = ""; await load() } catch { error = "Не вдалося зберегти нотатку." } }
+    }
+    private func update(_ note: OrbitSchoolActionNote, content: String) async {
+        do { _ = try await MainProductAPI.shared.updateSchoolActionNote(id: note.id, content: content); await load() } catch { error = "Не вдалося оновити нотатку." }
+    }
+}
+
+private struct SchoolNoteEditor: View {
+    let note: OrbitSchoolActionNote
+    let save: (String) async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var content: String
+
+    init(note: OrbitSchoolActionNote, save: @escaping (String) async -> Void) { self.note = note; self.save = save; _content = State(initialValue: note.content) }
+
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $content).padding(12).navigationTitle("Редагувати нотатку").navigationBarTitleDisplayMode(.inline).toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Зберегти") { Task { await save(content); dismiss() } }.disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            }
+        }
+    }
+}
+
+private struct SchoolFamilyTaskEditorView: View {
+    let store: SchoolHubStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var description = ""
+    @State private var hasPlanningDate = false
+    @State private var planningDate = Date()
+    @State private var saving = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Сімейна справа") {
+                    TextField("Що потрібно зробити?", text: $title, axis: .vertical)
+                        .lineLimit(1...3)
+                    TextField("Деталі (необов’язково)", text: $description, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+                Section("Планування") {
+                    Toggle("Додати особисту дату", isOn: $hasPlanningDate)
+                    if hasPlanningDate { DatePicker("Підготувати до", selection: $planningDate, displayedComponents: .date) }
+                }
+                Section {
+                    Text("Це запис родини Orbit, а не вимога Schulmanager. Його можна буде завершити або відкрити знову.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Нова справа")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Створити") { save() }.disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || saving)
+                }
+            }
+            .overlay { if saving { ProgressView("Зберігаємо…") } }
+            .alert("Справу не створено", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+        }
+    }
+
+    private func save() {
+        saving = true
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let date: String?
+        if hasPlanningDate {
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd"
+            date = formatter.string(from: planningDate)
+        } else {
+            date = nil
+        }
+        Task {
+            defer { saving = false }
+            do { try await store.createFamilyTask(title: trimmedTitle, description: trimmedDescription, planningDate: date); dismiss() }
+            catch { error = "Не вдалося зберегти сімейну справу. Перевірте з’єднання й повторіть." }
+        }
     }
 }
 
@@ -1088,9 +1438,10 @@ private struct SchoolTaskListView: View {
     let store: SchoolHubStore
     @State private var query = ""
     @State private var filter: TaskFilter = .all
+    @State private var showCreate = false
 
     private enum TaskFilter: String, CaseIterable, Identifiable {
-        case all, dated, undated, verification
+        case all, dated, undated, verification, completed
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -1098,13 +1449,14 @@ private struct SchoolTaskListView: View {
             case .dated: "З терміном"
             case .undated: "Без терміну"
             case .verification: "Перевірити"
+            case .completed: "Виконані"
             }
         }
     }
 
     var body: some View {
         let today = SchoolHubLogic.dayKey(of: Date())
-        let tasks = filteredTasks
+            let tasks = filteredTasks
         let schedule = SchoolHubLogic.scheduleTasks(tasks, today: today, sourceDates: store.sourceDates, now: Date())
         List {
             Section {
@@ -1144,6 +1496,15 @@ private struct SchoolTaskListView: View {
         }
         .listSectionSpacing(.compact)
         .searchable(text: $query, prompt: "Шукати справи")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showCreate = true } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Створити сімейну справу")
+            }
+        }
+        .sheet(isPresented: $showCreate) {
+            SchoolFamilyTaskEditorView(store: store)
+        }
         .refreshable { await store.load() }
     }
 
@@ -1151,9 +1512,10 @@ private struct SchoolTaskListView: View {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let searched = query.isEmpty ? store.hubTasks : SchoolHubLogic.searchTasks(store.hubTasks, query: query)
         return searched.filter { task in
+            if filter != .completed && task.status == "completed" { return false }
             switch filter {
             case .all:
-                return true
+                return task.status != "completed"
             case .dated:
                 return SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) != nil
             case .undated:
@@ -1161,6 +1523,8 @@ private struct SchoolTaskListView: View {
             case .verification:
                 let item = store.item(id: task.sourceItemId)
                 return SchoolHubLogic.evidence(forTask: task, sourceLoaded: item != nil, activeNames: store.studentNames, sourceText: item?.originalPlainText ?? item?.originalGerman ?? "") == .needsVerification
+            case .completed:
+                return task.status == "completed"
             }
         }
     }
