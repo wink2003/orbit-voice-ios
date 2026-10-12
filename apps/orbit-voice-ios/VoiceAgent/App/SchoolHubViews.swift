@@ -535,7 +535,10 @@ struct SchoolHubView: View {
             }
             .navigationDestination(for: Route.self) { route in
                 switch route {
-                case .inbox: SchoolInboxView()
+                // SchoolHubView owns the navigation stack for this route. The inbox
+                // must render its list directly so its letter links stay in the same
+                // Route path and SwiftUI never compares nested path element types.
+                case .inbox: SchoolInboxView(embeddedInNavigation: true, hubMode: true)
                 case .tasks: SchoolTaskListView(store: store).navigationTitle("Справи").navigationBarTitleDisplayMode(.inline)
                 case .calendar: SchoolWeekCalendarView(store: store).navigationTitle("Дати").navigationBarTitleDisplayMode(.inline)
                 case .brain: SchoolBrainView()
