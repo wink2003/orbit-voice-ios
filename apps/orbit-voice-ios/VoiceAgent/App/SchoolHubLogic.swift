@@ -88,6 +88,18 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     var actionID: String? = nil
     var status: String = "open"
     var planningDate: String? = nil
+    var identityStable: Bool = true
+}
+
+enum SchoolHubActionError: LocalizedError {
+    case unavailable
+    case unstableIdentity
+    var errorDescription: String? {
+        switch self {
+        case .unavailable: return "Стан справи ще не доступний у цьому середовищі."
+        case .unstableIdentity: return "Справу не можна безпечно синхронізувати: джерело не має стабільного ідентифікатора."
+        }
+    }
 }
 
 nonisolated struct SchoolHubLetter: Hashable, Identifiable {

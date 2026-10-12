@@ -298,14 +298,14 @@ struct NovaTodayFixture {
             orbitReadAt: nil, unread: true, attachments: [], events: [], threadId: nil, subscriptionId: nil, tasks: nil
         )
         let task = OrbitSchoolTask(
-            key: "prepare", title: "Перевірити інформацію в листі", action: "Відкрити оригінал",
+            key: "prepare", stableIdentity: true, title: "Перевірити інформацію в листі", action: "Відкрити оригінал",
             dueAt: ISO8601DateFormatter().string(from: now), endsAt: nil, allDay: false,
             importance: "normal", target: nil, confidence: 1, reason: "Synthetic fixture",
             location: nil, sourceItemId: item.id, sourceType: "demo", sourceExternalId: item.externalId
         )
         return NovaTodayFixture(
             calendar: [event], school: OrbitSchoolItemsResponse(items: [item], unreadCount: 1),
-            tasks: OrbitSchoolTasksResponse(from: "demo", to: "demo", tasks: [task], importantEvents: []), loadedAt: now
+            tasks: OrbitSchoolTasksResponse(from: "demo", to: "demo", coverage: "all", tasks: [task], importantEvents: []), loadedAt: now
         )
     }()
 #endif

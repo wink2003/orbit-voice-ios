@@ -63,14 +63,16 @@ final class SchoolHubStore {
                     sourceItemId: task.sourceItemId,
                     actionID: state?.id,
                     status: state?.status ?? "open",
-                    planningDate: state?.planningDate
+                    planningDate: state?.planningDate,
+                    identityStable: task.stableIdentity ?? true
                 )
             }
         } else {
             sourceTasks = items.flatMap { item in
-                (item.tasks ?? []).enumerated().compactMap { index, task -> SchoolHubTask? in
+                (item.tasks ?? []).compactMap { task -> SchoolHubTask? in
                     guard let title = (task.title ?? task.action), !title.isEmpty else { return nil }
-                    return SchoolHubTask(id: "\(item.id):\(task.key ?? String(index))", title: title, action: task.action, dueAt: task.dueAt, allDay: task.allDay ?? true, importance: task.importance, target: task.target, confidence: task.confidence, reason: task.reason, sourceItemId: item.id)
+                    guard let key = task.key, !key.isEmpty else { return nil }
+                    return SchoolHubTask(id: "\(item.id):\(key)", title: title, action: task.action, dueAt: task.dueAt, allDay: task.allDay ?? true, importance: task.importance, target: task.target, confidence: task.confidence, reason: task.reason, sourceItemId: item.id)
                 }
             }
         }
@@ -141,7 +143,7 @@ final class SchoolHubStore {
 
     private func loadTasks(_ token: Int) async {
         do {
-            let result = try await MainProductAPI.shared.schoolTasks()
+            let result = try await MainProductAPI.shared.schoolTasks(coverage: "all")
             guard gate.accepts(token) else { return }
             canonicalTasks = result.tasks
             tasksLoadedOnce = true
@@ -180,6 +182,8 @@ final class SchoolHubStore {
     }
 
     func setTaskStatus(_ task: SchoolHubTask, completed: Bool) async throws {
+        guard actionTasksPhase == .loaded else { throw SchoolHubActionError.unavailable }
+        guard task.identityStable else { throw SchoolHubActionError.unstableIdentity }
         let updated: OrbitSchoolActionTask
         if task.kind == "family", let actionID = task.actionID {
             updated = completed ? try await MainProductAPI.shared.completeSchoolActionTask(id: actionID) : try await MainProductAPI.shared.reopenSchoolActionTask(id: actionID)
@@ -188,7 +192,8 @@ final class SchoolHubStore {
             let sourceKey = task.id.hasPrefix("\(task.sourceItemId):") ? String(task.id.dropFirst(task.sourceItemId.count + 1)) : task.id
             updated = completed ? try await MainProductAPI.shared.completeSourceSchoolTask(itemId: task.sourceItemId, taskKey: sourceKey) : try await MainProductAPI.shared.reopenSourceSchoolTask(itemId: task.sourceItemId, taskKey: sourceKey)
         }
-        if let index = actionTasks.firstIndex(where: { $0.id == updated.id }) { actionTasks[index] = updated }
+        actionTasks.removeAll { $0.id == updated.id }
+        actionTasks.append(updated)
     }
 
     func createFamilyTask(title: String, description: String, planningDate: String?) async throws {
@@ -1113,6 +1118,7 @@ private struct SchoolTaskRow: View {
         NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: { row }
             .buttonStyle(.plain)
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if store.actionTasksPhase == .loaded && task.identityStable {
                 Button {
                     Task {
                         do { try await store.setTaskStatus(task, completed: task.status != "completed") }
@@ -1121,6 +1127,7 @@ private struct SchoolTaskRow: View {
                 } label: {
                     Label(task.status == "completed" ? "Відкрити" : "Готово", systemImage: task.status == "completed" ? "arrow.uturn.backward" : "checkmark")
                 }.tint(task.status == "completed" ? .orange : NovaTodayTokens.teal)
+                }
             }
         .alert("Стан справи", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
             Button("Гаразд") { actionError = nil }
@@ -1194,6 +1201,7 @@ private struct SchoolTaskDetailView: View {
                 }
             }
             Section {
+                if store.actionTasksPhase == .loaded && task.identityStable {
                 Button {
                     guard !updating else { return }
                     updating = true
@@ -1208,6 +1216,10 @@ private struct SchoolTaskDetailView: View {
                 .disabled(updating)
                 .frame(minHeight: OrbitSpacing.minTarget)
                 if updating { ProgressView().frame(maxWidth: .infinity) }
+                } else {
+                    Label(task.identityStable ? "Стан виконання стане доступним після підключення Orbit Actions." : "Стан не можна синхронізувати: у джерела немає стабільного ідентифікатора.", systemImage: "info.circle")
+                        .foregroundStyle(.secondary)
+                }
             } header: { Text("Стан Orbit") } footer: {
                 Text(task.kind == "family" ? "Це сімейна справа Orbit і не змінює шкільне джерело." : "Стан зберігається в Orbit окремо від Schulmanager.")
             }
@@ -1298,7 +1310,7 @@ private struct SchoolChecklistView: View {
         Task { do { _ = try await MainProductAPI.shared.addSchoolChecklistItem(checklistId: checklist.id, title: title); newItem = ""; await load() } catch { self.error = "Не вдалося додати пункт." } }
     }
     private func update(_ item: OrbitSchoolActionChecklistItem, completed: Bool) async {
-        do { _ = try await MainProductAPI.shared.updateSchoolChecklistItem(id: item.id, completed: completed); await load() } catch { self.error = "Не вдалося оновити пункт." }
+        do { _ = try await MainProductAPI.shared.updateSchoolChecklistItem(id: item.id, completed: completed, revision: item.revision); await load() } catch { self.error = "Не вдалося оновити пункт. Можливо, список змінився — оновіть його." }
     }
     private func progress(_ checklist: OrbitSchoolActionChecklist) -> String {
         let done = checklist.items.filter { $0.completedAt != nil }.count
@@ -1347,7 +1359,7 @@ private struct SchoolNotesView: View {
         Task { do { _ = try await MainProductAPI.shared.createSchoolActionNote(entityType: entityType, entityId: entityId, content: content); draft = ""; await load() } catch { self.error = "Не вдалося зберегти нотатку." } }
     }
     private func update(_ note: OrbitSchoolActionNote, content: String) async {
-        do { _ = try await MainProductAPI.shared.updateSchoolActionNote(id: note.id, content: content); await load() } catch { self.error = "Не вдалося оновити нотатку." }
+        do { _ = try await MainProductAPI.shared.updateSchoolActionNote(id: note.id, content: content, revision: note.revision); await load() } catch { self.error = "Не вдалося оновити нотатку. Можливо, її вже змінили." }
     }
 }
 
