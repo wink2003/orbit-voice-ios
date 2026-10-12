@@ -15,6 +15,7 @@ final class SchoolHubStore {
     var itemsLoadedOnce = false
     var calendarLoadedOnce = false
     var tasksLoadedOnce = false
+    var taskCoverage: String?
     var tasksPhase: Phase = .idle
     var actionTasksPhase: Phase = .idle
     var actionTasks: [OrbitSchoolActionTask] = []
@@ -24,7 +25,7 @@ final class SchoolHubStore {
     func reset(to key: String) {
         gate.reset(to: key)
         items = []; events = []; canonicalTasks = []; actionTasks = []; studentNames = []
-        itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false
+        itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false; taskCoverage = nil
         itemsPhase = .idle; calendarPhase = .idle; tasksPhase = .idle; actionTasksPhase = .idle
     }
 
@@ -146,6 +147,7 @@ final class SchoolHubStore {
             let result = try await MainProductAPI.shared.schoolTasks(coverage: "all")
             guard gate.accepts(token) else { return }
             canonicalTasks = result.tasks
+            taskCoverage = result.coverage
             tasksLoadedOnce = true
             tasksPhase = .loaded
         } catch is CancellationError {
@@ -917,13 +919,15 @@ private struct SchoolOverviewView: View {
     }
 
     @ViewBuilder private var statusSection: some View {
-        if store.itemsPhase == .failed || store.calendarPhase == .failed {
+        if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed || store.actionTasksPhase == .failed {
             Section {
                 SchoolNotice(text: staleText, systemImage: "exclamationmark.triangle.fill")
                 Button("Повторити") { Task { await store.load() } }.frame(minHeight: OrbitSpacing.minTarget)
             }
         } else if store.itemsPhase == .loading && !store.itemsLoadedOnce {
             Section { ProgressView("Завантажуємо школу…").frame(maxWidth: .infinity) }
+        } else if store.taskCoverage != nil && store.taskCoverage != "all" {
+            Section { SchoolNotice(text: "Показано обмежене вікно шкільних справ; частина далеких або безстрокових записів може бути поза ним.", systemImage: "calendar.badge.exclamationmark") }
         }
     }
 
