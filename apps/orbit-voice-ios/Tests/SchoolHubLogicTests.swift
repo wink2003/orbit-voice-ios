@@ -94,6 +94,20 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.searchTasks(tasks, query: "T3").map(\.id) == ["3"])
         precondition(SchoolHubLogic.searchScopeNote.contains("завантажених"))
 
+        // Unified chronology keeps source links and never invents dates for undated records.
+        let timelineLetters = [
+            SchoolHubLetter(id: "letter-1", type: "letter", title: "Поїздка", sender: "Schule", originalText: "Bitte", translation: nil, important: nil, unread: true, date: SchoolHubLogic.date(fromDayKey: "2026-10-09")),
+            SchoolHubLetter(id: "letter-2", type: "message", title: "Без дати", sender: "Schule", originalText: "Info", translation: nil, important: nil, unread: false, date: nil),
+        ]
+        let timeline = SchoolHubLogic.timeline(
+            letters: timelineLetters,
+            tasks: [task("due", due: "2026-10-10"), task("none", due: nil)],
+            events: [event("calendar-1", "2026-10-08", cls: "DIRECT"), event("hidden", "2026-10-08", cls: "UNRELATED")],
+            from: "2026-10-08", through: "2026-10-10"
+        )
+        precondition(timeline.map(\.id) == ["event:calendar-1:2026-10-08", "letter:letter-1", "task:due"])
+        precondition(timeline.allSatisfy { $0.sourceItemId != nil || $0.eventUID != nil })
+
         // Read state is independent of content: unread flag is carried through untouched
         precondition(letters.filter(\.unread).map(\.id) == ["l1"])
 

@@ -136,6 +136,38 @@ nonisolated struct SchoolTaskSchedule: Equatable {
     var undatedOlder: [SchoolHubTask] = []
 }
 
+nonisolated enum SchoolTimelineKind: String, Hashable {
+    case letter
+    case task
+    case event
+
+    var title: String {
+        switch self {
+        case .letter: "Повідомлення"
+        case .task: "Справа"
+        case .event: "Подія"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .letter: "envelope"
+        case .task: "checklist"
+        case .event: "calendar"
+        }
+    }
+}
+
+nonisolated struct SchoolTimelineEntry: Hashable, Identifiable {
+    let id: String
+    let day: String
+    let title: String
+    let detail: String
+    let kind: SchoolTimelineKind
+    let sourceItemId: String?
+    let eventUID: String?
+}
+
 nonisolated enum SchoolHubLogic {
     static let schoolTimeZone = TimeZone(identifier: "Europe/Berlin")!
     static let olderUndatedDays = 14
@@ -340,6 +372,50 @@ nonisolated enum SchoolHubLogic {
 
     static func preparation(for day: String, tasks: [SchoolHubTask]) -> [SchoolHubTask] {
         self.tasks(tasks, dueOn: day).filter { !($0.action ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
+    /// Builds a bounded, source-linked chronology from records already loaded by
+    /// the authorized client. It never invents dates for undated records.
+    static func timeline(
+        letters: [SchoolHubLetter],
+        tasks: [SchoolHubTask],
+        events: [SchoolHubEvent],
+        from: String,
+        through: String
+    ) -> [SchoolTimelineEntry] {
+        var result: [SchoolTimelineEntry] = []
+        for letter in letters {
+            guard let date = letter.date else { continue }
+            let day = dayKey(of: date)
+            guard day >= from, day <= through else { continue }
+            result.append(SchoolTimelineEntry(
+                id: "letter:\(letter.id)", day: day, title: letter.title.isEmpty ? "Шкільне повідомлення" : letter.title,
+                detail: letter.sender.isEmpty ? "Оригінал і переклад доступні" : letter.sender,
+                kind: .letter, sourceItemId: letter.id, eventUID: nil
+            ))
+        }
+        for task in tasks {
+            guard let day = dayKey(for: task.dueAt, allDay: task.allDay), day >= from, day <= through else { continue }
+            result.append(SchoolTimelineEntry(
+                id: "task:\(task.id)", day: day, title: task.title,
+                detail: task.action?.isEmpty == false ? task.action! : "Дія з джерела Schulmanager",
+                kind: .task, sourceItemId: task.sourceItemId, eventUID: nil
+            ))
+        }
+        for event in events {
+            guard let day = dayKey(for: event.startsAt, allDay: event.allDay), day >= from, day <= through else { continue }
+            guard isDayRelevant(event) else { continue }
+            result.append(SchoolTimelineEntry(
+                id: "event:\(event.uid):\(day)", day: day, title: event.title,
+                detail: event.allDay ? "Увесь день" : "Шкільний календар",
+                kind: .event, sourceItemId: nil, eventUID: event.uid
+            ))
+        }
+        return result.sorted { lhs, rhs in
+            if lhs.day != rhs.day { return lhs.day < rhs.day }
+            if lhs.kind == rhs.kind { return lhs.title.localizedCompare(rhs.title) == .orderedAscending }
+            return lhs.kind.rawValue < rhs.kind.rawValue
+        }
     }
 }
 

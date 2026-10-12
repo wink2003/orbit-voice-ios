@@ -512,7 +512,7 @@ private struct LegacySchoolHubView: View {
 /// Parent-focused School command center. It owns only presentation and routes;
 /// all school records continue to come from the existing authorized API client.
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, brain, teams, letter(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, letter(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -541,6 +541,9 @@ struct SchoolHubView: View {
                 case .inbox: SchoolInboxView(embeddedInNavigation: true, hubMode: true)
                 case .tasks: SchoolTaskListView(store: store).navigationTitle("Справи").navigationBarTitleDisplayMode(.inline)
                 case .calendar: SchoolWeekCalendarView(store: store).navigationTitle("Дати").navigationBarTitleDisplayMode(.inline)
+                case .timeline: SchoolTimelineView(store: store)
+                case .search: SchoolUnifiedSearchView(store: store)
+                case .briefing: SchoolTasksView()
                 case .brain: SchoolBrainView()
                 case .teams: SchoolTeamsFutureView()
                 case let .letter(id): SchoolDetailLoaderView(itemID: id)
@@ -579,6 +582,7 @@ private struct SchoolCommandCenter: View {
                 header
                 if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed { availabilityNotice }
                 prioritySection
+                preparationSection
                 routesSection
                 timelineSection
                 latestSection
@@ -592,8 +596,13 @@ private struct SchoolCommandCenter: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { open(.brain) } label: { Image(systemName: "sparkles") }
-                    .accessibilityLabel("Запитати Orbit про школу")
+                Menu {
+                    Button { open(.search) } label: { Label("Знайти у школі", systemImage: "magnifyingglass") }
+                    Button { open(.timeline) } label: { Label("Хронологія", systemImage: "list.bullet.indent") }
+                    Button { open(.briefing) } label: { Label("Огляд від Orbit", systemImage: "sparkles") }
+                    Button { open(.brain) } label: { Label("Запитати Orbit", systemImage: "bubble.left.and.text.bubble.right") }
+                } label: { Image(systemName: "ellipsis.circle") }
+                    .accessibilityLabel("Інструменти школи")
             }
         }
         .refreshable { await store.load() }
@@ -649,6 +658,36 @@ private struct SchoolCommandCenter: View {
             routeCard("Вхідні", detail: unread == 0 ? "Усе прочитано" : "\(unread) нових", icon: "envelope", tint: NovaTodayTokens.teal, route: .inbox)
             routeCard("Справи", detail: taskCountText, icon: "checklist", tint: NovaTodayTokens.coral, route: .tasks)
             routeCard("Дати", detail: upcoming.isEmpty ? "Немає далі" : "\(upcoming.count) подій", icon: "calendar", tint: NovaTodayTokens.indigo, route: .calendar)
+        }
+    }
+
+    @ViewBuilder private var preparationSection: some View {
+        let today = SchoolHubLogic.dayKey(of: now)
+        let tomorrow = SchoolHubLogic.addDays(1, to: today) ?? today
+        let preparation = SchoolHubLogic.preparation(for: tomorrow, tasks: store.hubTasks)
+        if !preparation.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    sectionTitle("Підготуватися", detail: "Лише дії, які вказані у шкільному джерелі")
+                    Spacer()
+                    Button("Усі справи") { open(.tasks) }.font(.footnote.weight(.semibold))
+                }
+                NovaSurface(tint: NovaTodayTokens.coral) {
+                    ForEach(Array(preparation.prefix(3).enumerated()), id: \.element.id) { index, task in
+                        Button { open(.tasks) } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: "circle.dotted").foregroundStyle(NovaTodayTokens.coral)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(task.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                                    Text(task.action ?? "Дія з джерела Schulmanager").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }.buttonStyle(.plain)
+                        if index < min(preparation.count, 3) - 1 { Divider().padding(.leading, 30) }
+                    }
+                }
+            }
         }
     }
 
@@ -1300,6 +1339,158 @@ struct SchoolEventDetailView: View {
             let result = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: event.uid, confirm: true)
             message = result.duplicate == true ? "Цю подію вже додано." : (result.created ? "Подію додано до сімейного календаря." : "Не вдалося додати подію.")
         } catch { message = "Не вдалося додати подію." }
+    }
+}
+
+// MARK: - School Life Manager views
+
+private struct SchoolTimelineView: View {
+    let store: SchoolHubStore
+    @State private var horizon = 14
+
+    private var today: String { SchoolHubLogic.dayKey(of: Date()) }
+    private var through: String { SchoolHubLogic.addDays(horizon, to: today) ?? today }
+    private var entries: [SchoolTimelineEntry] {
+        SchoolHubLogic.timeline(letters: store.letters, tasks: store.hubTasks, events: store.hubEvents, from: today, through: through)
+    }
+
+    var body: some View {
+        List {
+            Section {
+                SchoolNotice(text: "Хронологія об’єднує лише завантажені записи. Кожен рядок зберігає посилання на своє джерело.", systemImage: "link")
+            }
+            Picker("Період", selection: $horizon) {
+                Text("14 днів").tag(14)
+                Text("30 днів").tag(30)
+                Text("90 днів").tag(90)
+            }
+            .pickerStyle(.segmented)
+            if entries.isEmpty {
+                ContentUnavailableView("Хронологія порожня", systemImage: "list.bullet.indent", description: Text("Немає датованих шкільних записів у вибраному періоді."))
+            } else {
+                ForEach(Dictionary(grouping: entries, by: \.day).keys.sorted(), id: \.self) { day in
+                    Section(SchoolHubFormat.long(day)) {
+                        ForEach(Dictionary(grouping: entries, by: \.day)[day] ?? []) { entry in
+                            timelineLink(entry)
+                        }
+                    }
+                }
+            }
+            let undated = store.hubTasks.filter { SchoolHubLogic.dayKey(for: $0.dueAt, allDay: $0.allDay) == nil }
+            if !undated.isEmpty {
+                Section("Без підтвердженої дати") {
+                    Text("Ці справи залишаються видимими, але Orbit не призначає їм дату самостійно.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    ForEach(undated) { task in
+                        NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: {
+                            Label(task.title, systemImage: "calendar.badge.questionmark")
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Хронологія")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder private func timelineLink(_ entry: SchoolTimelineEntry) -> some View {
+        switch entry.kind {
+        case .letter:
+            if let id = entry.sourceItemId, let item = store.item(id: id) {
+                NavigationLink { SchoolDetailView(item: item) } label: { timelineRow(entry) }
+            } else if let id = entry.sourceItemId {
+                NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { timelineRow(entry) }
+            }
+        case .task:
+            if let task = store.hubTasks.first(where: { $0.id == String(entry.id.dropFirst(5)) }) {
+                NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: { timelineRow(entry) }
+            } else { timelineRow(entry) }
+        case .event:
+            if let uid = entry.eventUID, let event = store.calendarEvent(uid: uid) {
+                NavigationLink { SchoolEventDetailView(event: event) } label: { timelineRow(entry) }
+            } else { timelineRow(entry) }
+        }
+    }
+
+    private func timelineRow(_ entry: SchoolTimelineEntry) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: entry.kind.systemImage).foregroundStyle(entry.kind == .task ? NovaTodayTokens.coral : (entry.kind == .event ? NovaTodayTokens.indigo : NovaTodayTokens.teal)).frame(width: 22)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                Text(entry.detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+        }
+        .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+    }
+}
+
+private struct SchoolUnifiedSearchView: View {
+    let store: SchoolHubStore
+    @State private var query = ""
+    @State private var kind: SearchKind = .all
+
+    private enum SearchKind: String, CaseIterable, Identifiable {
+        case all, letters, tasks, events
+        var id: String { rawValue }
+        var title: String {
+            switch self { case .all: "Усе"; case .letters: "Листи"; case .tasks: "Справи"; case .events: "Події" }
+        }
+    }
+
+    private var letters: [SchoolHubLetter] { kind == .tasks || kind == .events ? [] : SchoolHubLogic.searchLetters(store.letters, query: query) }
+    private var tasks: [SchoolHubTask] { kind == .letters || kind == .events ? [] : SchoolHubLogic.searchTasks(store.hubTasks, query: query) }
+    private var events: [SchoolHubEvent] { kind == .letters || kind == .tasks ? [] : SchoolHubLogic.searchEvents(store.hubEvents, query: query) }
+
+    var body: some View {
+        List {
+            Section { SchoolNotice(text: SchoolHubLogic.searchScopeNote + ". Пошук не заявляє повну історію, якщо сервер не повернув її в завантаженому вікні.", systemImage: "magnifyingglass") }
+            Picker("Тип", selection: $kind) { ForEach(SearchKind.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                ContentUnavailableView("Пошук школи", systemImage: "magnifyingglass", description: Text("Знайдіть лист, справу або подію серед авторизованих даних."))
+            } else if letters.isEmpty && tasks.isEmpty && events.isEmpty {
+                ContentUnavailableView.search(text: query)
+            } else {
+                if !letters.isEmpty {
+                    Section("Листи й повідомлення · \(letters.count)") {
+                        ForEach(letters) { letter in
+                            if let item = store.item(id: letter.id) { NavigationLink { SchoolDetailView(item: item) } label: { searchLetterRow(letter) } }
+                        }
+                    }
+                }
+                if !tasks.isEmpty {
+                    Section("Справи · \(tasks.count)") {
+                        ForEach(tasks) { task in NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: { searchTaskRow(task) } }
+                    }
+                }
+                if !events.isEmpty {
+                    Section("Події · \(events.count)") {
+                        ForEach(events) { event in
+                            if let source = store.calendarEvent(uid: event.uid) { NavigationLink { SchoolEventDetailView(event: source) } label: { SchoolEventRow(event: event, showDay: true) } }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Знайти у школі")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "Листи, справи, події")
+    }
+
+    private func searchLetterRow(_ letter: SchoolHubLetter) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(letter.title.isEmpty ? (letter.type == "letter" ? "Лист" : "Повідомлення") : letter.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+            Text([letter.sender.isEmpty ? nil : letter.sender, letter.date?.formatted(date: .abbreviated, time: .omitted)].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+        }.frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+    }
+
+    private func searchTaskRow(_ task: SchoolHubTask) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checklist").foregroundStyle(NovaTodayTokens.coral)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                Text(task.dueAt.flatMap { SchoolHubLogic.dayKey(for: $0, allDay: task.allDay).map(SchoolHubFormat.shortDay) } ?? "Без підтвердженої дати").font(.caption).foregroundStyle(.secondary)
+            }
+        }.frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
     }
 }
 
