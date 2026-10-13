@@ -188,6 +188,55 @@ struct SchoolHubLogicTests {
         precondition(SchoolActionsCapability.from(error: OrbitHTTPResponseFailure(status: 404, code: "not_found")) == .unavailable)
         precondition(SchoolActionsCapability.available.canMutate)
 
+        // School Tasks v2: sections, filters and one definition of "open".
+        do {
+            func t(_ id: String, due: String?, status: String = "open", source: String = "s1", key: String? = nil) -> SchoolHubTask {
+                var value = task(id, due: due, source: source)
+                value.status = status
+                return value
+            }
+            let now = Date()
+            let today = "2026-10-13"
+            let tasks = [
+                t("overdue", due: "2026-10-01"),
+                t("ancient", due: "2026-01-01"),
+                t("soon", due: "2026-10-20"),
+                t("edge", due: "2026-10-27"),
+                t("later", due: "2026-12-01"),
+                t("undated", due: nil),
+                t("done", due: "2026-10-05", status: "completed"),
+                t("doneUndated", due: nil, status: "completed"),
+            ]
+            let counts = SchoolHubLogic.taskCounts(tasks)
+            precondition(counts.open == 6 && counts.completed == 2 && counts.all == 8)
+            let open = SchoolHubLogic.taskSections(tasks, filter: .open, today: today, sourceDates: [:], now: now)
+            precondition(open.overdue.map(\.id) == ["overdue"] && open.overdueOlder.map(\.id) == ["ancient"])
+            precondition(open.soon.map(\.id) == ["soon", "edge"] && open.later.map(\.id) == ["later"])
+            precondition(open.undated.map(\.id) == ["undated"] && open.completed.isEmpty)
+            precondition(open.visibleCount == counts.open, "open filter shows exactly the open count")
+            let done = SchoolHubLogic.taskSections(tasks, filter: .completed, today: today, sourceDates: [:], now: now)
+            precondition(done.completed.map(\.id) == ["done", "doneUndated"] && done.visibleCount == counts.completed)
+            let every = SchoolHubLogic.taskSections(tasks, filter: .all, today: today, sourceDates: [:], now: now)
+            precondition(every.visibleCount == counts.all)
+            // equal titles from different sources stay separate rows
+            let twins = [t("a", due: nil, source: "s1"), t("b", due: nil, source: "s2")]
+            precondition(SchoolHubLogic.taskSections(twins, filter: .open, today: today, sourceDates: [:], now: now).undated.count == 2)
+            // the user-facing count follows the search subset, not a hidden total
+            precondition(SchoolHubLogic.taskCounts(SchoolHubLogic.searchTasks(tasks, query: "Tsoon")).open == 1)
+
+            // calendar prefill: known deadline pre-fills, undated requires user choice
+            precondition(SchoolHubLogic.calendarPrefillDay(for: t("x", due: "2026-10-20")) == "2026-10-20")
+            precondition(SchoolHubLogic.calendarPrefillDay(for: t("x", due: nil)) == nil)
+
+            // completion key matches the source completion API (`<itemId>:<taskKey>`)
+            let keyed = SchoolHubTask(id: "item1:item1:form", title: "T", action: nil, dueAt: nil, allDay: true, importance: "high", target: nil, confidence: 1, reason: nil, sourceItemId: "item1")
+            precondition(keyed.sourceTaskKey == "item1:form" && keyed.isHighPriority && keyed.canAddToCalendar)
+            var family = keyed; family.kind = "family"
+            precondition(!family.canAddToCalendar)
+            var unstable = keyed; unstable.identityStable = false
+            precondition(!unstable.canAddToCalendar)
+        }
+
         print("school hub logic tests passed")
     }
 }

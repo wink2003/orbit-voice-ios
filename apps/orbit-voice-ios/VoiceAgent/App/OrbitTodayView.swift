@@ -301,11 +301,12 @@ struct NovaTodayFixture {
             key: "prepare", stableIdentity: true, title: "Перевірити інформацію в листі", action: "Відкрити оригінал",
             dueAt: ISO8601DateFormatter().string(from: now), endsAt: nil, allDay: false,
             importance: "normal", target: nil, confidence: 1, reason: "Synthetic fixture",
-            location: nil, sourceItemId: item.id, sourceType: "demo", sourceExternalId: item.externalId
+            location: nil, sourceItemId: item.id, sourceType: "demo", sourceExternalId: item.externalId,
+            bucket: nil, status: nil, completedAt: nil, actionTaskId: nil, calendarEventId: nil
         )
         return NovaTodayFixture(
             calendar: [event], school: OrbitSchoolItemsResponse(items: [item], unreadCount: 1),
-            tasks: OrbitSchoolTasksResponse(from: "demo", to: "demo", coverage: "all", truncated: false, tasks: [task], importantEvents: []), loadedAt: now
+            tasks: OrbitSchoolTasksResponse(from: "demo", to: "demo", coverage: "all", truncated: false, complete: true, completionState: nil, tasks: [task], importantEvents: []), loadedAt: now
         )
     }()
 #endif

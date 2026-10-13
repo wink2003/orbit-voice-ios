@@ -89,6 +89,7 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     var status: String = "open"
     var planningDate: String? = nil
     var identityStable: Bool = true
+    var calendarEventId: String? = nil
 }
 
 enum SchoolHubActionError: LocalizedError {
@@ -596,4 +597,100 @@ struct SchoolHubLoadGate: Equatable {
     func token() -> Int? { scopeKey == nil ? nil : generation }
 
     func accepts(_ token: Int?) -> Bool { token != nil && token == generation }
+}
+
+
+// MARK: - School Tasks v2 (list sections, filters, counts)
+
+nonisolated enum SchoolTaskFilter: String, CaseIterable, Identifiable {
+    case open, completed, all
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .open: "Відкриті"
+        case .completed: "Виконані"
+        case .all: "Усі"
+        }
+    }
+}
+
+nonisolated struct SchoolTaskSections: Equatable {
+    var overdue: [SchoolHubTask] = []
+    var overdueOlder: [SchoolHubTask] = []
+    var soon: [SchoolHubTask] = []
+    var later: [SchoolHubTask] = []
+    var undated: [SchoolHubTask] = []
+    var undatedOlder: [SchoolHubTask] = []
+    var completed: [SchoolHubTask] = []
+
+    var visibleCount: Int { overdue.count + overdueOlder.count + soon.count + later.count + undated.count + undatedOlder.count + completed.count }
+}
+
+nonisolated struct SchoolTaskCounts: Equatable {
+    var open = 0
+    var completed = 0
+    var all: Int { open + completed }
+}
+
+extension SchoolHubLogic {
+    static let soonDays = 14
+    static let overdueOlderDays = 60
+
+    static func isCompleted(_ task: SchoolHubTask) -> Bool { task.status == "completed" }
+
+    /// The single definition of "open" used by the Tasks screen and the School Home count.
+    static func taskCounts(_ tasks: [SchoolHubTask]) -> SchoolTaskCounts {
+        var counts = SchoolTaskCounts()
+        for task in tasks { if isCompleted(task) { counts.completed += 1 } else { counts.open += 1 } }
+        return counts
+    }
+
+    static func taskSections(_ tasks: [SchoolHubTask], filter: SchoolTaskFilter, today: String, sourceDates: [String: Date], now: Date) -> SchoolTaskSections {
+        var sections = SchoolTaskSections()
+        let showOpen = filter != .completed
+        let showCompleted = filter != .open
+        let open = tasks.filter { !isCompleted($0) }
+        if showOpen {
+            let groups = groupTasks(open, today: today, sourceDates: sourceDates, now: now)
+            let soonEnd = addDays(soonDays, to: today) ?? today
+            let overdueCutoff = addDays(-overdueOlderDays, to: today) ?? today
+            for task in groups.overdue {
+                if let due = dayKey(for: task.dueAt, allDay: task.allDay), due < overdueCutoff { sections.overdueOlder.append(task) } else { sections.overdue.append(task) }
+            }
+            for task in groups.dated {
+                guard let due = dayKey(for: task.dueAt, allDay: task.allDay) else { continue }
+                if due <= soonEnd { sections.soon.append(task) } else { sections.later.append(task) }
+            }
+            sections.undated = groups.undated
+            sections.undatedOlder = groups.undatedOlder
+        }
+        if showCompleted {
+            sections.completed = tasks.filter(isCompleted).sorted { stableOrder($0, $1) }
+        }
+        return sections
+    }
+
+    private static func stableOrder(_ a: SchoolHubTask, _ b: SchoolHubTask) -> Bool {
+        let (da, db) = (a.dueAt ?? "9999", b.dueAt ?? "9999")
+        return da == db ? a.id < b.id : da < db
+    }
+
+    /// A known deadline pre-fills the calendar date (explained as a deadline).
+    /// Undated tasks return nil: the user must choose a date.
+    static func calendarPrefillDay(for task: SchoolHubTask) -> String? {
+        dayKey(for: task.dueAt, allDay: task.allDay)
+    }
+}
+
+extension SchoolHubTask {
+    /// Key as understood by the School Actions / calendar-proposal APIs (`<itemId>:<taskKey>`).
+    var sourceTaskKey: String {
+        sourceItemId.isEmpty ? id : (id.hasPrefix("\(sourceItemId):") ? String(id.dropFirst(sourceItemId.count + 1)) : id)
+    }
+    var isHighPriority: Bool {
+        guard let value = importance?.lowercased() else { return false }
+        return ["high", "important", "critical", "urgent", "високий", "важливо", "важливий"].contains(value)
+    }
+    /// Calendar creation needs a server-resolvable source task with a stable identity.
+    var canAddToCalendar: Bool { kind == "source" && identityStable && !sourceItemId.isEmpty }
 }
