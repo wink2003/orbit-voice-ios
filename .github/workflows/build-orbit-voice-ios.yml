@@ -128,10 +128,22 @@ jobs:
             -o "$RUNNER_TEMP/orbit-school-brain-chat-model-tests"
           "$RUNNER_TEMP/orbit-school-brain-chat-model-tests"
 
+      - name: Test School Brain Markdown rendering
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            -parse-as-library \
+            apps/orbit-voice-ios/VoiceAgent/App/SchoolBrainMarkdown.swift \
+            apps/orbit-voice-ios/Tests/SchoolBrainMarkdownTests.swift \
+            -o "$RUNNER_TEMP/orbit-school-brain-markdown-tests"
+          "$RUNNER_TEMP/orbit-school-brain-markdown-tests"
+
       - name: School Brain view layout contract
         run: |
           set -euo pipefail
           view=apps/orbit-voice-ios/VoiceAgent/App/SchoolBrainChatView.swift
+          grep -q 'SchoolBrainMarkdownView(blocks:' "$view"
+          grep -q 'SchoolBrainMarkdown.blocks(from:' "$view"
           grep -q 'safeAreaInset(edge: .bottom' "$view"
           grep -q 'Запитайте про школу…' "$view"
           grep -q 'textSelection(.enabled)' "$view"

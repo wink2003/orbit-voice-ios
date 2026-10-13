@@ -35,7 +35,7 @@ struct SchoolBrainView: View {
     @ViewBuilder private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 12) {
+                LazyVStack(spacing: 14) {
                     switch model.loadState {
                     case .loading where model.messages.isEmpty:
                         ProgressView("Завантаження розмови…").frame(maxWidth: .infinity).padding(.top, 40)
@@ -76,24 +76,74 @@ private struct SchoolBrainBubble: View {
     private var isUser: Bool { message.role == "user" }
 
     var body: some View {
+        let blocks: [SchoolBrainMarkdown.Block] = isUser ? [] : SchoolBrainMarkdown.blocks(from: message.content)
         HStack(alignment: .top, spacing: 0) {
             if isUser { Spacer(minLength: 44) }
-            VStack(alignment: .leading, spacing: 8) {
-                Text(message.content)
-                    .font(.body)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .foregroundStyle(isUser ? Color.white : Color.primary)
-                    .accessibilityLabel("\(isUser ? "Ви" : "Orbit"): \(message.content)")
+            VStack(alignment: .leading, spacing: 10) {
+                if isUser {
+                    Text(message.content)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(Color.white)
+                        .accessibilityLabel("Ви: \(message.content)")
+                } else {
+                    SchoolBrainMarkdownView(blocks: blocks, spokenText: SchoolBrainMarkdown.plainText(blocks))
+                }
                 if !sources.isEmpty { SchoolBrainSourcesSection(sources: sources) }
             }
+            .frame(maxWidth: 560, alignment: .leading)
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
             .background(isUser ? NovaTodayTokens.indigo : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .contextMenu { Button("Копіювати", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.content } }
             if !isUser { Spacer(minLength: 44) }
         }
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+    }
+}
+
+private struct SchoolBrainMarkdownView: View {
+    let blocks: [SchoolBrainMarkdown.Block]
+    let spokenText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                row(for: block)
+            }
+        }
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Orbit: \(spokenText)")
+    }
+
+    @ViewBuilder private func row(for block: SchoolBrainMarkdown.Block) -> some View {
+        switch block {
+        case let .paragraph(text):
+            Text(text).lineSpacing(3)
+        case let .heading(text):
+            Text(text).font(.headline).lineSpacing(2).padding(.top, 2)
+        case let .bullet(level, text):
+            listItem(marker: "•", level: level, text: text)
+        case let .numbered(level, marker, text):
+            listItem(marker: marker, level: level, text: text)
+        case let .code(code):
+            Text(code)
+                .font(.system(.callout, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Color(uiColor: .tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private func listItem(marker: String, level: Int, text: AttributedString) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(marker).foregroundStyle(.secondary).fixedSize()
+            Text(text).lineSpacing(3)
+        }
+        .padding(.leading, CGFloat(level) * 16)
     }
 }
 
@@ -207,10 +257,11 @@ private struct SchoolBrainStarterRow: View {
             HStack(spacing: 8) {
                 ForEach(SchoolBrainStarters.all, id: \.self) { value in
                     Button { choose(value) } label: {
-                        Text(value).font(.footnote).lineLimit(1)
-                            .padding(.horizontal, 12).frame(minHeight: 34)
-                            .background(NovaTodayTokens.indigo.opacity(0.10), in: Capsule())
-                            .foregroundStyle(NovaTodayTokens.indigo)
+                        Text(value).font(.subheadline.weight(.medium)).lineLimit(1)
+                            .padding(.horizontal, 14).frame(minHeight: 44)
+                            .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                            .overlay(Capsule().strokeBorder(NovaTodayTokens.indigo.opacity(0.45), lineWidth: 1))
+                            .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Додає питання в поле вводу")
