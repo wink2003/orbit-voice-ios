@@ -117,6 +117,29 @@ jobs:
             -o "$RUNNER_TEMP/orbit-school-brain-message-decoding-tests"
           "$RUNNER_TEMP/orbit-school-brain-message-decoding-tests"
 
+      - name: Test School Brain chat model
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            -parse-as-library \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolBrainMessage.swift \
+            apps/orbit-voice-ios/VoiceAgent/App/SchoolBrainChatModel.swift \
+            apps/orbit-voice-ios/Tests/SchoolBrainChatModelTests.swift \
+            -o "$RUNNER_TEMP/orbit-school-brain-chat-model-tests"
+          "$RUNNER_TEMP/orbit-school-brain-chat-model-tests"
+
+      - name: School Brain view layout contract
+        run: |
+          set -euo pipefail
+          view=apps/orbit-voice-ios/VoiceAgent/App/SchoolBrainChatView.swift
+          grep -q 'safeAreaInset(edge: .bottom' "$view"
+          grep -q 'Запитайте про школу…' "$view"
+          grep -q 'textSelection(.enabled)' "$view"
+          grep -q 'Джерела · ' "$view"
+          grep -q 'novaDockTopY' "$view"
+          ! grep -nE '\.offset\(|UIScreen|\.frame\(height: *[0-9]{3}' "$view"
+          grep -q 'SchoolBrainView()' apps/orbit-voice-ios/VoiceAgent/App/SchoolHubViews.swift
+
       - name: Test Agent run reconciliation
         run: |
           set -euo pipefail

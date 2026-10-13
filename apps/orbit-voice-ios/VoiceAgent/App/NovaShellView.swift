@@ -4,12 +4,15 @@ import SwiftUI
 /// Existing destination views retain their stores and detail routes.
 struct NovaShellView: View {
     @Binding var selection: OrbitMainTab
+    @State private var dockTopY: CGFloat = .infinity
 
     var body: some View {
         destination
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 NovaDock(selection: $selection)
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { dockTopY = $0 }
             }
+            .environment(\.novaDockTopY, dockTopY)
             .onReceive(NotificationCenter.default.publisher(for: .orbitSchoolNotificationTapped)) { _ in
                 selection = .school
             }
@@ -71,5 +74,15 @@ private struct NovaDock: View {
         .padding(.bottom, 8)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Rectangle().fill(NovaTodayTokens.indigo.opacity(0.10)).frame(height: 1) }
+    }
+}
+
+private struct NovaDockTopYKey: EnvironmentKey { static let defaultValue: CGFloat = .infinity }
+
+extension EnvironmentValues {
+    /// Top edge of the Nova dock in global coordinates; `.infinity` when no dock is shown.
+    var novaDockTopY: CGFloat {
+        get { self[NovaDockTopYKey.self] }
+        set { self[NovaDockTopYKey.self] = newValue }
     }
 }

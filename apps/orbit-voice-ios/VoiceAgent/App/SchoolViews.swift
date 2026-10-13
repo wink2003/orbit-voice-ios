@@ -144,36 +144,6 @@ struct SchoolInboxView: View {
     private func scheduleDiagnosticNotification() async { notificationDiagnosticMessage = await SchoolNotificationCoordinator.shared.scheduleDiagnostic() ? "Тестове сповіщення з’явиться приблизно через 5 секунд." : "Не вдалося запланувати тестове сповіщення." }
 }
 
-struct SchoolBrainView: View {
-    @State private var messages: [OrbitSchoolBrainMessage] = []
-    @State private var draft = ""
-    @State private var loading = false
-    @State private var error: String?
-    @State private var requestGeneration = 0
-    private let starters = ["Що нового?", "Що нам треба зробити?", "Що важливого цього тижня?", "Що стосується 5F?"]
-    var body: some View {
-        VStack(spacing: 0) {
-            if messages.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(starters, id: \.self) { value in Button(value) { draft = value } .buttonStyle(.bordered) } }.padding() } }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(messages) { message in
-                            VStack(alignment: .leading, spacing: 6) { Text(message.role == "user" ? "Ви" : "Orbit School Brain").font(.caption).foregroundStyle(.secondary); Text(message.content).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10).background(message.role == "user" ? Color.blue.opacity(0.12) : Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 12)); if message.role == "assistant", !message.sourceRefs.isEmpty { VStack(alignment: .leading, spacing: 4) { Text("Джерела").font(.caption.weight(.semibold)).foregroundStyle(.secondary); ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(Array(message.sourceRefs.enumerated()), id: \.offset) { _, ref in if let id = ref["id"], let type = ref["type"], ["letter", "message"].contains(type) { NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { Label(type == "letter" ? "Лист" : "Повідомлення", systemImage: type == "letter" ? "envelope" : "message") }.buttonStyle(.bordered) } } } } } }
-                            }.id(message.id)
-                        }
-                    }.padding()
-                }
-                .onChange(of: messages.count) { _, _ in scrollToLatest(using: proxy) }
-                .onAppear { scrollToLatest(using: proxy) }
-            }
-            HStack(alignment: .bottom) { TextField("Запитайте про школу…", text: $draft, axis: .vertical).textFieldStyle(.roundedBorder); Button { Task { await send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }.disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || loading) }.padding()
-        }.navigationTitle("Запитати про школу").task { await load() }.alert("School Brain", isPresented: SchoolBrainRequestState.alertBinding(error: $error)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
-    }
-    private func scrollToLatest(using proxy: ScrollViewProxy) { guard let latest = messages.last else { return }; DispatchQueue.main.async { withAnimation { proxy.scrollTo(latest.id, anchor: .bottom) } } }
-    private func load() async { do { messages = try await MainProductAPI.shared.schoolBrainConversation().messages } catch { self.error = "Не вдалося завантажити розмову." } }
-    private func send() async { let value = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !value.isEmpty, !loading else { return }; draft = ""; requestGeneration += 1; let generation = requestGeneration; SchoolBrainRequestState.beginRequest(error: &error); loading = true; defer { if generation == requestGeneration { loading = false } }; do { let reply = try await MainProductAPI.shared.askSchool(value); guard generation == requestGeneration else { return }; messages.append(OrbitSchoolBrainMessage(id: UUID().uuidString, role: "user", content: value, sourceRefs: [], createdAt: .now)); messages.append(reply); SchoolBrainRequestState.completedSuccessfully(error: &error) } catch is CancellationError { return } catch { guard generation == requestGeneration else { return }; self.error = "Не вдалося отримати відповідь School Brain." } }
-}
-
 struct SchoolCalendarView: View {
     @State private var events: [OrbitSchulmanagerCalendarEvent] = []
     @State private var scope = "for-us"
