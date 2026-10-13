@@ -159,6 +159,24 @@ nonisolated struct SchoolHubLetter: Hashable, Identifiable {
     let date: Date?
 }
 
+nonisolated enum SchoolHomePriorityKind: Hashable {
+    case task
+    case message
+    case event
+}
+
+/// A bounded, source-linked item for the School Home. This is presentation
+/// metadata only; it never changes a School or Orbit record.
+nonisolated struct SchoolHomePriority: Hashable, Identifiable {
+    let id: String
+    let kind: SchoolHomePriorityKind
+    let title: String
+    let detail: String
+    let taskID: String?
+    let messageID: String?
+    let eventUID: String?
+}
+
 nonisolated enum SchoolEvidence: String {
     case sourceRecord
     case interpretation
@@ -433,6 +451,84 @@ nonisolated enum SchoolHubLogic {
 
     static func preparation(for day: String, tasks: [SchoolHubTask]) -> [SchoolHubTask] {
         self.tasks(tasks, dueOn: day).filter { !($0.action ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
+    // MARK: School Home
+
+    /// Orders only evidence-backed records that can help a parent decide what
+    /// to open next. Family tasks are omitted until their capability is known
+    /// to be usable; source-derived tasks remain read-only and visible.
+    static func homePriorities(
+        tasks: [SchoolHubTask],
+        letters: [SchoolHubLetter],
+        events: [SchoolHubEvent],
+        today: String,
+        sourceDates: [String: Date],
+        now: Date,
+        actionsAvailable: Bool,
+        limit: Int = 3
+    ) -> [SchoolHomePriority] {
+        let usableTasks = tasks.filter { $0.kind != "family" || actionsAvailable }
+        let groups = groupTasks(usableTasks, today: today, sourceDates: sourceDates, now: now)
+        let horizon = addDays(7, to: today) ?? today
+        let dueSoon = groups.dated.filter { task in
+            guard let key = dayKey(for: task.dueAt, allDay: task.allDay) else { return false }
+            return key <= horizon
+        }
+
+        var candidates: [SchoolHomePriority] = []
+        for task in groups.overdue {
+            candidates.append(priority(for: task, urgency: "Прострочено"))
+        }
+        for task in dueSoon {
+            guard let key = dayKey(for: task.dueAt, allDay: task.allDay) else { continue }
+            candidates.append(priority(for: task, urgency: key == today ? "Термін сьогодні" : "Термін: \(key)"))
+        }
+        for letter in letters
+            .filter({ $0.unread && !($0.important ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            .sorted(by: { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }) {
+            candidates.append(SchoolHomePriority(
+                id: "message:\(letter.id)", kind: .message, title: letter.title.isEmpty ? "Нове повідомлення зі школи" : letter.title,
+                detail: letter.sender.isEmpty ? "Нове повідомлення" : "Нове · \(letter.sender)",
+                taskID: nil, messageID: letter.id, eventUID: nil
+            ))
+        }
+        let eventHorizon = addDays(3, to: today) ?? today
+        for event in homeUpcomingEvents(events, today: today, limit: Int.max) {
+            guard let key = dayKey(for: event.startsAt, allDay: event.allDay), key <= eventHorizon else { continue }
+            candidates.append(SchoolHomePriority(
+                id: "event:\(event.uid)", kind: .event, title: event.title,
+                detail: key == today ? "Подія сьогодні" : "Подія: \(key)",
+                taskID: nil, messageID: nil, eventUID: event.uid
+            ))
+        }
+
+        var seen = Set<String>()
+        return candidates.filter { seen.insert($0.id).inserted }.prefix(max(0, limit)).map { $0 }
+    }
+
+    static func recentUnreadLetters(_ letters: [SchoolHubLetter], limit: Int = 2) -> [SchoolHubLetter] {
+        Array(letters.filter(\.unread).sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }.prefix(max(0, limit)))
+    }
+
+    /// A duplicate calendar identity can arrive more than once in a source
+    /// window. Preserve the original event, but show one representative row.
+    /// Different UIDs are never collapsed merely because their titles match.
+    static func homeUpcomingEvents(_ events: [SchoolHubEvent], today: String, limit: Int = 3) -> [SchoolHubEvent] {
+        let ordered = events
+            .filter(isDayRelevant)
+            .filter { (dayKey(for: $0.startsAt, allDay: $0.allDay) ?? "9999-12-31") >= today }
+            .sorted { ($0.startsAt ?? "") < ($1.startsAt ?? "") }
+        var seen = Set<String>()
+        return ordered.filter { seen.insert($0.uid).inserted }.prefix(max(0, limit)).map { $0 }
+    }
+
+    private static func priority(for task: SchoolHubTask, urgency: String) -> SchoolHomePriority {
+        SchoolHomePriority(
+            id: "task:\(task.id)", kind: .task, title: task.title,
+            detail: "\(urgency) · \(task.kind == \"family\" ? \"Сімейна справа Orbit\" : \"Schulmanager\")",
+            taskID: task.id, messageID: nil, eventUID: nil
+        )
     }
 
     /// Builds a bounded, source-linked chronology from records already loaded by

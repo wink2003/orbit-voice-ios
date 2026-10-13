@@ -721,31 +721,36 @@ private struct SchoolCommandCenter: View {
 
     private var now: Date { .now }
     private var today: String { SchoolHubLogic.dayKey(of: now) }
-    private var groups: SchoolTaskGroups { SchoolHubLogic.groupTasks(store.openHubTasks, today: today, sourceDates: store.sourceDates, now: now) }
-    private var upcoming: [SchoolHubEvent] {
-        store.hubEvents
-            .filter(SchoolHubLogic.isDayRelevant)
-            .filter { (SchoolHubLogic.dayKey(for: $0.startsAt, allDay: $0.allDay) ?? "9999-12-31") >= today }
-            .sorted { ($0.startsAt ?? "") < ($1.startsAt ?? "") }
-    }
-    private var attentionTasks: [SchoolHubTask] { Array((groups.overdue + groups.dated + groups.undated).prefix(3)) }
     private var unread: Int { store.letters.filter(\.unread).count }
+    private var sourceOpenTasks: [SchoolHubTask] { store.openHubTasks.filter { $0.kind == "source" } }
+    private var priorities: [SchoolHomePriority] {
+        SchoolHubLogic.homePriorities(
+            tasks: store.openHubTasks,
+            letters: store.letters,
+            events: store.hubEvents,
+            today: today,
+            sourceDates: store.sourceDates,
+            now: now,
+            actionsAvailable: store.actionCapability.canMutate
+        )
+    }
+    private var recentMessages: [SchoolHubLetter] { SchoolHubLogic.recentUnreadLetters(store.letters) }
+    private var upcomingEvents: [SchoolHubEvent] { SchoolHubLogic.homeUpcomingEvents(store.hubEvents, today: today) }
+    private var hasOverduePriority: Bool { priorities.contains { $0.detail.hasPrefix("Прострочено") } }
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+            LazyVStack(alignment: .leading, spacing: 22) {
                 header
-                if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed || store.actionTasksPhase == .failed { availabilityNotice }
-                if !store.actionCapability.canMutate { actionAvailabilityNotice }
+                if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed { availabilityNotice }
                 prioritySection
-                preparationSection
-                routesSection
-                timelineSection
-                latestSection
-                sourceSection
+                quickAccessSection
+                messagesSection
+                eventsSection
+                assistantEntry
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .padding(.top, 16)
             .padding(.bottom, 120)
         }
         .background(NovaTodayTokens.canvas.ignoresSafeArea())
@@ -757,6 +762,7 @@ private struct SchoolCommandCenter: View {
                     Button { open(.timeline) } label: { Label("Хронологія", systemImage: "list.bullet.indent") }
                     Button { open(.briefing) } label: { Label("Огляд від Orbit", systemImage: "sparkles") }
                     Button { open(.brain) } label: { Label("Запитати Orbit", systemImage: "bubble.left.and.text.bubble.right") }
+                    Button { open(.teams) } label: { Label("Джерела школи", systemImage: "graduationcap") }
                     if store.actionCapability.canMutate {
                         Button { open(.history) } label: { Label("Історія змін", systemImage: "clock.arrow.circlepath") }
                     }
@@ -768,168 +774,282 @@ private struct SchoolCommandCenter: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("ОРГАНІЗАТОР ШКОЛИ").font(.caption2.weight(.bold)).tracking(1.1).foregroundStyle(NovaTodayTokens.teal)
+        VStack(alignment: .leading, spacing: 4) {
             Text("Школа").font(.system(.largeTitle, design: .rounded).weight(.bold))
-            Text("Що потребує уваги, що далі і де знайти першоджерело.")
-                .font(.subheadline).foregroundStyle(.secondary)
+            if !store.studentNames.isEmpty {
+                Text(store.studentNames.count == 1 ? store.studentNames[0] : store.studentNames.joined(separator: " · "))
+                    .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+            }
         }
         .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private var availabilityNotice: some View {
-        NovaSurface(tint: .orange) {
-            Label("Частина шкільних даних зараз недоступна. Показано лише те, що вже було завантажено.", systemImage: "clock.badge.exclamationmark")
-                .font(.subheadline).foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.orange)
+            Text("Частину шкільних даних не вдалося оновити. Показано те, що вже завантажено.")
+                .font(.footnote).foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Button("Повторити") { Task { await store.load() } }.font(.footnote.weight(.semibold))
         }
-    }
-
-    private var actionAvailabilityNotice: some View {
-        NovaSurface(tint: .orange) {
-            Label(store.actionCapability.message, systemImage: "lock.slash")
-                .font(.subheadline).foregroundStyle(.secondary)
-        }
+        .accessibilityElement(children: .combine)
     }
 
     private var prioritySection: some View {
-        NovaSurface(tint: groups.overdue.isEmpty ? NovaTodayTokens.teal : NovaTodayTokens.coral) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(groups.overdue.isEmpty ? "ЗАРАЗ У ФОКУСІ" : "ПОТРЕБУЄ УВАГИ").font(.caption2.weight(.bold)).tracking(1.2).foregroundStyle(groups.overdue.isEmpty ? NovaTodayTokens.teal : NovaTodayTokens.coral)
-                    Text(priorityTitle).font(.title3.weight(.bold)).fixedSize(horizontal: false, vertical: true)
-                    Text(priorityDetail).font(.subheadline).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: groups.overdue.isEmpty ? "checklist" : "exclamationmark.circle.fill")
-                    .font(.title2).foregroundStyle(groups.overdue.isEmpty ? NovaTodayTokens.teal : NovaTodayTokens.coral)
-            }
-            if let task = attentionTasks.first {
-                Divider().padding(.vertical, 8)
-                Button { open(.tasks) } label: {
-                    HStack(spacing: 10) {
-                        Circle().stroke(NovaTodayTokens.coral, lineWidth: 2).frame(width: 22, height: 22)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(task.title).font(.subheadline.weight(.semibold)).lineLimit(2)
-                            Text(taskDue(task)).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
-                    }
-                }.buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var routesSection: some View {
-        HStack(spacing: 10) {
-            routeCard("Вхідні", detail: unread == 0 ? "Усе прочитано" : "\(unread) нових", icon: "envelope", tint: NovaTodayTokens.teal, route: .inbox)
-            routeCard("Справи", detail: taskCountText, icon: "checklist", tint: NovaTodayTokens.coral, route: .tasks)
-            routeCard("Дати", detail: upcoming.isEmpty ? "Немає далі" : "\(upcoming.count) подій", icon: "calendar", tint: NovaTodayTokens.indigo, route: .calendar)
-        }
-    }
-
-    @ViewBuilder private var preparationSection: some View {
-        let today = SchoolHubLogic.dayKey(of: now)
-        let tomorrow = SchoolHubLogic.addDays(1, to: today) ?? today
-        let preparation = SchoolHubLogic.preparation(for: tomorrow, tasks: store.openHubTasks)
-        if !preparation.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    sectionTitle("Підготуватися", detail: "Лише дії, які вказані у шкільному джерелі")
-                    Spacer()
-                    Button("Усі справи") { open(.tasks) }.font(.footnote.weight(.semibold))
-                }
-                NovaSurface(tint: NovaTodayTokens.coral) {
-                    ForEach(Array(preparation.prefix(3).enumerated()), id: \.element.id) { index, task in
-                        Button { open(.tasks) } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: "circle.dotted").foregroundStyle(NovaTodayTokens.coral)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(task.title).font(.subheadline.weight(.semibold)).lineLimit(2)
-                                    Text(task.action ?? "Дія з джерела Schulmanager").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                        }.buttonStyle(.plain)
-                        if index < min(preparation.count, 3) - 1 { Divider().padding(.leading, 30) }
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Потребує уваги")
+            if priorities.isEmpty && isInitiallyLoading {
+                compactLoading("Завантажуємо важливі шкільні справи…")
+            } else if priorities.isEmpty {
+                Label("Немає термінових справ або нових важливих повідомлень.", systemImage: "checkmark.circle")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+            } else {
+                NovaSurface(tint: hasOverduePriority ? NovaTodayTokens.coral : NovaTodayTokens.teal) {
+                    ForEach(Array(priorities.enumerated()), id: \.element.id) { index, item in
+                        Button { open(priority: item) } label: { priorityRow(item) }
+                            .buttonStyle(.plain)
+                        if index < priorities.count - 1 { Divider().padding(.vertical, 8) }
                     }
                 }
             }
         }
     }
 
-    private func routeCard(_ title: String, detail: String, icon: String, tint: Color, route: SchoolHubView.Route) -> some View {
+    private var quickAccessSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Швидкий доступ")
+            HStack(spacing: 10) {
+                quickAccess("Вхідні", detail: inboxQuickDetail, icon: "envelope", route: .inbox)
+                quickAccess("Завдання", detail: tasksQuickDetail, icon: "checklist", route: .tasks)
+                quickAccess("Календар", detail: calendarQuickDetail, icon: "calendar", route: .calendar)
+            }
+            if !store.actionCapability.canMutate, store.actionCapability != .unknown {
+                Text(store.actionCapability.message)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var messagesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Нові повідомлення", actionTitle: "Усі повідомлення") { open(.inbox) }
+            if recentMessages.isEmpty && store.itemsPhase == .loading && !store.itemsLoadedOnce {
+                compactLoading("Завантажуємо повідомлення…")
+            } else if recentMessages.isEmpty {
+                compactEmpty("Нових повідомлень немає.", icon: "envelope.open")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(recentMessages.enumerated()), id: \.element.id) { index, message in
+                        Button { open(.letter(message.id)) } label: { messageRow(message) }
+                            .buttonStyle(.plain)
+                        if index < recentMessages.count - 1 { Divider().padding(.leading, 34) }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+        }
+    }
+
+    private var eventsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Найближчі події", actionTitle: "Календар") { open(.calendar) }
+            if upcomingEvents.isEmpty && store.calendarPhase == .loading && !store.calendarLoadedOnce {
+                compactLoading("Завантажуємо події…")
+            } else if upcomingEvents.isEmpty {
+                compactEmpty("Найближчих шкільних подій немає.", icon: "calendar.badge.checkmark")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(upcomingEvents.enumerated()), id: \.element.uid) { index, event in
+                        Button { open(.event(event.uid)) } label: { eventRow(event) }
+                            .buttonStyle(.plain)
+                        if index < upcomingEvents.count - 1 { Divider().padding(.leading, 42) }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+        }
+    }
+
+    private var assistantEntry: some View {
+        Button { open(.brain) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "bubble.left.and.text.bubble.right").foregroundStyle(NovaTodayTokens.indigo)
+                Text("Запитати Orbit про школу").font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .frame(minHeight: OrbitSpacing.minTarget)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Запитати Orbit про школу")
+    }
+
+    private func quickAccess(_ title: String, detail: String, icon: String, route: SchoolHubView.Route) -> some View {
         Button { open(route) } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: icon).font(.headline).foregroundStyle(tint).frame(width: 34, height: 34).background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 6) {
+                Image(systemName: icon).font(.subheadline.weight(.semibold)).foregroundStyle(NovaTodayTokens.teal)
                 Text(title).font(.footnote.weight(.bold)).foregroundStyle(.primary)
                 Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
             }
-            .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading).padding(12)
-            .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(tint.opacity(0.18), lineWidth: 1) }
-        }.buttonStyle(.plain)
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading).padding(10)
+            .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
-    @ViewBuilder private var timelineSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack { sectionTitle("Далі у школі", detail: "Хронологія подій і підготовки"); Spacer(); Button("Календар") { open(.calendar) }.font(.footnote.weight(.semibold)) }
-            if upcoming.isEmpty {
-                emptyRow("У завантажених даних немає майбутніх шкільних подій.", icon: "calendar.badge.checkmark")
-            } else {
-                NovaSurface(tint: NovaTodayTokens.indigo) {
-                    ForEach(Array(upcoming.prefix(4).enumerated()), id: \.element.id) { index, event in
-                        Button { open(.event(event.uid)) } label: {
-                            HStack(alignment: .top, spacing: 12) {
-                                VStack(spacing: 3) { Text(eventDay(event)).font(.headline.weight(.bold)); Text(eventMonth(event)).font(.caption2.weight(.bold)).foregroundStyle(NovaTodayTokens.indigo) }.frame(width: 38)
-                                VStack(alignment: .leading, spacing: 3) { Text(event.title).font(.subheadline.weight(.semibold)).lineLimit(2); Text(eventTime(event)).font(.caption).foregroundStyle(.secondary) }
-                                Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
-                            }
-                        }.buttonStyle(.plain)
-                        if index < min(upcoming.count, 4) - 1 { Divider().padding(.vertical, 8) }
-                    }
+    private func priorityRow(_ item: SchoolHomePriority) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: priorityIcon(item)).foregroundStyle(priorityTint(item)).frame(width: 22)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                Text(priorityDetail(item)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+        }
+        .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func messageRow(_ message: SchoolHubLetter) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: message.type == "letter" ? "envelope.fill" : "bubble.left.fill")
+                .foregroundStyle(NovaTodayTokens.teal).frame(width: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(message.title.isEmpty ? "Повідомлення зі школи" : message.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                Text([message.sender, message.date.map { SchoolHubFormat.shortDay(SchoolHubLogic.dayKey(of: $0)) }].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if let preview = messagePreview(message), !preview.isEmpty {
+                    Text(preview).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
         }
+        .padding(.vertical, 12)
+        .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Нове повідомлення: \(message.title)")
     }
 
-    @ViewBuilder private var latestSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack { sectionTitle("Останні повідомлення", detail: "Оригінал і переклад доступні всередині"); Spacer(); Button("Усі") { open(.inbox) }.font(.footnote.weight(.semibold)) }
-            if let letter = store.letters.sorted(by: { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }).first {
-                Button { open(.letter(letter.id)) } label: {
-                    NovaSurface(tint: NovaTodayTokens.teal) {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: letter.type == "letter" ? "envelope" : "bubble.left").foregroundStyle(NovaTodayTokens.teal).frame(width: 22)
-                            VStack(alignment: .leading, spacing: 4) { Text(letter.title).font(.headline).lineLimit(2); Text([letter.sender, letter.date.map { $0.formatted(date: .abbreviated, time: .omitted) }].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary); if letter.unread { Text("Нове в Orbit").font(.caption2.weight(.bold)).foregroundStyle(NovaTodayTokens.coral) } }
-                            Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
-                        }
-                    }
-                }.buttonStyle(.plain)
-            } else { emptyRow("Нових листів і повідомлень немає.", icon: "envelope.open") }
-        }
-    }
-
-    private var sourceSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("Джерела", detail: "Лише читання та прозорі межі")
-            NovaSurface(tint: NovaTodayTokens.teal) {
-                HStack { Image(systemName: "graduationcap").foregroundStyle(NovaTodayTokens.teal); VStack(alignment: .leading, spacing: 2) { Text("Schulmanager").font(.subheadline.weight(.semibold)); Text("Підключено · лише читання").font(.caption).foregroundStyle(.secondary) }; Spacer() }
-                Divider().padding(.vertical, 9)
-                Button { open(.teams) } label: { HStack { Image(systemName: "person.2.badge.gearshape").foregroundStyle(.secondary); VStack(alignment: .leading, spacing: 2) { Text("Microsoft Teams").font(.subheadline.weight(.semibold)).foregroundStyle(.primary); Text("Не підключено · майбутнє джерело").font(.caption).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary) } }.buttonStyle(.plain)
+    private func eventRow(_ event: SchoolHubEvent) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(spacing: 2) {
+                Text(eventDay(event)).font(.headline.weight(.bold))
+                Text(eventMonth(event)).font(.caption2.weight(.bold)).foregroundStyle(NovaTodayTokens.indigo)
             }
+            .frame(width: 30)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(event.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                Text(eventSummary(event)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 12)
+        .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var calendarQuickDetail: String {
+        if store.calendarPhase == .loading && !store.calendarLoadedOnce { return "Завантаження…" }
+        if store.calendarPhase == .failed && !store.calendarLoadedOnce { return "Дані недоступні" }
+        guard let event = upcomingEvents.first, let key = eventKey(event) else { return "Немає подій" }
+        return SchoolHubFormat.shortDay(key)
+    }
+
+    private var inboxQuickDetail: String {
+        if store.itemsPhase == .loading && !store.itemsLoadedOnce { return "Завантаження…" }
+        if store.itemsPhase == .failed && !store.itemsLoadedOnce { return "Дані недоступні" }
+        return unread == 0 ? "Усе прочитано" : "\(unread) нових"
+    }
+
+    private var tasksQuickDetail: String {
+        if !sourceOpenTasks.isEmpty { return "\(sourceOpenTasks.count) відкритих" }
+        if store.tasksPhase == .loading && !store.tasksLoadedOnce && store.itemsPhase == .loading && !store.itemsLoadedOnce { return "Завантаження…" }
+        if store.tasksPhase == .failed && !store.itemsLoadedOnce { return "Дані недоступні" }
+        return "Немає відкритих"
+    }
+
+    private var isInitiallyLoading: Bool {
+        store.itemsPhase == .loading && !store.itemsLoadedOnce &&
+        store.calendarPhase == .loading && !store.calendarLoadedOnce &&
+        store.tasksPhase == .loading && !store.tasksLoadedOnce
+    }
+
+    private func sectionHeader(_ title: String, actionTitle: String? = nil, action: (() -> Void)? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(.title3.weight(.bold)).accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 8)
+            if let actionTitle, let action { Button(actionTitle, action: action).font(.footnote.weight(.semibold)) }
         }
     }
 
-    private var priorityTitle: String { groups.overdue.isEmpty ? (attentionTasks.isEmpty ? "Спокійний день" : "Підготовка до школи") : "Є прострочені справи" }
-    private var priorityDetail: String { groups.overdue.isEmpty ? (attentionTasks.isEmpty ? "У джерелах немає відкритих справ із терміном." : "Перегляньте найближчу дію перед наступною подією.") : "Відкрийте справи, щоб перевірити першоджерело і термін." }
-    private var taskCountText: String { let count = groups.overdue.count + groups.dated.count + groups.undated.count + groups.undatedOlder.count; return count == 0 ? "Відкритих немає" : "\(count) відкритих" }
-    private func sectionTitle(_ title: String, detail: String) -> some View { VStack(alignment: .leading, spacing: 2) { Text(title).font(.title3.weight(.bold)); Text(detail).font(.caption).foregroundStyle(.secondary) } }
-    private func emptyRow(_ title: String, icon: String) -> some View { Label(title, systemImage: icon).font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 78, alignment: .leading).padding(.horizontal, 14).background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous)) }
-    private func taskDue(_ task: SchoolHubTask) -> String { guard let value = task.dueAt, let key = SchoolHubLogic.dayKey(for: value, allDay: task.allDay) else { return "Термін не вказаний · джерело: Schulmanager" }; return SchoolHubFormat.shortDay(key) + " · джерело: Schulmanager" }
+    private func compactEmpty(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.subheadline).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: OrbitSpacing.minTarget, alignment: .leading)
+    }
+
+    private func compactLoading(_ title: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+            Text(title)
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, minHeight: OrbitSpacing.minTarget, alignment: .leading)
+    }
+
+    private func open(priority: SchoolHomePriority) {
+        switch priority.kind {
+        case .task: open(.tasks)
+        case .message: if let id = priority.messageID { open(.letter(id)) }
+        case .event: if let id = priority.eventUID { open(.event(id)) }
+        }
+    }
+
+    private func priorityIcon(_ item: SchoolHomePriority) -> String {
+        switch item.kind {
+        case .task: item.detail.hasPrefix("Прострочено") ? "exclamationmark.circle.fill" : "checklist"
+        case .message: "envelope.badge"
+        case .event: "calendar"
+        }
+    }
+
+    private func priorityTint(_ item: SchoolHomePriority) -> Color {
+        item.detail.hasPrefix("Прострочено") ? NovaTodayTokens.coral : NovaTodayTokens.teal
+    }
+
+    private func priorityDetail(_ item: SchoolHomePriority) -> String {
+        let pieces = item.detail.split(separator: "·", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespaces) }
+        guard item.kind == .task, let value = pieces.first else { return item.detail }
+        if value.hasPrefix("Термін:"), let key = value.split(separator: ":", maxSplits: 1).last.map({ String($0).trimmingCharacters(in: .whitespaces) }) {
+            let source = pieces.count > 1 ? " · \(pieces[1])" : ""
+            return "Термін: \(SchoolHubFormat.shortDay(key))\(source)"
+        }
+        return item.detail
+    }
+
+    private func messagePreview(_ message: SchoolHubLetter) -> String? {
+        let text = message.translation ?? message.originalText
+        let compact = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return compact.isEmpty ? nil : compact
+    }
+
     private func eventKey(_ event: SchoolHubEvent) -> String? { SchoolHubLogic.dayKey(for: event.startsAt, allDay: event.allDay) }
     private func eventDay(_ event: SchoolHubEvent) -> String { eventKey(event).map(SchoolHubFormat.dayNumber) ?? "—" }
     private func eventMonth(_ event: SchoolHubEvent) -> String { eventKey(event).map(SchoolHubFormat.month) ?? "" }
-    private func eventTime(_ event: SchoolHubEvent) -> String { SchoolHubFormat.time(event) }
+    private func eventSummary(_ event: SchoolHubEvent) -> String {
+        guard let start = eventKey(event) else { return SchoolHubFormat.time(event) }
+        if event.allDay, let end = SchoolHubLogic.dayKey(for: event.endsAt, allDay: event.allDay), end != start {
+            return "\(SchoolHubFormat.shortDay(start)) – \(SchoolHubFormat.shortDay(end)) · увесь день"
+        }
+        return SchoolHubFormat.time(event)
+    }
 }
 
 private struct SchoolTeamsFutureView: View {

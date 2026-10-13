@@ -120,6 +120,41 @@ struct SchoolHubLogicTests {
         let prep = SchoolHubLogic.preparation(for: "2026-10-09", tasks: [task("2", due: "2026-10-09"), task("6", due: "2026-10-09", action: nil), task("7", due: "2026-10-10")])
         precondition(prep.map(\.id) == ["2"])
 
+        // School Home ranks only supported, evidence-backed records.  A family
+        // action is not exposed while the actions capability is unavailable.
+        var familyTask = task("family", due: "2026-10-06")
+        familyTask.kind = "family"
+        let homeLetters = [
+            SchoolHubLetter(id: "important", type: "letter", title: "Важливе", sender: "Школа", originalText: "", translation: nil, important: "true", unread: true, date: SchoolHubLogic.date(fromDayKey: "2026-10-08")),
+            SchoolHubLetter(id: "ordinary", type: "letter", title: "Звичайне", sender: "Школа", originalText: "", translation: nil, important: nil, unread: true, date: SchoolHubLogic.date(fromDayKey: "2026-10-09")),
+        ]
+        let homeTasks = [familyTask, task("overdue", due: "2026-10-07"), task("soon", due: "2026-10-12")]
+        let homeEvents = [event("next", "2026-10-09", cls: "DIRECT")]
+        let unavailablePriorities = SchoolHubLogic.homePriorities(
+            tasks: homeTasks, letters: homeLetters, events: homeEvents, today: "2026-10-08",
+            sourceDates: ["s1": now], now: now, actionsAvailable: false
+        )
+        precondition(unavailablePriorities.map(\.id) == ["task:overdue", "task:soon", "message:important"])
+        precondition(!unavailablePriorities.contains { $0.id == "task:family" })
+        let availablePriorities = SchoolHubLogic.homePriorities(
+            tasks: homeTasks, letters: homeLetters, events: homeEvents, today: "2026-10-08",
+            sourceDates: ["s1": now], now: now, actionsAvailable: true, limit: 5
+        )
+        precondition(Array(availablePriorities.map(\.id).prefix(2)) == ["task:family", "task:overdue"])
+        precondition(availablePriorities.first?.detail.contains("Сімейна справа Orbit") == true)
+        precondition(availablePriorities.contains { $0.id == "event:next" })
+
+        // Home previews keep the newest unread messages and order calendar
+        // records chronologically without multiplying one calendar identity.
+        precondition(SchoolHubLogic.recentUnreadLetters(homeLetters, limit: 1).map(\.id) == ["ordinary"])
+        let sameTitleDifferentUID = SchoolHubEvent(uid: "same-title-different-uid", title: "Evacation", description: "", location: "", startsAt: "2026-10-11", endsAt: nil, allDay: true, relevanceClass: "DIRECT", audienceClass: nil, relevanceReason: nil)
+        let repeatedCalendar = [
+            event("vacation", "2026-10-09", end: "2026-10-16", cls: "DIRECT"),
+            event("vacation", "2026-10-10", end: "2026-10-16", cls: "DIRECT"),
+            sameTitleDifferentUID,
+        ]
+        precondition(SchoolHubLogic.homeUpcomingEvents(repeatedCalendar, today: "2026-10-08").map(\.uid) == ["vacation", "same-title-different-uid"])
+
         // Navigation: exactly four internal sections, no tab-bar duplication
         precondition(SchoolHubSection.allCases.map(\.title) == ["Огляд", "Листи", "Календар", "Справи"])
 
