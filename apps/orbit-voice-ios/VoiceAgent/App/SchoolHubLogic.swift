@@ -525,7 +525,7 @@ nonisolated enum SchoolHubLogic {
 
     private static func priority(for task: SchoolHubTask, urgency: String) -> SchoolHomePriority {
         let source = task.kind == "family" ? "Сімейна справа Orbit" : "Schulmanager"
-        SchoolHomePriority(
+        return SchoolHomePriority(
             id: "task:\(task.id)", kind: .task, title: task.title,
             detail: "\(urgency) · \(source)",
             taskID: task.id, messageID: nil, eventUID: nil
