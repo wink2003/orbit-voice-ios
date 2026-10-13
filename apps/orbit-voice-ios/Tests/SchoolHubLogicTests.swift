@@ -142,6 +142,17 @@ struct SchoolHubLogicTests {
         precondition(!gate.accepts(impToken) && !gate.accepts(ownToken), "end of impersonation invalidates impersonated loads and the original token")
         precondition(gate.accepts(gate.token()) && gate.scopeKey == own)
 
+        // School Actions capability is fail-closed and keeps auth failures distinct.
+        precondition(!SchoolActionsCapability.unknown.canMutate)
+        precondition(!SchoolActionsCapability.unavailable.canMutate)
+        precondition(SchoolActionsCapability.fromHTTPStatus(404) == .unavailable)
+        precondition(SchoolActionsCapability.fromHTTPStatus(401) == .unauthorized)
+        precondition(SchoolActionsCapability.fromHTTPStatus(403) == .forbidden)
+        precondition(SchoolActionsCapability.fromHTTPStatus(503) == .serverFailure)
+        precondition(SchoolActionsCapability.from(error: URLError(.notConnectedToInternet)) == .networkFailure)
+        precondition(SchoolActionsCapability.from(error: OrbitHTTPResponseFailure(status: 404, code: "not_found")) == .unavailable)
+        precondition(SchoolActionsCapability.available.canMutate)
+
         print("school hub logic tests passed")
     }
 }

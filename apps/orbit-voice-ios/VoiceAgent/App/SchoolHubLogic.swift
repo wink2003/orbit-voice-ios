@@ -102,6 +102,51 @@ enum SchoolHubActionError: LocalizedError {
     }
 }
 
+enum SchoolActionsCapability: Equatable {
+    case unknown
+    case available
+    case unavailable
+    case unauthorized
+    case forbidden
+    case networkFailure
+    case serverFailure
+
+    var canMutate: Bool { self == .available }
+
+    static func fromHTTPStatus(_ status: Int) -> Self {
+        switch status {
+        case 401: .unauthorized
+        case 403: .forbidden
+        case 404: .unavailable
+        default: .serverFailure
+        }
+    }
+
+    static func from(error: Error) -> Self {
+        if let response = error as? OrbitHTTPResponseFailure {
+            return fromHTTPStatus(response.status)
+        }
+        return error is URLError ? .networkFailure : .serverFailure
+    }
+
+    var message: String {
+        switch self {
+        case .unknown: "Перевіряємо доступність сімейних справ Orbit."
+        case .available: ""
+        case .unavailable: "Сімейні справи Orbit ще не доступні. Шкільні дані можна переглядати."
+        case .unauthorized: "Увійдіть в Orbit, щоб користуватися сімейними справами."
+        case .forbidden: "Для цього профілю сімейні справи Orbit недоступні."
+        case .networkFailure: "Не вдалося перевірити сімейні справи. Перевірте з’єднання й повторіть."
+        case .serverFailure: "Сімейні справи тимчасово недоступні. Спробуйте ще раз пізніше."
+        }
+    }
+}
+
+struct OrbitHTTPResponseFailure: Error, Equatable {
+    let status: Int
+    let code: String?
+}
+
 nonisolated struct SchoolHubLetter: Hashable, Identifiable {
     let id: String
     let type: String

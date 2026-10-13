@@ -327,7 +327,13 @@ final class MainProductAPI {
         let f = ISO8601DateFormatter(); let path = "/api/school/calendar?scope=\(scope)&from=\(f.string(from: from).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&to=\(f.string(from: to).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"; return try await request(path: path, as: OrbitSchulmanagerCalendarResponse.self).events
     }
     func schoolTasks(coverage: String = "window") async throws -> OrbitSchoolTasksResponse { try await request(path: "/api/school/tasks?coverage=\(coverage)", as: OrbitSchoolTasksResponse.self) }
-    func schoolActionTasks() async throws -> OrbitSchoolActionTasksResponse { try await request(path: "/api/school/actions/tasks", cachePolicy: .reloadIgnoringLocalCacheData) }
+    func schoolActionTasks(preserveHTTPStatus: Bool = false) async throws -> OrbitSchoolActionTasksResponse {
+        try await request(
+            path: "/api/school/actions/tasks",
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            preserveHTTPStatus: preserveHTTPStatus
+        )
+    }
     func createSchoolActionTask(title: String, description: String = "", schoolDueAt: String? = nil, planningDate: String? = nil, sourceItemId: String? = nil, sourceTaskKey: String? = nil, sourceEventUid: String? = nil, clientRequestId: String = UUID().uuidString) async throws -> OrbitSchoolActionTask {
         struct Payload: Encodable { let title: String; let description: String; let schoolDueAt: String?; let planningDate: String?; let sourceItemId: String?; let sourceTaskKey: String?; let sourceEventUid: String?; let clientRequestId: String }
         struct Response: Decodable { let task: OrbitSchoolActionTask }
@@ -510,7 +516,7 @@ final class MainProductAPI {
         let defaultMessagingChannel: String?
     }
 
-    func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy, classifyUnavailable: Bool = false, allowRefresh: Bool = true, as: T.Type = T.self) async throws -> T {
+    func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy, classifyUnavailable: Bool = false, allowRefresh: Bool = true, preserveHTTPStatus: Bool = false, as: T.Type = T.self) async throws -> T {
         guard let token = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
@@ -522,11 +528,12 @@ final class MainProductAPI {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
         if http.statusCode == 401, allowRefresh, KeychainStore.readSessionToken() != nil, await OrbitAuthentication.refreshStoredSession() {
-            return try await self.request(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, as: T.self)
+            return try await self.request(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, preserveHTTPStatus: preserveHTTPStatus, as: T.self)
         }
         guard (200 ..< 300).contains(http.statusCode) else {
-            if classifyUnavailable, let failure = OrbitHTTPFailure.classify(status: http.statusCode) { throw failure }
             let code = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
+            if preserveHTTPStatus { throw OrbitHTTPResponseFailure(status: http.statusCode, code: code) }
+            if classifyUnavailable, let failure = OrbitHTTPFailure.classify(status: http.statusCode) { throw failure }
             throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
         }
         do { return try decoder.decode(T.self, from: data) } catch { throw OrbitChatAPIError.invalidResponse }
