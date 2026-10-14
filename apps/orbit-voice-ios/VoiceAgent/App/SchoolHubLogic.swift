@@ -365,7 +365,10 @@ nonisolated enum SchoolHubLogic {
         let tomorrow = addDays(1, to: today) ?? today
         let weekEnd = weekDays(containing: today).last ?? today
         var schedule = SchoolTaskSchedule(overdue: groups.overdue, undated: groups.undated, undatedOlder: groups.undatedOlder)
-        for task in groups.dated {
+        // Recombine overdue and future dated tasks before applying the calendar-week
+        // section: Monday/Tuesday tasks in the current week are overdue relative to
+        // today, but still belong in "Цього тижня".
+        for task in groups.overdue + groups.dated {
             guard let due = dayKey(for: task.dueAt, allDay: task.allDay) else { continue }
             if due == today { schedule.today.append(task) }
             else if due == tomorrow { schedule.tomorrow.append(task) }
