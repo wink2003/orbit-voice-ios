@@ -45,6 +45,7 @@ struct SchoolInboxView: View {
     private let hubMode: Bool
     @State private var items: [OrbitSchoolItem] = []
     @State private var filter = "all"
+    @State private var taskResponse: OrbitSchoolTasksResponse?
     @State private var query = ""
     @State private var error: String?
     @State private var loading = false
@@ -62,16 +63,25 @@ struct SchoolInboxView: View {
     private var schoolList: some View {
         List {
             Section {
-                NovaDestinationHeader(eyebrow: "ШКІЛЬНІ ПОВІДОМЛЕННЯ", title: "Вхідні", detail: "Листи й повідомлення з оригіналом, перекладом та джерелом.", tint: NovaTodayTokens.teal, symbol: "envelope")
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
-                    .listRowBackground(Color.clear)
+                HStack(spacing: 14) {
+                    Label("Непрочитані", systemImage: "circle.fill").foregroundStyle(.secondary)
+                    Text("\(items.filter(\.unread).count)").font(.headline)
+                    Spacer()
+                    if let taskResponse, taskResponse.complete == true {
+                        Label("Потрібна дія \(openTaskCount)", systemImage: "checklist").foregroundStyle(.secondary)
+                    } else {
+                        Text("Стан справ неповний").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .font(.subheadline)
+                .accessibilityElement(children: .combine)
             }
             Section {
                 Picker("Показати", selection: $filter) {
-                    Text("Усі").tag("all"); Text("Листи").tag("letters"); Text("Повідомлення").tag("messages"); Text("Непрочитані").tag("unread")
+                    Text("Усі").tag("all"); Text("Непрочитані").tag("unread"); Text("Потрібна дія").tag("actionable"); Text("Листи").tag("letters"); Text("Повідомлення").tag("messages")
                 }.pickerStyle(.menu)
             } header: { Text("Фільтр") }
-            Section { notificationSection } header: { Text("Сповіщення") }
+            if notificationPermission == .denied { Section { notificationSection } header: { Text("Сповіщення") } }
             if loading { ProgressView().frame(maxWidth: .infinity) }
             if visibleItems.isEmpty && !loading {
                 ContentUnavailableView(
@@ -88,10 +98,9 @@ struct SchoolInboxView: View {
         .refreshable { await load() }
         .task { await load(); await refreshNotificationPermission() }
         .onAppear { Task { await refreshNotificationPermission() } }
-        .onChange(of: filter) { _, _ in Task { await load() } }
         .alert("Школа недоступна", isPresented: .constant(error != nil)) { Button("Повторити") { error = nil; Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
-        .alert("Сповіщення Orbit", isPresented: .constant(notificationDiagnosticMessage != nil)) { Button("Гаразд") { notificationDiagnosticMessage = nil } } message: { Text(notificationDiagnosticMessage ?? "") }
     }
+    private var openTaskCount: Int { taskResponse?.tasks.filter { $0.status != "completed" }.count ?? 0 }
     private var visibleItems: [OrbitSchoolItem] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered: [OrbitSchoolItem]
@@ -104,18 +113,25 @@ struct SchoolInboxView: View {
                     .contains { $0.localizedStandardContains(query) }
             }
         }
-        return filtered.sorted { ($0.sourceTimestamp ?? $0.importedAt ?? .distantPast) > ($1.sourceTimestamp ?? $1.importedAt ?? .distantPast) }
+        let byFilter = filtered.filter { item in
+            switch filter {
+            case "letters": return item.type == "letter"
+            case "messages": return item.type == "message"
+            case "unread": return item.unread
+            case "actionable":
+                guard taskResponse?.complete == true else { return false }
+                return taskResponse?.tasks.contains { $0.sourceItemId == item.id && $0.status != "completed" } == true
+            default: return true
+            }
+        }
+        return byFilter.sorted { ($0.sourceTimestamp ?? $0.importedAt ?? .distantPast) > ($1.sourceTimestamp ?? $1.importedAt ?? .distantPast) }
     }
     @ViewBuilder private var notificationSection: some View {
         switch notificationPermission {
-        case .authorized, .provisional:
-            LabeledContent { Button("Перевірити сповіщення") { Task { await scheduleDiagnosticNotification() } } } label: { Label("Сповіщення Orbit увімкнено", systemImage: "bell.badge.fill") }
-        case .notDetermined:
-            Button { Task { await requestNotificationPermission() } } label: { Label("Увімкнути сповіщення Orbit", systemImage: "bell.badge") }
         case .denied:
             Label("Сповіщення Orbit вимкнено в Налаштуваннях", systemImage: "bell.slash").foregroundStyle(.secondary)
-        case .unavailable:
-            Label("Стан сповіщень тимчасово недоступний", systemImage: "bell.slash").foregroundStyle(.secondary)
+        default:
+            EmptyView()
         }
     }
     private func schoolRow(_ item: OrbitSchoolItem) -> some View {
@@ -131,14 +147,19 @@ struct SchoolInboxView: View {
                     Text("·")
                     Text(item.sourceTimestamp ?? item.importedAt ?? .now, format: .dateTime.day().month(.abbreviated))
                 }.font(.caption).foregroundStyle(.secondary)
-                Text(item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                Text((item.translationUkrainian?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? item.translationUkrainian : nil) ?? item.previewPlainText ?? item.originalPlainText ?? item.originalGerman)
+                    .font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                if let count = taskCount(for: item), count > 0 {
+                    Label("\(count) відкритих справ", systemImage: "checklist").font(.caption2).foregroundStyle(.tint)
+                }
             }
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityValue(item.unread ? "Непрочитано" : "")
     }
-    private func load() async { loading = true; defer { loading = false }; do { items = try await MainProductAPI.shared.schoolItems(filter: filter).items; error = nil } catch { self.error = "Не вдалося завантажити шкільні матеріали." } }
+    private func taskCount(for item: OrbitSchoolItem) -> Int? { guard taskResponse?.complete == true else { return nil }; return taskResponse?.tasks.filter { $0.sourceItemId == item.id && $0.status != "completed" }.count }
+    private func load() async { loading = true; defer { loading = false }; do { async let loadedItems = MainProductAPI.shared.schoolItems(filter: "all"); async let loadedTasks = MainProductAPI.shared.schoolTasks(coverage: "all"); items = try await loadedItems.items; taskResponse = try? await loadedTasks; error = nil } catch { self.error = "Не вдалося завантажити шкільні матеріали." } }
     private func refreshNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.authorizationStatus() }
     private func requestNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.requestAuthorization() }
     private func scheduleDiagnosticNotification() async { notificationDiagnosticMessage = await SchoolNotificationCoordinator.shared.scheduleDiagnostic() ? "Тестове сповіщення з’явиться приблизно через 5 секунд." : "Не вдалося запланувати тестове сповіщення." }

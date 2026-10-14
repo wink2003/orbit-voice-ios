@@ -1544,8 +1544,10 @@ private struct SchoolTaskDetailView: View {
                     NavigationLink { SchoolChecklistView(store: store, sourceItemId: task.sourceItemId.isEmpty ? nil : task.sourceItemId, sourceTaskId: task.actionID) } label: {
                         Label("Чекліст підготовки", systemImage: "checklist.checked")
                     }
-                    NavigationLink { SchoolNotesView(store: store, entityType: "task", entityId: task.id) } label: {
-                        Label("Сімейні нотатки", systemImage: "note.text")
+                    if let noteEntityID = task.kind == "family" ? task.actionID : Optional(task.id), !noteEntityID.isEmpty {
+                        NavigationLink { SchoolNotesView(store: store, entityType: "task", entityId: noteEntityID) } label: {
+                            Label("Мої нотатки", systemImage: "note.text")
+                        }
                     }
                 }
             } else {
@@ -1670,6 +1672,8 @@ private struct SchoolNotesView: View {
     @State private var draft = ""
     @State private var editing: OrbitSchoolActionNote?
     @State private var error: String?
+    @State private var saving = false
+    @State private var pendingRequestID: String?
 
     var body: some View {
         Group {
@@ -1683,7 +1687,7 @@ private struct SchoolNotesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { if store.actionCapability.canMutate { await load() } }
         .refreshable { if store.actionCapability.canMutate { await load() } }
-        .sheet(item: $editing) { note in SchoolNoteEditor(note: note) { content in await update(note, content: content) } }
+        .sheet(item: $editing) { note in SchoolNoteEditor(note: note) { content in try await update(note, content: content) } }
         .alert("Нотатки", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
     }
 
@@ -1691,8 +1695,9 @@ private struct SchoolNotesView: View {
         List {
             Section {
                 TextField("Нова нотатка", text: $draft, axis: .vertical).lineLimit(2...5)
-                Button("Зберегти нотатку") { create() }.disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            } header: { Text("Сімейні нотатки") } footer: { Text("Нотатки приватні для поточного Orbit-профілю й чітко відокремлені від тексту школи.") }
+                Button { create() } label: { HStack { Text("Зберегти нотатку"); if saving { Spacer(); ProgressView() } } }
+                    .disabled(saving || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } header: { Text("Мої нотатки") } footer: { Text("Нотатки приватні для поточного Orbit-профілю й чітко відокремлені від тексту школи.") }
             if notes.isEmpty { ContentUnavailableView("Нотаток ще немає", systemImage: "note.text", description: Text("Збережіть власне рішення або пояснення батьків.")) }
             ForEach(notes) { note in
                 Button { editing = note } label: {
@@ -1707,33 +1712,64 @@ private struct SchoolNotesView: View {
     }
 
     private func load() async {
-        do { notes = try await MainProductAPI.shared.schoolActionNotes().notes.filter { $0.entityType == entityType && $0.entityId == entityId } }
-        catch { self.error = "Не вдалося завантажити нотатки." }
+        do { notes = try await MainProductAPI.shared.schoolActionNotes(entityType: entityType, entityId: entityId).notes }
+        catch { self.error = noteError(error, operation: "load") }
     }
     private func create() {
         let content = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !content.isEmpty else { return }
-        Task { do { _ = try await MainProductAPI.shared.createSchoolActionNote(entityType: entityType, entityId: entityId, content: content); draft = ""; await load() } catch { self.error = "Не вдалося зберегти нотатку." } }
+        let requestID = pendingRequestID ?? UUID().uuidString
+        pendingRequestID = requestID
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                _ = try await MainProductAPI.shared.createSchoolActionNote(entityType: entityType, entityId: entityId, content: content, clientRequestId: requestID)
+                draft = ""
+                pendingRequestID = nil
+                await load()
+            } catch {
+                await load()
+                if notes.contains(where: { $0.clientRequestId == requestID }) {
+                    draft = ""; pendingRequestID = nil
+                } else { self.error = noteError(error, operation: "save") }
+            }
+        }
     }
-    private func update(_ note: OrbitSchoolActionNote, content: String) async {
-        do { _ = try await MainProductAPI.shared.updateSchoolActionNote(id: note.id, content: content, revision: note.revision); await load() } catch { self.error = "Не вдалося оновити нотатку. Можливо, її вже змінили." }
+    private func update(_ note: OrbitSchoolActionNote, content: String) async throws {
+        _ = try await MainProductAPI.shared.updateSchoolActionNote(id: note.id, content: content, revision: note.revision)
+        await load()
+    }
+    private func noteError(_ error: Error, operation: String) -> String {
+        if let failure = error as? OrbitHTTPResponseFailure {
+            switch failure.status {
+            case 401, 403: return "Немає доступу до цієї нотатки або шкільної справи."
+            case 404: return "Джерело справи більше недоступне. Оновіть список і спробуйте ще раз."
+            case 409: return operation == "save" ? "Нотатку вже збережено або запит конфліктує. Оновіть список." : "Нотатку змінили в іншому місці. Відкрийте її знову перед редагуванням."
+            default: return "Сервер тимчасово недоступний. Збережіть текст і повторіть спробу."
+            }
+        }
+        return "Не вдалося \(operation == "load" ? "завантажити нотатки" : operation == "save" ? "зберегти нотатку" : "оновити нотатку"). Перевірте з’єднання й повторіть спробу."
     }
 }
 
 private struct SchoolNoteEditor: View {
     let note: OrbitSchoolActionNote
-    let save: (String) async -> Void
+    let save: (String) async throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var content: String
 
-    init(note: OrbitSchoolActionNote, save: @escaping (String) async -> Void) { self.note = note; self.save = save; _content = State(initialValue: note.content) }
+    @State private var saving = false
+    @State private var error: String?
+    init(note: OrbitSchoolActionNote, save: @escaping (String) async throws -> Void) { self.note = note; self.save = save; _content = State(initialValue: note.content) }
 
     var body: some View {
         NavigationStack {
             TextEditor(text: $content).padding(12).navigationTitle("Редагувати нотатку").navigationBarTitleDisplayMode(.inline).toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Зберегти") { Task { await save(content); dismiss() } }.disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+                ToolbarItem(placement: .confirmationAction) { Button { saving = true; Task { do { try await save(content); dismiss() } catch { self.error = "Не вдалося оновити нотатку. Перевірте з’єднання або відкрийте нотатку знову."; saving = false } } } label: { if saving { ProgressView() } else { Text("Зберегти") } }.disabled(saving || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
             }
         }
+        .alert("Нотатки", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
     }
 
 }

@@ -97,6 +97,7 @@ struct OrbitSchoolActionNote: Codable, Identifiable, Hashable {
     let createdAt: Date
     let updatedAt: Date
     let revision: Int
+    let clientRequestId: String?
 }
 struct OrbitSchoolActionNotesResponse: Decodable { let notes: [OrbitSchoolActionNote] }
 struct OrbitSchoolActionHistoryEntry: Decodable, Identifiable, Hashable {
@@ -353,9 +354,17 @@ final class MainProductAPI {
     func createSchoolActionChecklist(title: String, sourceItemId: String? = nil, sourceTaskId: String? = nil, sourceEventUid: String? = nil, clientRequestId: String = UUID().uuidString) async throws -> OrbitSchoolActionChecklist { struct Payload: Encodable { let title: String; let sourceItemId: String?; let sourceTaskId: String?; let sourceEventUid: String?; let clientRequestId: String }; struct Response: Decodable { let checklist: OrbitSchoolActionChecklist }; return try await request(path: "/api/school/actions/checklists", method: "POST", body: try encoder.encode(Payload(title: title, sourceItemId: sourceItemId, sourceTaskId: sourceTaskId, sourceEventUid: sourceEventUid, clientRequestId: clientRequestId)), as: Response.self).checklist }
     func addSchoolChecklistItem(checklistId: String, title: String, sourceKind: String = "parent", clientRequestId: String = UUID().uuidString) async throws -> OrbitSchoolActionChecklistItem { struct Payload: Encodable { let title: String; let sourceKind: String; let clientRequestId: String }; struct Response: Decodable { let item: OrbitSchoolActionChecklistItem }; return try await request(path: "/api/school/actions/checklists/\(checklistId)/items", method: "POST", body: try encoder.encode(Payload(title: title, sourceKind: sourceKind, clientRequestId: clientRequestId)), as: Response.self).item }
     func updateSchoolChecklistItem(id: String, title: String? = nil, completed: Bool? = nil, revision: Int) async throws -> OrbitSchoolActionChecklistItem { struct Payload: Encodable { let title: String?; let completed: Bool?; let revision: Int }; struct Response: Decodable { let item: OrbitSchoolActionChecklistItem }; return try await request(path: "/api/school/actions/checklist-items/\(id)", method: "PATCH", body: try encoder.encode(Payload(title: title, completed: completed, revision: revision)), as: Response.self).item }
-    func schoolActionNotes() async throws -> OrbitSchoolActionNotesResponse { try await request(path: "/api/school/actions/notes", cachePolicy: .reloadIgnoringLocalCacheData) }
-    func createSchoolActionNote(entityType: String, entityId: String, content: String, clientRequestId: String = UUID().uuidString) async throws -> OrbitSchoolActionNote { struct Payload: Encodable { let entityType: String; let entityId: String; let content: String; let clientRequestId: String }; struct Response: Decodable { let note: OrbitSchoolActionNote }; return try await request(path: "/api/school/actions/notes", method: "POST", body: try encoder.encode(Payload(entityType: entityType, entityId: entityId, content: content, clientRequestId: clientRequestId)), as: Response.self).note }
-    func updateSchoolActionNote(id: String, content: String, revision: Int) async throws -> OrbitSchoolActionNote { struct Payload: Encodable { let content: String; let revision: Int }; struct Response: Decodable { let note: OrbitSchoolActionNote }; return try await request(path: "/api/school/actions/notes/\(id)", method: "PATCH", body: try encoder.encode(Payload(content: content, revision: revision)), as: Response.self).note }
+    func schoolActionNotes(entityType: String? = nil, entityId: String? = nil) async throws -> OrbitSchoolActionNotesResponse {
+        var path = "/api/school/actions/notes"
+        if let entityType, let entityId,
+           let type = entityType.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let id = entityId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            path += "?entityType=\(type)&entityId=\(id)"
+        }
+        return try await request(path: path, cachePolicy: .reloadIgnoringLocalCacheData)
+    }
+    func createSchoolActionNote(entityType: String, entityId: String, content: String, clientRequestId: String = UUID().uuidString) async throws -> OrbitSchoolActionNote { struct Payload: Encodable { let entityType: String; let entityId: String; let content: String; let clientRequestId: String }; struct Response: Decodable { let note: OrbitSchoolActionNote }; return try await request(path: "/api/school/actions/notes", method: "POST", body: try encoder.encode(Payload(entityType: entityType, entityId: entityId, content: content, clientRequestId: clientRequestId)), preserveHTTPStatus: true, as: Response.self).note }
+    func updateSchoolActionNote(id: String, content: String, revision: Int) async throws -> OrbitSchoolActionNote { struct Payload: Encodable { let content: String; let revision: Int }; struct Response: Decodable { let note: OrbitSchoolActionNote }; return try await request(path: "/api/school/actions/notes/\(id)", method: "PATCH", body: try encoder.encode(Payload(content: content, revision: revision)), preserveHTTPStatus: true, as: Response.self).note }
     func schoolActionHistory() async throws -> OrbitSchoolActionHistoryResponse { try await request(path: "/api/school/actions/history", cachePolicy: .reloadIgnoringLocalCacheData) }
     func schoolBriefing(classifyUnavailable: Bool = false) async throws -> OrbitSchoolBriefingResponse { try await request(path: "/api/school/brain/briefing", classifyUnavailable: classifyUnavailable, as: OrbitSchoolBriefingResponse.self) }
     func schoolBrainConversation() async throws -> OrbitSchoolBrainConversationResponse { try await request(path: "/api/school/brain/conversation") }
