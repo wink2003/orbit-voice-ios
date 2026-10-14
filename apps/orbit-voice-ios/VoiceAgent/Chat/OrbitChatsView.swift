@@ -56,7 +56,13 @@ struct OrbitChatsView: View {
                                                 .font(.headline).foregroundStyle(.white).frame(width: 38, height: 38)
                                                 .background(chat.kind == "family" ? NovaTodayTokens.teal : NovaTodayTokens.indigo, in: Circle())
                                             VStack(alignment: .leading, spacing: 4) {
-                                                HStack { Text(OrbitChatPresentation.displayTitle(kind: chat.kind, title: chat.title)).font(.headline); Spacer(); if let updatedAt = chat.updatedAt { Text(updatedAt, style: .relative).font(.caption2).foregroundStyle(.tertiary) } }
+                                                HStack {
+                                                    Text(OrbitChatPresentation.displayTitle(kind: chat.kind, title: chat.title)).font(.headline)
+                                                    Spacer()
+                                                    if let timestamp = OrbitChatPresentation.updatedLabel(chat.updatedAt) {
+                                                        Text(timestamp).font(.caption2).foregroundStyle(.tertiary)
+                                                    }
+                                                }
                                                 Text(chat.lastMessage ?? chat.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                                             }
                                             Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
@@ -282,6 +288,8 @@ private struct OrbitConversationView: View {
                     scrollToLatest(using: proxy, animated: false)
                 }
             }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             Divider()
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("Написати Orbit…", text: $draft, axis: .vertical)

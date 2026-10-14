@@ -22,6 +22,29 @@ nonisolated enum OrbitChatPresentation {
         return trimmed.isEmpty || trimmed.lowercased() == "orbit" ? "Мій Orbit" : trimmed
     }
 
+    /// Stable localized summary; unlike Date's relative Text style it does
+    /// not install a per-second refresh timer.
+    static func updatedLabel(_ date: Date?, now: Date = Date(), calendar: Calendar = .current, locale: Locale = Locale(identifier: "uk_UA")) -> String? {
+        guard let date else { return nil }
+        let seconds = now.timeIntervalSince(date)
+        guard seconds >= 0 else { return nil }
+        if seconds < 60 { return "щойно" }
+        let minutes = Int(seconds / 60)
+        if minutes < 60 { return "\(minutes) хв" }
+        let hours = Int(seconds / 3_600)
+        if hours < 24 { return "\(hours) год" }
+        if calendar.isDate(date, inSameDayAs: calendar.date(byAdding: .day, value: -1, to: now) ?? now) {
+            return "вчора"
+        }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+        formatter.dateFormat = sameYear ? "d MMM" : "d MMM yyyy"
+        return formatter.string(from: date)
+    }
+
     static func layout(_ rows: [OrbitChatRowInput], calendar: Calendar = .current, now: Date = Date(), locale: Locale = Locale(identifier: "uk_UA")) -> [OrbitChatRowLayout] {
         rows.enumerated().map { index, row in
             let previous = index > 0 ? rows[index - 1] : nil

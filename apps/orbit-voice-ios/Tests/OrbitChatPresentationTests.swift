@@ -12,6 +12,12 @@ struct OrbitChatPresentationTests {
         precondition(OrbitChatPresentation.displayTitle(kind: "orbit", title: "Orbit") == "Мій Orbit", "personal title")
         precondition(OrbitChatPresentation.displayTitle(kind: "orbit", title: "") == "Мій Orbit", "empty title")
 
+        precondition(OrbitChatPresentation.updatedLabel(now.addingTimeInterval(-30), now: now, calendar: cal) == "щойно", "recent timestamp is stable")
+        precondition(OrbitChatPresentation.updatedLabel(d(14, 59), now: now, calendar: cal) == "1 хв", "minute timestamp")
+        precondition(OrbitChatPresentation.updatedLabel(d(12, 0), now: now, calendar: cal) == "3 год", "hour timestamp")
+        precondition(OrbitChatPresentation.updatedLabel(d(15, 0, day: 6), now: now, calendar: cal) == "вчора", "yesterday timestamp")
+        precondition(OrbitChatPresentation.updatedLabel(nil, now: now, calendar: cal) == nil, "missing timestamp omitted")
+
         let rows = [
             OrbitChatRowInput(id: "1", senderKey: "me", date: d(9, 0, day: 6)),
             OrbitChatRowInput(id: "2", senderKey: "orbit", date: d(9, 1, day: 6)),

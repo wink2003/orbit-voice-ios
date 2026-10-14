@@ -1349,9 +1349,10 @@ private struct SchoolTaskRow: View {
                             SchoolTrustGlyph(evidence: evidence)
                         }
                         metaLine(dueKey: dueKey, days: days, warn: warn, item: item, evidence: evidence)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Spacer(minLength: 0)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(task.title)
@@ -1430,7 +1431,12 @@ private struct SchoolTaskRow: View {
                 .foregroundStyle(dueColor)
                 .accessibilityHidden(true)
             Text(due).foregroundStyle(dueColor).fontWeight(warn ? .semibold : .regular)
-            if !rest.isEmpty { Text("· " + rest.joined(separator: " · ")).foregroundStyle(.secondary) }
+            if !rest.isEmpty {
+                Text("· " + rest.joined(separator: " · "))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+            }
         }
         .font(.caption2)
         .fixedSize(horizontal: false, vertical: true)
