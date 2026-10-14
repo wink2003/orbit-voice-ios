@@ -615,15 +615,12 @@ nonisolated enum SchoolTaskFilter: String, CaseIterable, Identifiable {
 }
 
 nonisolated struct SchoolTaskSections: Equatable {
-    var overdue: [SchoolHubTask] = []
-    var overdueOlder: [SchoolHubTask] = []
-    var soon: [SchoolHubTask] = []
-    var later: [SchoolHubTask] = []
+    var thisWeek: [SchoolHubTask] = []
+    var dated: [SchoolHubTask] = []
     var undated: [SchoolHubTask] = []
     var undatedOlder: [SchoolHubTask] = []
-    var completed: [SchoolHubTask] = []
 
-    var visibleCount: Int { overdue.count + overdueOlder.count + soon.count + later.count + undated.count + undatedOlder.count + completed.count }
+    var visibleCount: Int { thisWeek.count + dated.count + undated.count + undatedOlder.count }
 }
 
 nonisolated struct SchoolTaskCounts: Equatable {
@@ -649,30 +646,29 @@ extension SchoolHubLogic {
         var sections = SchoolTaskSections()
         let showOpen = filter != .completed
         let showCompleted = filter != .open
-        let open = tasks.filter { !isCompleted($0) }
-        if showOpen {
-            let groups = groupTasks(open, today: today, sourceDates: sourceDates, now: now)
-            let soonEnd = addDays(soonDays, to: today) ?? today
-            let overdueCutoff = addDays(-overdueOlderDays, to: today) ?? today
-            for task in groups.overdue {
-                if let due = dayKey(for: task.dueAt, allDay: task.allDay), due < overdueCutoff { sections.overdueOlder.append(task) } else { sections.overdue.append(task) }
-            }
-            for task in groups.dated {
-                guard let due = dayKey(for: task.dueAt, allDay: task.allDay) else { continue }
-                if due <= soonEnd { sections.soon.append(task) } else { sections.later.append(task) }
-            }
-            sections.undated = groups.undated
-            sections.undatedOlder = groups.undatedOlder
+        let visible = tasks.filter { task in
+            (isCompleted(task) && showCompleted) || (!isCompleted(task) && showOpen)
         }
-        if showCompleted {
-            sections.completed = tasks.filter(isCompleted).sorted { stableOrder($0, $1) }
+        let week = Set(weekDays(containing: today))
+        let groups = groupTasks(visible, today: today, sourceDates: sourceDates, now: now)
+        for task in groups.dated {
+            guard let due = dayKey(for: task.dueAt, allDay: task.allDay) else { continue }
+            if week.contains(due) { sections.thisWeek.append(task) } else { sections.dated.append(task) }
         }
+        sections.undated = groups.undated
+        sections.undatedOlder = groups.undatedOlder
+        sections.thisWeek.sort(by: stableOrder)
+        sections.dated.sort(by: stableOrder)
+        sections.undated.sort(by: stableOrder)
+        sections.undatedOlder.sort(by: stableOrder)
         return sections
     }
 
     private static func stableOrder(_ a: SchoolHubTask, _ b: SchoolHubTask) -> Bool {
-        let (da, db) = (a.dueAt ?? "9999", b.dueAt ?? "9999")
-        return da == db ? a.id < b.id : da < db
+        let (da, db) = (dayKey(for: a.dueAt, allDay: a.allDay) ?? "9999-99-99", dayKey(for: b.dueAt, allDay: b.allDay) ?? "9999-99-99")
+        if da != db { return da < db }
+        if a.dueAt != b.dueAt { return (a.dueAt ?? "") < (b.dueAt ?? "") }
+        return a.id < b.id
     }
 
     /// A known deadline pre-fills the calendar date (explained as a deadline).

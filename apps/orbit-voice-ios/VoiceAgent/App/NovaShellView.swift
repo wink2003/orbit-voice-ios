@@ -5,14 +5,21 @@ import SwiftUI
 struct NovaShellView: View {
     @Binding var selection: OrbitMainTab
     @State private var dockTopY: CGFloat = .infinity
+    @State private var dockHeight: CGFloat = 0
 
     var body: some View {
         destination
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 NovaDock(selection: $selection)
-                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { dockTopY = $0 }
+                    .onGeometryChange(for: DockMetrics.self) { proxy in
+                        DockMetrics(top: proxy.frame(in: .global).minY, height: proxy.size.height)
+                    } action: { metrics in
+                        dockTopY = metrics.top
+                        dockHeight = metrics.height
+                    }
             }
             .environment(\.novaDockTopY, dockTopY)
+            .environment(\.novaDockHeight, dockHeight)
             .onReceive(NotificationCenter.default.publisher(for: .orbitSchoolNotificationTapped)) { _ in
                 selection = .school
             }
@@ -37,6 +44,11 @@ struct NovaShellView: View {
     private func select(_ tab: OrbitMainTab) {
         selection = tab == .today ? .home : tab
     }
+}
+
+private struct DockMetrics: Equatable {
+    let top: CGFloat
+    let height: CGFloat
 }
 
 private struct NovaDock: View {
@@ -78,11 +90,31 @@ private struct NovaDock: View {
 }
 
 private struct NovaDockTopYKey: EnvironmentKey { static let defaultValue: CGFloat = .infinity }
+private struct NovaDockHeightKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+
+struct NovaDockAwareScrollContent: ViewModifier {
+    @Environment(\.novaDockHeight) private var dockHeight
+
+    func body(content: Content) -> some View {
+        content.contentMargins(.bottom, dockHeight + 12, for: .scrollContent)
+    }
+}
+
+extension View {
+    func novaDockAwareScrollContent() -> some View {
+        modifier(NovaDockAwareScrollContent())
+    }
+}
 
 extension EnvironmentValues {
     /// Top edge of the Nova dock in global coordinates; `.infinity` when no dock is shown.
     var novaDockTopY: CGFloat {
         get { self[NovaDockTopYKey.self] }
         set { self[NovaDockTopYKey.self] = newValue }
+    }
+
+    var novaDockHeight: CGFloat {
+        get { self[NovaDockHeightKey.self] }
+        set { self[NovaDockHeightKey.self] = newValue }
     }
 }

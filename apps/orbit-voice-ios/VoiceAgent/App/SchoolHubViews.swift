@@ -1491,7 +1491,7 @@ private struct SchoolTaskDetailView: View {
         }
         .navigationTitle("Справа")
         .navigationBarTitleDisplayMode(.inline)
-        .contentMargins(.bottom, 12, for: .scrollContent)
+        .novaDockAwareScrollContent()
         .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
         .alert("Стан справи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
     }
@@ -1559,7 +1559,7 @@ private struct SchoolChecklistView: View {
             }
             if loading { ProgressView().frame(maxWidth: .infinity) }
         }
-        .contentMargins(.bottom, 12, for: .scrollContent)
+        .novaDockAwareScrollContent()
     }
 
     private func load() async {
@@ -1625,7 +1625,7 @@ private struct SchoolNotesView: View {
                 }.buttonStyle(.plain)
             }
         }
-        .contentMargins(.bottom, 12, for: .scrollContent)
+        .novaDockAwareScrollContent()
     }
 
     private func load() async {
@@ -1817,7 +1817,7 @@ private struct SchoolTaskCalendarSheet: View {
 private struct SchoolTaskListView: View {
     let store: SchoolHubStore
     @State private var query = ""
-    @State private var filter: SchoolTaskFilter = .open
+    @State private var filter: SchoolTaskFilter = .all
     @State private var showCreate = false
 
     var body: some View {
@@ -1837,13 +1837,10 @@ private struct SchoolTaskListView: View {
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
             statusSection
-            group("Прострочені", tasks: sections.overdue, overdue: true, today: today)
-            disclosure("Давно прострочені", tasks: sections.overdueOlder, today: today)
-            group("Найближчі", tasks: sections.soon, today: today)
-            group("Пізніше", tasks: sections.later, today: today)
+            group("Цього тижня", tasks: sections.thisWeek, today: today)
+            group("Інші дати", tasks: sections.dated, today: today)
             group("Без дати", tasks: sections.undated, today: today)
             disclosure("Старіші без дати", tasks: sections.undatedOlder, today: today)
-            group("Виконані", tasks: sections.completed, today: today)
             if store.tasksPhase == .loaded && sections.visibleCount == 0 {
                 emptyState
             }
@@ -2072,6 +2069,7 @@ struct SchoolEventDetailView: View {
         }
         .navigationTitle("Подія")
         .navigationBarTitleDisplayMode(.inline)
+        .novaDockAwareScrollContent()
         .alert("Календар школи", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("Гаразд") { message = nil } } message: { Text(message ?? "") }
         .confirmationDialog("Додати подію до сімейного календаря Orbit?", isPresented: $pending, titleVisibility: .visible) {
             Button("Додати «\(event.title)»") { Task { await confirm() } }
