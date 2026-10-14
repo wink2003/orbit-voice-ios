@@ -166,6 +166,7 @@ private struct OrbitConversationView: View {
     let conversation: OrbitConversation
     let initialDraft: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.novaDockVisible) private var novaDockVisible
     @State private var messages: [OrbitChatMessage] = []
     @State private var draft = ""
     @State private var isSending = false
@@ -348,7 +349,11 @@ private struct OrbitConversationView: View {
         .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
         .toolbar(.hidden, for: .tabBar)
         .task { await loadMessages() }
-        .onDisappear { cancelLocalAgentPolling() }
+        .onAppear { novaDockVisible.wrappedValue = false }
+        .onDisappear {
+            novaDockVisible.wrappedValue = true
+            cancelLocalAgentPolling()
+        }
         .alert("Orbit тимчасово недоступний", isPresented: .constant(error != nil)) {
             Button("Гаразд") { error = nil }
         } message: {

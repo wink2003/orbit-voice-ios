@@ -1426,16 +1426,21 @@ private struct SchoolTaskRow: View {
         if task.calendarEventId != nil { rest.append("у календарі") }
         if evidence == .needsVerification { rest.append("перевірити") }
         let dueColor: Color = overdue ? .red : (warn ? Color(red: 0.70, green: 0.42, blue: 0.0) : .secondary)
-        return HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Image(systemName: dueKey == nil ? "calendar.badge.questionmark" : (overdue ? "clock.badge.exclamationmark" : "calendar"))
-                .foregroundStyle(dueColor)
-                .accessibilityHidden(true)
-            Text(due).foregroundStyle(dueColor).fontWeight(warn ? .semibold : .regular)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Image(systemName: dueKey == nil ? "calendar.badge.questionmark" : (overdue ? "clock.badge.exclamationmark" : "calendar"))
+                    .foregroundStyle(dueColor)
+                    .accessibilityHidden(true)
+                Text(due)
+                    .foregroundStyle(dueColor)
+                    .fontWeight(warn ? .semibold : .regular)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
             if !rest.isEmpty {
-                Text("· " + rest.joined(separator: " · "))
+                Text(rest.joined(separator: " · "))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
             }
         }
         .font(.caption2)

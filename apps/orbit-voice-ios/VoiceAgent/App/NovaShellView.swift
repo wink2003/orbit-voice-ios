@@ -6,20 +6,24 @@ struct NovaShellView: View {
     @Binding var selection: OrbitMainTab
     @State private var dockTopY: CGFloat = .infinity
     @State private var dockHeight: CGFloat = 0
+    @State private var dockVisible = true
 
     var body: some View {
         destination
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                NovaDock(selection: $selection)
-                    .onGeometryChange(for: DockMetrics.self) { proxy in
-                        DockMetrics(top: proxy.frame(in: .global).minY, height: proxy.size.height)
-                    } action: { metrics in
-                        dockTopY = metrics.top
-                        dockHeight = metrics.height
+                if dockVisible {
+                    NovaDock(selection: $selection)
+                        .onGeometryChange(for: DockMetrics.self) { proxy in
+                            DockMetrics(top: proxy.frame(in: .global).minY, height: proxy.size.height)
+                        } action: { metrics in
+                            dockTopY = metrics.top
+                            dockHeight = metrics.height
+                        }
                     }
             }
             .environment(\.novaDockTopY, dockTopY)
             .environment(\.novaDockHeight, dockHeight)
+            .environment(\.novaDockVisible, $dockVisible)
             .onReceive(NotificationCenter.default.publisher(for: .orbitSchoolNotificationTapped)) { _ in
                 selection = .school
             }
@@ -95,6 +99,7 @@ private struct NovaDock: View {
 
 private struct NovaDockTopYKey: EnvironmentKey { static let defaultValue: CGFloat = .infinity }
 private struct NovaDockHeightKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+private struct NovaDockVisibleKey: EnvironmentKey { static let defaultValue: Binding<Bool> = .constant(true) }
 
 struct NovaDockAwareScrollContent: ViewModifier {
     @Environment(\.novaDockHeight) private var dockHeight
@@ -120,5 +125,10 @@ extension EnvironmentValues {
     var novaDockHeight: CGFloat {
         get { self[NovaDockHeightKey.self] }
         set { self[NovaDockHeightKey.self] = newValue }
+    }
+
+    var novaDockVisible: Binding<Bool> {
+        get { self[NovaDockVisibleKey.self] }
+        set { self[NovaDockVisibleKey.self] = newValue }
     }
 }
