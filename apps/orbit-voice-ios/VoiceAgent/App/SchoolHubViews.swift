@@ -823,10 +823,12 @@ private struct SchoolCommandCenter: View {
                     .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
             } else {
                 NovaSurface(tint: hasOverduePriority ? NovaTodayTokens.coral : NovaTodayTokens.teal) {
-                    ForEach(Array(priorities.enumerated()), id: \.element.id) { index, item in
-                        Button { open(priority: item) } label: { priorityRow(item) }
-                            .buttonStyle(.plain)
-                        if index < priorities.count - 1 { Divider().padding(.vertical, 8) }
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(priorities.enumerated()), id: \.element.id) { index, item in
+                            Button { open(priority: item) } label: { priorityRow(item) }
+                                .buttonStyle(.plain)
+                            if index < priorities.count - 1 { Divider().padding(.vertical, 8) }
+                        }
                     }
                 }
             }
@@ -1297,26 +1299,41 @@ private struct SchoolTaskRow: View {
         let dueKey = SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay)
         let days = dueKey.flatMap { SchoolHubFormat.daysFrom(today, to: $0) }
         let warn = overdue || (days.map { $0 <= 2 } ?? false)
+        let updating = store.isUpdating(task)
         let row = HStack(alignment: .center, spacing: 10) {
-            Image(systemName: task.status == "completed" ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(task.status == "completed" ? NovaTodayTokens.teal : Color.secondary.opacity(0.8))
-                .frame(width: 21, height: 21)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(task.title).font(.callout.weight(.medium)).lineLimit(2)
-                    SchoolTrustGlyph(evidence: evidence)
-                }
-                metaLine(dueKey: dueKey, days: days, warn: warn, item: item, evidence: evidence)
+            Button {
+                toggleStatus()
+            } label: {
+                Image(systemName: task.status == "completed" ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(task.status == "completed" ? NovaTodayTokens.teal : Color.secondary.opacity(0.8))
+                    .frame(width: 44, height: 44)
+                    .overlay { if updating { ProgressView().tint(NovaTodayTokens.teal) } }
             }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary).accessibilityHidden(true)
+            .buttonStyle(.plain)
+            .disabled(updating || !task.identityStable || !store.actionCapability.canMutate)
+            .accessibilityLabel(task.status == "completed" ? "Повернути справу у відкриті" : "Позначити справу виконаною")
+            .accessibilityValue(updating ? "Зберігається" : (task.status == "completed" ? "Виконано" : "Відкрито"))
+            .accessibilityHint("Подвійне натискання змінює стан справи")
+            NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: {
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text(task.title).font(.callout.weight(.medium)).lineLimit(2)
+                            SchoolTrustGlyph(evidence: evidence)
+                        }
+                        metaLine(dueKey: dueKey, days: days, warn: warn, item: item, evidence: evidence)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary).accessibilityHidden(true)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(task.title)
+            .accessibilityValue("\(task.status == "completed" ? "Виконано" : "Відкрито")\(task.calendarEventId != nil ? ", є в календарі" : "")")
         }
         .frame(minHeight: 56, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(task.title). \(task.status == "completed" ? "Виконано." : "Відкрито.")\(task.calendarEventId != nil ? " Є в календарі." : "")")
-        NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: { row }
-            .buttonStyle(.plain)
+        row
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if store.actionTasksPhase == .loaded && task.identityStable {
                 Button {
@@ -1340,10 +1357,18 @@ private struct SchoolTaskRow: View {
                 }
             }
             .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
-        .alert("Стан справи", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
+            .alert("Стан справи", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
             Button("Гаразд") { actionError = nil }
         } message: {
             Text(actionError ?? "")
+        }
+    }
+
+    private func toggleStatus() {
+        guard !store.isUpdating(task), task.identityStable, store.actionCapability.canMutate else { return }
+        Task {
+            do { try await store.setTaskStatus(task, completed: task.status != "completed") }
+            catch { actionError = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
         }
     }
 
@@ -1466,6 +1491,7 @@ private struct SchoolTaskDetailView: View {
         }
         .navigationTitle("Справа")
         .navigationBarTitleDisplayMode(.inline)
+        .contentMargins(.bottom, 12, for: .scrollContent)
         .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
         .alert("Стан справи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
     }
@@ -1533,6 +1559,7 @@ private struct SchoolChecklistView: View {
             }
             if loading { ProgressView().frame(maxWidth: .infinity) }
         }
+        .contentMargins(.bottom, 12, for: .scrollContent)
     }
 
     private func load() async {
@@ -1598,6 +1625,7 @@ private struct SchoolNotesView: View {
                 }.buttonStyle(.plain)
             }
         }
+        .contentMargins(.bottom, 12, for: .scrollContent)
     }
 
     private func load() async {
