@@ -11,6 +11,7 @@ struct OrbitChatsView: View {
     @State private var error: Error?
     @State private var familyProfiles: [OrbitFamilyProfile] = []
     @State private var showingVoice = false
+    @State private var isCreatingConversation = false
 
     var body: some View {
         NavigationStack {
@@ -64,6 +65,7 @@ struct OrbitChatsView: View {
                 if let profile {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
+                            Button { createConversation() } label: { Label("Нова розмова", systemImage: "plus.bubble") }
                             Label("Активний профіль", systemImage: "checkmark.circle")
                             if !familyProfiles.isEmpty {
                                 Section("Профілі родини") {
@@ -106,10 +108,25 @@ struct OrbitChatsView: View {
             let response = try await OrbitChatAPI.shared.chats()
             profile = response.profile
             chats = response.chats
+            if contactPrompt == nil, selectedChat == nil {
+                selectedChat = response.chats.first(where: { $0.kind == "personal" })
+            }
             isLoading = false
             Task { await loadFamilyProfiles() }
         } catch {
             self.error = error
+        }
+    }
+
+    private func createConversation() {
+        guard !isCreatingConversation else { return }
+        isCreatingConversation = true
+        Task { @MainActor in
+            defer { isCreatingConversation = false }
+            if let conversation = try? await OrbitChatAPI.shared.createConversation() {
+                chats.insert(conversation, at: 0)
+                selectedChat = conversation
+            }
         }
     }
 
@@ -121,6 +138,7 @@ struct OrbitChatsView: View {
 private struct OrbitConversationView: View {
     let conversation: OrbitConversation
     let initialDraft: String?
+    @Environment(\.dismiss) private var dismiss
     @State private var messages: [OrbitChatMessage] = []
     @State private var draft = ""
     @State private var isSending = false
@@ -288,6 +306,10 @@ private struct OrbitConversationView: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Пошук у завантажених")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Розмови") { dismiss() }
+                    .frame(minHeight: OrbitSpacing.minTarget)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingVoice = true } label: { Image(systemName: "waveform") }
                     .frame(minWidth: OrbitSpacing.minTarget, minHeight: OrbitSpacing.minTarget)

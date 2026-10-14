@@ -92,6 +92,11 @@ final class OrbitChatAPI {
         return (response.profile, response.chats)
     }
 
+    func createConversation(title: String = "Нова розмова") async throws -> OrbitConversation {
+        let response: CreateConversationResponse = try await request(path: "/api/chats", method: "POST", body: ["title": title])
+        return response.conversation
+    }
+
     func messages(in conversation: OrbitConversation, limit: Int = 100) async throws -> [OrbitChatMessage] {
         let boundedLimit = min(max(limit, 1), 120)
         let response: MessagesResponse = try await request(path: "/api/chats/\(conversation.id)/messages?limit=\(boundedLimit)")
@@ -146,4 +151,8 @@ final class OrbitChatAPI {
             throw OrbitChatAPIError.invalidResponse
         }
     }
+}
+
+private struct CreateConversationResponse: Decodable {
+    let conversation: OrbitConversation
 }

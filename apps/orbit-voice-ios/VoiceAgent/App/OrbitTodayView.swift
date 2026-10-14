@@ -204,7 +204,7 @@ struct OrbitTodayView: View {
             case let .loaded(value, stale):
                 NovaSourceSurface(tint: NovaTodayTokens.coral) {
                     if stale { NovaStaleLabel() }
-                    let visible = dueTasks(from: value.tasks)
+                    let visible = taskPreview(from: value.tasks)
                     if visible.isEmpty { NovaStateRow(icon: "checkmark.circle", text: "Немає справ, релевантних сьогодні.") }
                     else { ForEach(Array(visible.prefix(3))) { task in NovaPreparationRow(task: task, source: school.value?.items.first { $0.id == task.sourceItemId }, open: open) } }
                 }
@@ -239,11 +239,21 @@ struct OrbitTodayView: View {
     private var schoolGlanceTitle: String { unreadCount == 0 ? "Немає нового" : "\(unreadCount) нових" }
     private var taskGlanceTitle: String {
         guard case let .loaded(value, _) = tasks else { return "Перевірити" }
-        return "\(dueTasks(from: value.tasks).count) відкритих"
+        return "\(openTasks(from: value.tasks).count) відкритих"
     }
-    private func dueTasks(from input: [OrbitSchoolTask]) -> [OrbitSchoolTask] {
+    private func openTasks(from input: [OrbitSchoolTask]) -> [OrbitSchoolTask] {
+        input.filter { $0.status != "completed" }
+    }
+    private func taskPreview(from input: [OrbitSchoolTask]) -> [OrbitSchoolTask] {
         let todayKey = SchoolHubLogic.dayKey(of: today)
-        return input.filter { guard let due = SchoolHubLogic.dayKey(for: $0.dueAt, allDay: $0.allDay) else { return false }; return due <= todayKey }.sorted { ($0.dueAt ?? "") < ($1.dueAt ?? "") }
+        let open = openTasks(from: input)
+        return open.sorted { lhs, rhs in
+            let left = SchoolHubLogic.dayKey(for: lhs.dueAt, allDay: lhs.allDay)
+            let right = SchoolHubLogic.dayKey(for: rhs.dueAt, allDay: rhs.allDay)
+            let leftRank = left.map { $0 <= todayKey ? "0\($0)" : "1\($0)" } ?? "2"
+            let rightRank = right.map { $0 <= todayKey ? "0\($0)" : "1\($0)" } ?? "2"
+            return leftRank != rightRank ? leftRank < rightRank : lhs.id < rhs.id
+        }
     }
     private func retry() { Task { await load() } }
     private func load() async {
@@ -258,7 +268,7 @@ struct OrbitTodayView: View {
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? today
         async let calendarResult = fetch { try await MainProductAPI.shared.calendarEvents(from: start, to: end, classifyUnavailable: true) }
         async let schoolResult = fetch { try await MainProductAPI.shared.schoolItems(classifyUnavailable: true) }
-        async let taskResult = fetch { try await MainProductAPI.shared.schoolTasks() }
+        async let taskResult = fetch { try await MainProductAPI.shared.schoolTasks(coverage: "all") }
         let results = await (calendarResult, schoolResult, taskResult)
         calendar = OrbitSourceStateBuilder.resolve(result: results.0, isEmpty: { $0.isEmpty }, previous: calendar, isUnavailable: isUnavailable)
         school = OrbitSourceStateBuilder.resolve(result: results.1, isEmpty: { $0.items.isEmpty && $0.unreadCount == 0 }, previous: school, isUnavailable: isUnavailable)
@@ -476,9 +486,10 @@ private struct NovaPreparationRow: View {
     let task: OrbitSchoolTask; let source: OrbitSchoolItem?; let open: (OrbitMainTab) -> Void
     var body: some View { Group { if let source { NavigationLink { SchoolDetailView(item: source) } label: { row } } else { Button { open(.school) } label: { row } } }.buttonStyle(.plain) }
     private var row: some View {
-        HStack(alignment: .top, spacing: 11) { Circle().stroke(NovaTodayTokens.coral, lineWidth: 2).frame(width: 22, height: 22).padding(.top, 1); VStack(alignment: .leading, spacing: 3) { Text(task.title).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true); Text(taskDate).font(.caption).foregroundStyle(.secondary) }; Spacer(minLength: 0); Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary) }.frame(minHeight: 44, alignment: .center).accessibilityElement(children: .combine).accessibilityLabel("Відкрита шкільна справа: \(task.title). \(taskDate)")
+        HStack(alignment: .top, spacing: 11) { Circle().stroke(NovaTodayTokens.coral, lineWidth: 2).frame(width: 22, height: 22).padding(.top, 1); VStack(alignment: .leading, spacing: 3) { Text(task.title).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true); Text("\(taskDate) · \(sourceLabel)").font(.caption).foregroundStyle(.secondary) }; Spacer(minLength: 0); Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary) }.frame(minHeight: 44, alignment: .center).accessibilityElement(children: .combine).accessibilityLabel("Відкрита шкільна справа: \(task.title). \(taskDate). \(sourceLabel)")
     }
     private var taskDate: String { guard let due = task.dueAt, let date = OrbitSchoolDateDecoding.date(from: due) else { return "Термін не вказано" }; return "Термін: " + date.formatted(date: .abbreviated, time: .omitted) }
+    private var sourceLabel: String { switch task.sourceType.lowercased() { case "letter", "schulmanager_letter": "Schulmanager · Лист"; case "message", "schulmanager_message": "Schulmanager · Повідомлення"; case "calendar", "schulmanager_calendar": "Schulmanager · Календар"; default: "Schulmanager · Джерело" } }
 }
 
 private struct NovaLoadingRows: View {

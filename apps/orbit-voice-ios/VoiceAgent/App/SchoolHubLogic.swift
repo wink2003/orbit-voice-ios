@@ -84,6 +84,8 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     let confidence: Double?
     let reason: String?
     let sourceItemId: String
+    var sourceType: String? = nil
+    var sourceExternalId: String? = nil
     var kind: String = "source"
     var actionID: String? = nil
     var status: String = "open"
@@ -692,4 +694,15 @@ extension SchoolHubTask {
     }
     /// Calendar creation needs a server-resolvable source task with a stable identity.
     var canAddToCalendar: Bool { kind == "source" && identityStable && !sourceItemId.isEmpty }
+
+    var provenanceLabel: String {
+        if kind == "family" { return "Orbit · Сімейна справа" }
+        switch (sourceType ?? "").lowercased() {
+        case "letter", "schulmanager_letter": return "Schulmanager · Лист"
+        case "message", "schulmanager_message": return "Schulmanager · Повідомлення"
+        case "calendar", "schulmanager_calendar": return "Schulmanager · Календар"
+        case "orbit_family", "family": return "Orbit · Сімейна справа"
+        default: return "Schulmanager · Джерело"
+        }
+    }
 }

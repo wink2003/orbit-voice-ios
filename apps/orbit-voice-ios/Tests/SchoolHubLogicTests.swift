@@ -94,6 +94,12 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.searchTasks(tasks, query: "T3").map(\.id) == ["3"])
         precondition(SchoolHubLogic.searchScopeNote.contains("завантажених"))
 
+        // Source provenance stays honest and does not invent email/calendar identities.
+        let letterTask = SchoolHubTask(id: "letter:key", title: "Лист", action: nil, dueAt: nil, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "letter", sourceType: "letter", sourceExternalId: "ext-letter")
+        let familyTask = SchoolHubTask(id: "family:id", title: "Сімейна", action: nil, dueAt: nil, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "", kind: "family")
+        precondition(letterTask.provenanceLabel == "Schulmanager · Лист")
+        precondition(familyTask.provenanceLabel == "Orbit · Сімейна справа")
+
         // Unified chronology keeps source links and never invents dates for undated records.
         let timelineLetters = [
             SchoolHubLetter(id: "letter-1", type: "letter", title: "Поїздка", sender: "Schule", originalText: "Bitte", translation: nil, important: nil, unread: true, date: SchoolHubLogic.date(fromDayKey: "2026-10-09")),

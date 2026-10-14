@@ -68,6 +68,8 @@ final class SchoolHubStore {
                     confidence: task.confidence,
                     reason: task.reason,
                     sourceItemId: task.sourceItemId,
+                    sourceType: task.sourceType,
+                    sourceExternalId: task.sourceExternalId,
                     actionID: state?.id,
                     status: state?.status ?? task.status ?? "open",
                     planningDate: state?.planningDate,
@@ -80,7 +82,7 @@ final class SchoolHubStore {
                 (item.tasks ?? []).compactMap { task -> SchoolHubTask? in
                     guard let title = (task.title ?? task.action), !title.isEmpty else { return nil }
                     guard let key = task.key, !key.isEmpty else { return nil }
-                    return SchoolHubTask(id: "\(item.id):\(key)", title: title, action: task.action, dueAt: task.dueAt, allDay: task.allDay ?? true, importance: task.importance, target: task.target, confidence: task.confidence, reason: task.reason, sourceItemId: item.id)
+                    return SchoolHubTask(id: "\(item.id):\(key)", title: title, action: task.action, dueAt: task.dueAt, allDay: task.allDay ?? true, importance: task.importance, target: task.target, confidence: task.confidence, reason: task.reason, sourceItemId: item.id, sourceType: item.type, sourceExternalId: item.externalId)
                 }
             }
         }
@@ -1101,6 +1103,7 @@ private struct SchoolOverviewView: View {
             statusSection
             tomorrowSection(events: tomorrowEvents, tasks: tomorrowTasks, prep: prep)
             attentionSection(groups: groups)
+            taskPreviewSection(tasks: tasks)
             newSection
             upcomingSection(events: events)
             sourcesSection
@@ -1182,6 +1185,28 @@ private struct SchoolOverviewView: View {
             }
         } header: {
             SchoolSectionHeader(title: "Потребує уваги", count: urgent.count + groups.undatedOlder.count, linkTitle: "Усі справи") { navigate(.tasks) }
+        }
+    }
+
+    private func taskPreviewSection(tasks: [SchoolHubTask]) -> some View {
+        let openTasks = tasks.filter { $0.status != "completed" }
+        let preview = openTasks.sorted { lhs, rhs in
+            let left = SchoolHubLogic.dayKey(for: lhs.dueAt, allDay: lhs.allDay) ?? "9999-99-99"
+            let right = SchoolHubLogic.dayKey(for: rhs.dueAt, allDay: rhs.allDay) ?? "9999-99-99"
+            return left != right ? left < right : lhs.id < rhs.id
+        }.prefix(3)
+        return Section {
+            if store.tasksPhase == .failed && !store.tasksLoadedOnce {
+                SchoolNotice(text: "Справи не вдалося завантажити — нуль не означає, що справ немає.", systemImage: "exclamationmark.triangle")
+            } else if preview.isEmpty {
+                SchoolNotice(text: store.tasksPhase == .loaded ? "Відкритих справ немає." : "Справи ще завантажуються.", systemImage: "checkmark.circle")
+            } else {
+                ForEach(Array(preview)) { task in
+                    SchoolTaskRow(store: store, task: task, today: today)
+                }
+            }
+        } header: {
+            SchoolSectionHeader(title: "Шкільні справи", count: openTasks.count, linkTitle: "Усі справи") { navigate(.tasks) }
         }
     }
 
@@ -1325,7 +1350,6 @@ private struct SchoolTaskRow: View {
                         metaLine(dueKey: dueKey, days: days, warn: warn, item: item, evidence: evidence)
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary).accessibilityHidden(true)
                 }
             }
             .buttonStyle(.plain)
@@ -1378,15 +1402,21 @@ private struct SchoolTaskRow: View {
             due = SchoolHubFormat.shortDay(dueKey)
             if let days { due += " · " + SchoolHubFormat.relative(days) }
         }
-        var rest: [String] = ["Schulmanager"]
+        var rest: [String] = [task.provenanceLabel]
         if task.isHighPriority { rest.append("важливо") }
         if let target = task.target, !target.isEmpty { rest.append(target) }
         if task.calendarEventId != nil { rest.append("у календарі") }
         if evidence == .needsVerification { rest.append("перевірити") }
         let dueColor: Color = overdue ? .red : (warn ? Color(red: 0.70, green: 0.42, blue: 0.0) : .secondary)
-        return (Text(Image(systemName: dueKey == nil ? "calendar.badge.questionmark" : (overdue ? "clock.badge.exclamationmark" : "calendar"))).foregroundStyle(dueColor) + Text(" " + due).foregroundStyle(dueColor).fontWeight(warn ? .semibold : .regular) + Text(rest.isEmpty ? "" : " · " + rest.joined(separator: " · ")).foregroundStyle(.secondary))
-            .font(.caption2)
-            .fixedSize(horizontal: false, vertical: true)
+        return HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Image(systemName: dueKey == nil ? "calendar.badge.questionmark" : (overdue ? "clock.badge.exclamationmark" : "calendar"))
+                .foregroundStyle(dueColor)
+                .accessibilityHidden(true)
+            Text(due).foregroundStyle(dueColor).fontWeight(warn ? .semibold : .regular)
+            if !rest.isEmpty { Text("· " + rest.joined(separator: " · ")).foregroundStyle(.secondary) }
+        }
+        .font(.caption2)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -1437,12 +1467,12 @@ private struct SchoolTaskDetailView: View {
                 Section("Контекст") { Text(reason).textSelection(.enabled) }
             }
             Section("Джерело") {
-                LabeledContent("Система", value: "Schulmanager · лише читання")
-                if let source {
+                LabeledContent("Походження", value: task.provenanceLabel)
+                if task.kind == "source", let source {
                     NavigationLink { SchoolDetailView(item: source) } label: {
                         Label("Відкрити лист або повідомлення", systemImage: source.type == "letter" ? "envelope" : "message")
                     }
-                } else {
+                } else if task.kind == "source" {
                     Label("Пов’язаний лист зараз недоступний", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
                 }
@@ -1817,7 +1847,7 @@ private struct SchoolTaskCalendarSheet: View {
 private struct SchoolTaskListView: View {
     let store: SchoolHubStore
     @State private var query = ""
-    @State private var filter: SchoolTaskFilter = .all
+    @State private var filter: SchoolTaskFilter = .open
     @State private var showCreate = false
 
     var body: some View {
