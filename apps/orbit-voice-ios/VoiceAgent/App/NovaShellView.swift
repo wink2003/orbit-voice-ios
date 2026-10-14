@@ -46,9 +46,13 @@ struct NovaShellView: View {
     }
 }
 
-private struct DockMetrics: Equatable {
+private struct DockMetrics: Equatable, Sendable {
     let top: CGFloat
     let height: CGFloat
+
+    nonisolated static func == (lhs: DockMetrics, rhs: DockMetrics) -> Bool {
+        lhs.top == rhs.top && lhs.height == rhs.height
+    }
 }
 
 private struct NovaDock: View {
