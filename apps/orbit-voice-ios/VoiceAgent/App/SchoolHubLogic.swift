@@ -1,5 +1,25 @@
 import Foundation
 
+nonisolated enum SchoolTaskStatusConfirmation: Equatable {
+    case complete, reopen
+
+    init(completed: Bool) { self = completed ? .reopen : .complete }
+
+    var title: String {
+        switch self {
+        case .complete: "Позначити справу виконаною?"
+        case .reopen: "Повернути справу у відкриті?"
+        }
+    }
+
+    var actionTitle: String {
+        switch self {
+        case .complete: "Так, виконано"
+        case .reopen: "Повернути"
+        }
+    }
+}
+
 nonisolated enum SchoolHubSection: String, CaseIterable, Identifiable {
     case overview, letters, calendar, tasks
     var id: String { rawValue }

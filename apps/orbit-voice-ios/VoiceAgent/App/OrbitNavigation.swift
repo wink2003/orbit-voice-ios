@@ -66,3 +66,9 @@ nonisolated enum OrbitNavigation {
         forSchoolNotification ? .school : current
     }
 }
+
+nonisolated enum OrbitChatNavigationPolicy {
+    static func opensExplicitConversation(contactPrompt: String?) -> Bool {
+        contactPrompt != nil
+    }
+}

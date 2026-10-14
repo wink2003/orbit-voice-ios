@@ -11,6 +11,8 @@ struct OrbitNavigationTests {
         precondition(OrbitNavigation.moreDestinations(isOwner: false).map(\.title) == ["Пам’ять", "Сім’я", "Контакти", "Налаштування"], "more entries")
         precondition(OrbitNavigation.tab(forSchoolNotification: true, current: .chats) == .school, "notification selects school")
         precondition(OrbitNavigation.tab(forSchoolNotification: false, current: .chats) == .chats, "no change without notification")
+        precondition(!OrbitChatNavigationPolicy.opensExplicitConversation(contactPrompt: nil), "ordinary Orbit tab entry stays on the list")
+        precondition(OrbitChatNavigationPolicy.opensExplicitConversation(contactPrompt: "Напиши родині: "), "explicit prompt may open a conversation")
         print("OrbitNavigationTests passed")
     }
 }

@@ -194,6 +194,12 @@ struct SchoolHubLogicTests {
         precondition(SchoolActionsCapability.from(error: OrbitHTTPResponseFailure(status: 404, code: "not_found")) == .unavailable)
         precondition(SchoolActionsCapability.available.canMutate)
 
+        // Completion changes are confirmation-gated before the store mutation.
+        precondition(SchoolTaskStatusConfirmation(completed: false).title == "Позначити справу виконаною?")
+        precondition(SchoolTaskStatusConfirmation(completed: false).actionTitle == "Так, виконано")
+        precondition(SchoolTaskStatusConfirmation(completed: true).title == "Повернути справу у відкриті?")
+        precondition(SchoolTaskStatusConfirmation(completed: true).actionTitle == "Повернути")
+
         // School Tasks v2: sections, filters and one definition of "open".
         do {
             func t(_ id: String, due: String?, status: String = "open", source: String = "s1", key: String? = nil) -> SchoolHubTask {

@@ -7,6 +7,7 @@ struct OrbitChatsView: View {
     @State private var profile: OrbitProfile?
     @State private var chats: [OrbitConversation] = []
     @State private var selectedChat: OrbitConversation?
+    @State private var showingSchoolBrain = false
     @State private var isLoading = true
     @State private var error: Error?
     @State private var familyProfiles: [OrbitFamilyProfile] = []
@@ -18,18 +19,35 @@ struct OrbitChatsView: View {
             Group {
                 if isLoading {
                     ProgressView("Завантажую чати…")
-                } else if chats.isEmpty {
-                    ContentUnavailableView {
-                        Label("Чатів ще немає", systemImage: "bubble.left.and.bubble.right")
-                    } description: {
-                        Text("Ваші особисті та родинні розмови з Orbit з’являться тут.")
-                    } actions: {
-                        Button("Оновити") { Task { await load() } }
-                    }
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
                             NovaScreenHeading(eyebrow: "ORBIT · CORE AGENT", title: "Розмови", detail: "Контекст, джерела й підтвердження у звичних безпечних межах")
+                            Button { showingSchoolBrain = true } label: {
+                                NovaSurface(tint: NovaTodayTokens.teal) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "graduationcap.fill")
+                                            .font(.headline).foregroundStyle(.white).frame(width: 38, height: 38)
+                                            .background(NovaTodayTokens.teal, in: Circle())
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Шкільний чат").font(.headline)
+                                            Text("Окрема розмова про школу").font(.subheadline).foregroundStyle(.secondary)
+                                        }
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            if chats.isEmpty {
+                                ContentUnavailableView {
+                                    Label("Чатів Orbit ще немає", systemImage: "bubble.left.and.bubble.right")
+                                } description: {
+                                    Text("Створіть особисту або родинну розмову — шкільний чат доступний окремо.")
+                                } actions: {
+                                    Button("Оновити") { Task { await load() } }
+                                }
+                            }
                             ForEach(chats) { chat in
                                 Button { selectedChat = chat } label: {
                                     NovaSurface(tint: chat.kind == "family" ? NovaTodayTokens.teal : NovaTodayTokens.indigo) {
@@ -91,6 +109,9 @@ struct OrbitChatsView: View {
             .navigationDestination(item: $selectedChat) { chat in
                 OrbitConversationView(conversation: chat, initialDraft: contactPrompt)
             }
+            .navigationDestination(isPresented: $showingSchoolBrain) {
+                SchoolBrainView()
+            }
             .task { await load() }
             .refreshable { await load() }
             .alert("Не вдалося відкрити чати", isPresented: .constant(error != nil)) {
@@ -108,7 +129,7 @@ struct OrbitChatsView: View {
             let response = try await OrbitChatAPI.shared.chats()
             profile = response.profile
             chats = response.chats
-            if contactPrompt == nil, selectedChat == nil {
+            if OrbitChatNavigationPolicy.opensExplicitConversation(contactPrompt: contactPrompt), selectedChat == nil {
                 selectedChat = response.chats.first(where: { $0.kind == "personal" })
             }
             isLoading = false

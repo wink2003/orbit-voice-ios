@@ -1317,6 +1317,7 @@ private struct SchoolTaskRow: View {
     var today = SchoolHubLogic.dayKey(of: Date())
     @State private var actionError: String?
     @State private var showCalendar = false
+    @State private var pendingStatusChange: SchoolTaskStatusConfirmation?
 
     var body: some View {
         let item = store.item(id: task.sourceItemId)
@@ -1361,10 +1362,7 @@ private struct SchoolTaskRow: View {
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if store.actionTasksPhase == .loaded && task.identityStable {
                 Button {
-                    Task {
-                        do { try await store.setTaskStatus(task, completed: task.status != "completed") }
-                        catch { actionError = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
-                    }
+                    toggleStatus()
                 } label: {
                     Label(task.status == "completed" ? "Відкрити" : "Готово", systemImage: task.status == "completed" ? "arrow.uturn.backward" : "checkmark")
                 }.tint(task.status == "completed" ? .orange : NovaTodayTokens.teal)
@@ -1381,6 +1379,18 @@ private struct SchoolTaskRow: View {
                 }
             }
             .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
+            .confirmationDialog(
+                pendingStatusChange?.title ?? "Змінити стан справи?",
+                isPresented: Binding(get: { pendingStatusChange != nil }, set: { if !$0 { pendingStatusChange = nil } }),
+                titleVisibility: .visible
+            ) {
+                if let pendingStatusChange {
+                    Button(pendingStatusChange.actionTitle) { confirmStatusChange(pendingStatusChange) }
+                }
+                Button("Скасувати", role: .cancel) { pendingStatusChange = nil }
+            } message: {
+                Text(task.title)
+            }
             .alert("Стан справи", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
             Button("Гаразд") { actionError = nil }
         } message: {
@@ -1390,8 +1400,15 @@ private struct SchoolTaskRow: View {
 
     private func toggleStatus() {
         guard !store.isUpdating(task), task.identityStable, store.actionCapability.canMutate else { return }
+        pendingStatusChange = SchoolTaskStatusConfirmation(completed: task.status == "completed")
+    }
+
+    private func confirmStatusChange(_ confirmation: SchoolTaskStatusConfirmation) {
+        guard !store.isUpdating(task), task.identityStable, store.actionCapability.canMutate else { return }
+        pendingStatusChange = nil
+        let completed = confirmation == .complete
         Task {
-            do { try await store.setTaskStatus(task, completed: task.status != "completed") }
+            do { try await store.setTaskStatus(task, completed: completed) }
             catch { actionError = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
         }
     }
@@ -1426,6 +1443,7 @@ private struct SchoolTaskDetailView: View {
     @State private var updating = false
     @State private var error: String?
     @State private var showCalendar = false
+    @State private var pendingStatusChange: SchoolTaskStatusConfirmation?
 
     private var source: OrbitSchoolItem? { store.item(id: task.sourceItemId) }
     private var dueKey: String? { SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) }
@@ -1481,12 +1499,7 @@ private struct SchoolTaskDetailView: View {
                 if store.actionTasksPhase == .loaded && task.identityStable {
                 Button {
                     guard !updating else { return }
-                    updating = true
-                    Task {
-                        defer { updating = false }
-                        do { try await store.setTaskStatus(task, completed: task.status == "completed" ? false : true) }
-                        catch { self.error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
-                    }
+                    pendingStatusChange = SchoolTaskStatusConfirmation(completed: task.status == "completed")
                 } label: {
                     Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle")
                 }
@@ -1502,6 +1515,18 @@ private struct SchoolTaskDetailView: View {
                 }
             } header: { Text("Стан Orbit") } footer: {
                 Text(task.kind == "family" ? "Це сімейна справа Orbit і не змінює шкільне джерело." : "Стан зберігається в Orbit окремо від Schulmanager.")
+            }
+            .confirmationDialog(
+                pendingStatusChange?.title ?? "Змінити стан справи?",
+                isPresented: Binding(get: { pendingStatusChange != nil }, set: { if !$0 { pendingStatusChange = nil } }),
+                titleVisibility: .visible
+            ) {
+                if let pendingStatusChange {
+                    Button(pendingStatusChange.actionTitle) { confirmStatusChange(pendingStatusChange) }
+                }
+                Button("Скасувати", role: .cancel) { pendingStatusChange = nil }
+            } message: {
+                Text(task.title)
             }
             if store.actionCapability.canMutate {
                 Section("Підготовка й нотатки") {
@@ -1524,6 +1549,18 @@ private struct SchoolTaskDetailView: View {
         .novaDockAwareScrollContent()
         .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
         .alert("Стан справи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+    }
+
+    private func confirmStatusChange(_ confirmation: SchoolTaskStatusConfirmation) {
+        guard !updating, task.identityStable, store.actionCapability.canMutate else { return }
+        pendingStatusChange = nil
+        updating = true
+        let completed = confirmation == .complete
+        Task {
+            defer { updating = false }
+            do { try await store.setTaskStatus(task, completed: completed) }
+            catch { self.error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
+        }
     }
 }
 
@@ -1687,6 +1724,7 @@ private struct SchoolNoteEditor: View {
             }
         }
     }
+
 }
 
 private struct SchoolFamilyTaskEditorView: View {
