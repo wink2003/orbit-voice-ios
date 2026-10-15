@@ -62,8 +62,8 @@ struct SchoolInboxView: View {
         }
     }
     private var schoolList: some View {
-        List {
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
                 Picker("Вхідні", selection: $filter) {
                     ForEach(SchoolInboxFilter.allCases) { option in Text(option.title).tag(option) }
                 }
@@ -78,21 +78,33 @@ struct SchoolInboxView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if loading { ProgressView().frame(maxWidth: .infinity).padding(.vertical, 12) }
+                if visibleItems.isEmpty && !loading {
+                    ContentUnavailableView(
+                        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Шкільних матеріалів не знайдено" : "Нічого не знайдено",
+                        systemImage: query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "graduationcap" : "magnifyingglass",
+                        description: Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Для цього профілю або фільтра немає отриманих листів чи повідомлень." : "Спробуйте інший запит або фільтр.")
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                }
+                LazyVStack(spacing: 8) {
+                    ForEach(visibleItems) { item in
+                        NavigationLink { SchoolDetailView(item: item) } label: { schoolRow(item) }
+                            .buttonStyle(.plain)
+                    }
+                }
+                if notificationPermission == .denied {
+                    notificationSection.font(.footnote).padding(.top, 8)
+                }
             }
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
-            if loading { ProgressView().frame(maxWidth: .infinity) }
-            if visibleItems.isEmpty && !loading {
-                ContentUnavailableView(
-                    query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Шкільних матеріалів не знайдено" : "Нічого не знайдено",
-                    systemImage: query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "graduationcap" : "magnifyingglass",
-                    description: Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Для цього профілю або фільтра немає отриманих листів чи повідомлень." : "Спробуйте інший запит або фільтр.")
-                )
-            }
-            ForEach(visibleItems) { item in NavigationLink { SchoolDetailView(item: item) } label: { schoolRow(item) } }
-            if notificationPermission == .denied { Section { notificationSection } header: { Text("Сповіщення") } }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
+        .background(OrbitColors.canvas)
+        .safeAreaPadding(.bottom, 16)
         .navigationTitle("Вхідні")
-        .listSectionSpacing(.compact)
         .searchable(text: $query, prompt: "Шукати листи й повідомлення")
         .refreshable { await load() }
         .onAppear { Task { await load(); await refreshNotificationPermission() } }
@@ -179,8 +191,6 @@ struct SchoolInboxView: View {
         .padding(.vertical, 10).padding(.horizontal, 4)
         .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 14))
         .contentShape(RoundedRectangle(cornerRadius: 14))
-        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-        .listRowSeparator(.hidden)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title). \(preview)")
         .accessibilityValue([item.unread ? "Непрочитано" : nil, taskCount(for: item).map { "\($0) відкритих справ" }, item.attachments.isEmpty ? nil : "\(item.attachments.count) вкладень"].compactMap { $0 }.joined(separator: ", "))
@@ -443,11 +453,7 @@ struct SchoolDetailView: View {
                 attachmentLabel(file).foregroundStyle(.primary)
             }
         } else {
-            HStack {
-                attachmentLabel(file)
-                Spacer()
-                Text("Недоступно").font(.caption2).foregroundStyle(.secondary)
-            }
+            attachmentLabel(file)
         }
         Divider().padding(.leading, 34)
     }
@@ -464,7 +470,7 @@ struct SchoolDetailView: View {
         .padding(.vertical, 10).contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(file.filename)
-        .accessibilityHint((file.url ?? file.downloadURL) == nil ? "Вкладення недоступне для відкриття" : "Відкрити вкладення")
+        .accessibilityHint((file.url ?? file.downloadURL) == nil ? "Метадані вкладення" : "Відкрити вкладення")
     }
     private func detailHeader(_ title: String) -> some View {
         Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
