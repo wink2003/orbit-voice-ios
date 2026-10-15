@@ -44,6 +44,14 @@ nonisolated enum SchoolInboxFilter: String, CaseIterable, Identifiable, Hashable
         case .actionable: "Дії"
         }
     }
+
+    var icon: String {
+        switch self {
+        case .all: "tray.full"
+        case .unread: "envelope.badge"
+        case .actionable: "checklist"
+        }
+    }
 }
 
 nonisolated enum SchoolInboxTypeFilter: String, CaseIterable, Identifiable, Hashable {
@@ -55,6 +63,14 @@ nonisolated enum SchoolInboxTypeFilter: String, CaseIterable, Identifiable, Hash
         case .all: "Усі типи"
         case .letters: "Листи"
         case .messages: "Повідомлення"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all: "square.stack.3d.up"
+        case .letters: "envelope"
+        case .messages: "bubble.left.and.bubble.right"
         }
     }
 }

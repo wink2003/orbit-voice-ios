@@ -85,11 +85,7 @@ struct SchoolInboxView: View {
     private var schoolList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                inboxFilters
-                Text(actionSummaryText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                inboxHeader
                 if loading { ProgressView().frame(maxWidth: .infinity).padding(.vertical, 12) }
                 if visibleItems.isEmpty && !loading {
                     ContentUnavailableView(
@@ -120,7 +116,7 @@ struct SchoolInboxView: View {
         .background(OrbitColors.canvas)
         .novaDockAwareScrollContent()
         .navigationTitle("Вхідні")
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Шукати листи й повідомлення")
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             guard fixture == nil else { return }
             await load()
@@ -166,7 +162,7 @@ struct SchoolInboxView: View {
             let tasks = openTaskCount
             let itemLabel = ukrainianCountLabel(count, one: "матеріал", few: "матеріали", many: "матеріалів")
             let taskLabel = ukrainianCountLabel(tasks, one: "відкрита справа", few: "відкриті справи", many: "відкритих справ")
-            return "Дії: \(count) \(itemLabel) · \(tasks) \(taskLabel)"
+            return "\(count) \(itemLabel) потребують дії · \(tasks) \(taskLabel)"
         }
         return "Кількість дій уточнюється: дані ще неповні."
     }
@@ -195,13 +191,46 @@ struct SchoolInboxView: View {
             EmptyView()
         }
     }
-    private var inboxFilters: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Вхідні", selection: $filter) {
-                ForEach(SchoolInboxFilter.allCases) { option in Text(option.title).tag(option) }
+    private var inboxHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 9) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    TextField("Пошук у школі", text: $query)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityLabel("Пошук у шкільних матеріалах")
+                    if !query.isEmpty {
+                        Button { query = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Очистити пошук")
+                    }
+                }
+                .padding(.horizontal, 11)
+                .frame(minHeight: 40)
+                .background(Color.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                Menu {
+                    Picker("Стан матеріалів", selection: $filter) {
+                        ForEach(SchoolInboxFilter.allCases) { option in
+                            Label(option.title, systemImage: option.icon).tag(option)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.title3)
+                        .foregroundStyle(filter == .all ? Color.secondary : Color.accentColor)
+                        .frame(width: 40, height: 40)
+                        .background(filter == .all ? Color.secondary.opacity(0.09) : Color.accentColor.opacity(0.12), in: Circle())
+                }
+                .accessibilityLabel("Додаткові фільтри")
+                .accessibilityValue(filter.title)
             }
-            .pickerStyle(.segmented)
-            .accessibilityLabel("Фільтр вхідних")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -209,24 +238,28 @@ struct SchoolInboxView: View {
                         Button {
                             typeFilter = option
                         } label: {
-                            Text(option.title)
+                            Label(option.title, systemImage: option.icon)
                                 .font(.footnote.weight(typeFilter == option ? .semibold : .regular))
                                 .foregroundStyle(typeFilter == option ? Color.accentColor : .secondary)
                                 .lineLimit(1)
                                 .padding(.horizontal, 11)
-                                .frame(minHeight: 34)
-                                .background(typeFilter == option ? Color.accentColor.opacity(0.12) : Color.clear, in: Capsule())
-                                .overlay { Capsule().stroke(typeFilter == option ? Color.accentColor.opacity(0.3) : Color.secondary.opacity(0.18)) }
+                                .frame(minHeight: 36)
+                                .background(typeFilter == option ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.06), in: Capsule())
+                                .overlay { Capsule().stroke(typeFilter == option ? Color.accentColor.opacity(0.28) : Color.clear, lineWidth: 1) }
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Тип: \(option.title)")
                         .accessibilityAddTraits(typeFilter == option ? .isSelected : [])
                     }
                 }
-                .padding(.vertical, 1)
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Тип матеріалу")
+
+            Text(actionSummaryText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
         }
     }
     private func schoolRow(_ item: OrbitSchoolItem) -> some View {
