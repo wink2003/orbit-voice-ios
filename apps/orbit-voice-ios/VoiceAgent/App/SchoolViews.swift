@@ -44,7 +44,8 @@ struct SchoolInboxView: View {
     private let embeddedInNavigation: Bool
     private let hubMode: Bool
     @State private var items: [OrbitSchoolItem] = []
-    @State private var filter = "all"
+    @State private var filter: SchoolInboxFilter = .all
+    @State private var typeFilter: SchoolInboxTypeFilter = .all
     @State private var taskResponse: OrbitSchoolTasksResponse?
     @State private var query = ""
     @State private var error: String?
@@ -63,25 +64,22 @@ struct SchoolInboxView: View {
     private var schoolList: some View {
         List {
             Section {
-                HStack(spacing: 14) {
-                    Label("Непрочитані", systemImage: "circle.fill").foregroundStyle(.secondary)
-                    Text("\(items.filter(\.unread).count)").font(.headline)
-                    Spacer()
-                    if let taskResponse, taskResponse.complete == true {
-                        Label("Потрібна дія \(openTaskCount)", systemImage: "checklist").foregroundStyle(.secondary)
-                    } else {
-                        Text("Стан справ неповний").font(.caption).foregroundStyle(.secondary)
-                    }
+                Picker("Вхідні", selection: $filter) {
+                    ForEach(SchoolInboxFilter.allCases) { option in Text(option.title).tag(option) }
                 }
-                .font(.subheadline)
-                .accessibilityElement(children: .combine)
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Фільтр вхідних")
+                Picker("Тип матеріалу", selection: $typeFilter) {
+                    ForEach(SchoolInboxTypeFilter.allCases) { option in Text(option.title).tag(option) }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Тип матеріалу")
+                Text(actionSummaryText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Section {
-                Picker("Показати", selection: $filter) {
-                    Text("Усі").tag("all"); Text("Непрочитані").tag("unread"); Text("Потрібна дія").tag("actionable"); Text("Листи").tag("letters"); Text("Повідомлення").tag("messages")
-                }.pickerStyle(.menu)
-            } header: { Text("Фільтр") }
-            if notificationPermission == .denied { Section { notificationSection } header: { Text("Сповіщення") } }
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
             if loading { ProgressView().frame(maxWidth: .infinity) }
             if visibleItems.isEmpty && !loading {
                 ContentUnavailableView(
@@ -91,40 +89,23 @@ struct SchoolInboxView: View {
                 )
             }
             ForEach(visibleItems) { item in NavigationLink { SchoolDetailView(item: item) } label: { schoolRow(item) } }
+            if notificationPermission == .denied { Section { notificationSection } header: { Text("Сповіщення") } }
         }
         .navigationTitle("Вхідні")
         .listSectionSpacing(.compact)
         .searchable(text: $query, prompt: "Шукати листи й повідомлення")
         .refreshable { await load() }
-        .task { await load(); await refreshNotificationPermission() }
-        .onAppear { Task { await refreshNotificationPermission() } }
+        .onAppear { Task { await load(); await refreshNotificationPermission() } }
         .alert("Школа недоступна", isPresented: .constant(error != nil)) { Button("Повторити") { error = nil; Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
     }
-    private var openTaskCount: Int { taskResponse?.tasks.filter { $0.status != "completed" }.count ?? 0 }
+    private var actionSummary: SchoolInboxActionSummary { SchoolHubLogic.inboxActionSummary(items: items, tasks: taskResponse) }
+    private var actionSummaryText: String {
+        guard taskResponse != nil else { return "Дії тимчасово недоступні." }
+        if let count = actionSummary.count { return "Потребують дії: \(count) \(count == 1 ? "розмова" : "розмови")" }
+        return "Кількість дій уточнюється: дані ще неповні."
+    }
     private var visibleItems: [OrbitSchoolItem] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered: [OrbitSchoolItem]
-        if query.isEmpty {
-            filtered = items
-        } else {
-            filtered = items.filter { item in
-                [item.title, item.titlePlainText, item.sender, item.previewPlainText, item.originalPlainText, item.originalGerman, item.translationUkrainian]
-                    .compactMap { $0 }
-                    .contains { $0.localizedStandardContains(query) }
-            }
-        }
-        let byFilter = filtered.filter { item in
-            switch filter {
-            case "letters": return item.type == "letter"
-            case "messages": return item.type == "message"
-            case "unread": return item.unread
-            case "actionable":
-                guard taskResponse?.complete == true else { return false }
-                return taskResponse?.tasks.contains { $0.sourceItemId == item.id && $0.status != "completed" } == true
-            default: return true
-            }
-        }
-        return byFilter.sorted { ($0.sourceTimestamp ?? $0.importedAt ?? .distantPast) > ($1.sourceTimestamp ?? $1.importedAt ?? .distantPast) }
+        SchoolHubLogic.filterInboxItems(items, filter: filter, typeFilter: typeFilter, query: query, actionSummary: actionSummary)
     }
     @ViewBuilder private var notificationSection: some View {
         switch notificationPermission {
@@ -158,7 +139,10 @@ struct SchoolInboxView: View {
         .accessibilityElement(children: .combine)
         .accessibilityValue(item.unread ? "Непрочитано" : "")
     }
-    private func taskCount(for item: OrbitSchoolItem) -> Int? { guard taskResponse?.complete == true else { return nil }; return taskResponse?.tasks.filter { $0.sourceItemId == item.id && $0.status != "completed" }.count }
+    private func taskCount(for item: OrbitSchoolItem) -> Int? {
+        guard taskResponse?.complete == true, taskResponse?.truncated != true else { return nil }
+        return taskResponse?.tasks.filter { $0.sourceItemId == item.id && $0.status != "completed" }.count
+    }
     private func load() async { loading = true; defer { loading = false }; do { async let loadedItems = MainProductAPI.shared.schoolItems(filter: "all"); async let loadedTasks = MainProductAPI.shared.schoolTasks(coverage: "all"); items = try await loadedItems.items; taskResponse = try? await loadedTasks; error = nil } catch { self.error = "Не вдалося завантажити шкільні матеріали." } }
     private func refreshNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.authorizationStatus() }
     private func requestNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.requestAuthorization() }

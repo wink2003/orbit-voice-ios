@@ -6,6 +6,12 @@ private func event(_ uid: String, _ start: String?, end: String? = nil, allDay: 
 private func task(_ id: String, due: String?, confidence: Double? = 0.9, action: String? = "Принести", source: String = "s1") -> SchoolHubTask {
     SchoolHubTask(id: id, title: "T\(id)", action: action, dueAt: due, allDay: true, importance: nil, target: nil, confidence: confidence, reason: nil, sourceItemId: source)
 }
+private func inboxItem(_ id: String, type: String = "letter", unread: Bool = false) -> OrbitSchoolItem {
+    OrbitSchoolItem(id: id, type: type, source: "Schulmanager", externalId: id, title: "Title \(id)", sender: "School", originalGerman: "Original \(id)", originalPlainText: "Original \(id)", previewPlainText: "Preview \(id)", titlePlainText: "Title \(id)", translationUkrainian: nil, important: nil, sourceTimestamp: nil, importedAt: nil, orbitReadAt: nil, unread: unread, attachments: [], events: [], threadId: nil, subscriptionId: nil, tasks: nil)
+}
+private func inboxTask(_ id: String, source: String, status: String = "open") -> OrbitSchoolTask {
+    OrbitSchoolTask(key: id, stableIdentity: true, title: "Task \(id)", action: "Do", dueAt: nil, endsAt: nil, allDay: true, importance: nil, target: nil, confidence: 1, reason: nil, location: nil, sourceItemId: source, sourceType: "letter", sourceExternalId: source, bucket: nil, status: status, completedAt: nil, actionTaskId: nil, calendarEventId: nil)
+}
 
 @main
 struct SchoolHubLogicTests {
@@ -203,6 +209,30 @@ struct SchoolHubLogicTests {
         precondition(SchoolTaskStatusConfirmation(completed: false).actionTitle == "Так, виконано")
         precondition(SchoolTaskStatusConfirmation(completed: true).title == "Повернути справу у відкриті?")
         precondition(SchoolTaskStatusConfirmation(completed: true).actionTitle == "Повернути")
+
+        // School Inbox v2: the visible controls are composable and actionable
+        // counts are distinct communications, not the number of open tasks.
+        do {
+            let items = [inboxItem("letter-1", unread: true), inboxItem("letter-2"), inboxItem("message-1", type: "message", unread: true)]
+            let tasks = OrbitSchoolTasksResponse(
+                from: "2026-10-01", to: "2026-11-01", coverage: "all", truncated: false, complete: true,
+                completionState: "available",
+                tasks: [inboxTask("a", source: "letter-1"), inboxTask("b", source: "letter-1"), inboxTask("c", source: "message-1", status: "completed")],
+                importantEvents: []
+            )
+            let completeSummary = SchoolHubLogic.inboxActionSummary(items: items, tasks: tasks)
+            precondition(completeSummary.count == 1 && completeSummary.itemIDs == ["letter-1"])
+            precondition(SchoolHubLogic.filterInboxItems(items, filter: .actionable, typeFilter: .all, query: "", actionSummary: completeSummary).map(\.id) == ["letter-1"])
+            precondition(SchoolHubLogic.filterInboxItems(items, filter: .unread, typeFilter: .messages, query: "", actionSummary: completeSummary).map(\.id) == ["message-1"])
+            precondition(SchoolHubLogic.filterInboxItems(items, filter: .all, typeFilter: .letters, query: "title letter-2", actionSummary: completeSummary).map(\.id) == ["letter-2"])
+            let partial = OrbitSchoolTasksResponse(
+                from: "2026-10-01", to: "2026-11-01", coverage: "all", truncated: true, complete: false,
+                completionState: "partial", tasks: tasks.tasks, importantEvents: []
+            )
+            let partialSummary = SchoolHubLogic.inboxActionSummary(items: items, tasks: partial)
+            precondition(partialSummary.count == nil && partialSummary.itemIDs == ["letter-1"])
+            precondition(SchoolHubLogic.filterInboxItems(items, filter: .actionable, typeFilter: .all, query: "", actionSummary: partialSummary).map(\.id) == ["letter-1"])
+        }
 
         // School Tasks v2: sections, filters and one definition of "open".
         do {
