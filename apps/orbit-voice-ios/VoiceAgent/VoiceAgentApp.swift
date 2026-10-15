@@ -42,6 +42,8 @@ struct VoiceAgentApp: App {
             SchoolUXFixtureScreen(screen: .inbox)
         } else if ProcessInfo.processInfo.arguments.contains("--orbit-school-detail-fixture") {
             SchoolUXFixtureScreen(screen: .detail)
+        } else if ProcessInfo.processInfo.arguments.contains("--orbit-school-detail-actions-fixture") {
+            SchoolUXFixtureScreen(screen: .detailActions)
         } else if ProcessInfo.processInfo.arguments.contains("--orbit-interpreter-lab") {
             InterpreterLabView()
         } else {

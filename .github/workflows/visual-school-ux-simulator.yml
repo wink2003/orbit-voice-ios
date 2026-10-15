@@ -56,6 +56,10 @@ jobs:
           xcrun simctl launch "$device" net.opik.orbit.voice --orbit-school-detail-fixture
           sleep 3
           xcrun simctl io "$device" screenshot "$output/school-letter-detail.png"
+          xcrun simctl terminate "$device" net.opik.orbit.voice || true
+          xcrun simctl launch "$device" net.opik.orbit.voice --orbit-school-detail-actions-fixture
+          sleep 3
+          xcrun simctl io "$device" screenshot "$output/school-letter-actions.png"
 
       - uses: actions/upload-artifact@v4
         with:

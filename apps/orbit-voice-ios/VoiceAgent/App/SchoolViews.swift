@@ -432,18 +432,21 @@ struct SchoolDetailLoaderView: View {
 struct SchoolDetailView: View {
     let item: OrbitSchoolItem
     private let marksItemRead: Bool
+    private let initiallyShowActions: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var calendarMessage: String?
     @State private var pendingCalendarEvent: OrbitSchoolEvent?
     @State private var showOriginal = false
 
-    init(item: OrbitSchoolItem, marksItemRead: Bool = true) {
+    init(item: OrbitSchoolItem, marksItemRead: Bool = true, initiallyShowActions: Bool = false) {
         self.item = item
         self.marksItemRead = marksItemRead
+        self.initiallyShowActions = initiallyShowActions
     }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
                 if !displayTitle.isEmpty {
                     Text(displayTitle)
                         .font(.title3.weight(.semibold))
@@ -488,15 +491,25 @@ struct SchoolDetailView: View {
                     Text(item.source == "schulmanager" ? "Schulmanager · лише читання" : item.source).font(.footnote)
                     Text(item.unread ? "Стан в Orbit: непрочитано" : "Стан в Orbit: прочитано").font(.caption).foregroundStyle(.secondary)
                 }
+                    Color.clear
+                        .frame(height: 1)
+                        .id("school-detail-actions")
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
+            .novaDockAwareScrollContent()
+            .onAppear {
+                guard initiallyShowActions else { return }
+                DispatchQueue.main.async {
+                    proxy.scrollTo("school-detail-actions", anchor: .bottom)
+                }
+            }
         }
         .background(OrbitColors.canvas)
         .navigationTitle(item.type == "letter" ? "Лист" : "Повідомлення")
         .navigationBarTitleDisplayMode(.inline)
-        .novaDockAwareScrollContent()
         .task {
             guard marksItemRead else { return }
             try? await MainProductAPI.shared.markSchoolItemRead(id: item.id)
@@ -609,7 +622,11 @@ struct SchoolDetailView: View {
             .tracking(0.5).padding(.top, 18).padding(.bottom, 6)
             .accessibilityAddTraits(.isHeader)
     }
-    private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String { guard let start = event.startsAt else { return "Дата не визначена" }; if let end = event.endsAt, end != start { return "\(start.formatted(date: .long, time: .shortened)) – \(end.formatted(date: .long, time: .shortened))" }; return start.formatted(date: .long, time: .shortened) }
+    private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String {
+        guard let start = event.startsAt else { return "Дата не визначена" }
+        if let end = event.endsAt, end != start { return "\(schoolLocalizedInstant(start)) – \(schoolLocalizedInstant(end))" }
+        return schoolLocalizedInstant(start)
+    }
     private var calendarPreviewMessage: String { guard let event = pendingCalendarEvent else { return "" }; var lines = [event.title]; if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location, !location.isEmpty { lines.append(location) }; return lines.joined(separator: "\n") }
     private func add(_ event: OrbitSchoolEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false); if preview.duplicate == true { calendarMessage = "Подію вже додано." } else if preview.requiresConfirmation == true { pendingCalendarEvent = event } else { calendarMessage = "Не вдалося підготувати подію." } } catch { calendarMessage = "Не вдалося додати подію." } }
     private func confirm(_ event: OrbitSchoolEvent) async { do { let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true); calendarMessage = result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.") } catch { calendarMessage = "Не вдалося додати подію." } }
@@ -617,7 +634,7 @@ struct SchoolDetailView: View {
 
 #if DEBUG
 struct SchoolUXFixtureScreen: View {
-    enum Screen { case inbox, detail }
+    enum Screen { case inbox, detail, detailActions }
     let screen: Screen
 
     var body: some View {
@@ -627,6 +644,8 @@ struct SchoolUXFixtureScreen: View {
                 SchoolInboxView(embeddedInNavigation: true, hubMode: true, fixture: SchoolUXFixtureData.inbox)
             case .detail:
                 SchoolDetailView(item: SchoolUXFixtureData.inbox.items[0], marksItemRead: false)
+            case .detailActions:
+                SchoolDetailView(item: SchoolUXFixtureData.inbox.items[0], marksItemRead: false, initiallyShowActions: true)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
