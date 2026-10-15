@@ -7,7 +7,7 @@ private func task(_ id: String, due: String?, confidence: Double? = 0.9, action:
     SchoolHubTask(id: id, title: "T\(id)", action: action, dueAt: due, allDay: true, importance: nil, target: nil, confidence: confidence, reason: nil, sourceItemId: source)
 }
 private func inboxItem(_ id: String, type: String = "letter", unread: Bool = false) -> SchoolInboxItemSnapshot {
-    SchoolInboxItemSnapshot(id: id, type: type, title: "Title \(id)", sender: "School", preview: "Preview \(id)", unread: unread, date: nil)
+    SchoolInboxItemSnapshot(id: id, type: type, title: "Title \(id)", sender: "School", preview: "Preview \(id)", searchText: "Title \(id)\nSchool\nPreview \(id)", unread: unread, date: nil)
 }
 private func inboxTask(_ source: String, status: String = "open") -> SchoolInboxTaskSnapshot {
     SchoolInboxTaskSnapshot(sourceItemId: source, status: status)
@@ -220,6 +220,8 @@ struct SchoolHubLogicTests {
             precondition(SchoolHubLogic.filterInboxItemIDs(items, filter: .actionable, typeFilter: .all, query: "", actionSummary: completeSummary) == ["letter-1"])
             precondition(SchoolHubLogic.filterInboxItemIDs(items, filter: .unread, typeFilter: .messages, query: "", actionSummary: completeSummary) == ["message-1"])
             precondition(SchoolHubLogic.filterInboxItemIDs(items, filter: .all, typeFilter: .letters, query: "title letter-2", actionSummary: completeSummary) == ["letter-2"])
+            let translated = SchoolInboxItemSnapshot(id: "german-letter", type: "letter", title: "Лист", sender: "Школа", preview: "Український переклад", searchText: "Лист\nШкола\nУкраїнський переклад\nHausaufgabe morgen", unread: false, date: nil)
+            precondition(SchoolHubLogic.filterInboxItemIDs([translated], filter: .all, typeFilter: .all, query: "Hausaufgabe morgen", actionSummary: completeSummary) == ["german-letter"])
             let partialSummary = SchoolHubLogic.inboxActionSummary(itemIDs: Set(items.map(\.id)), tasks: tasks, coverageComplete: false)
             precondition(partialSummary.count == nil && partialSummary.itemIDs == ["letter-1"])
             precondition(SchoolHubLogic.filterInboxItemIDs(items, filter: .actionable, typeFilter: .all, query: "", actionSummary: partialSummary) == ["letter-1"])

@@ -72,6 +72,8 @@ nonisolated struct SchoolInboxItemSnapshot: Hashable, Identifiable {
     let title: String
     let sender: String
     let preview: String
+    /// Search-only aggregate retaining source text that may not be shown as the preview.
+    let searchText: String
     let unread: Bool
     let date: Date?
 }
@@ -362,9 +364,7 @@ nonisolated enum SchoolHubLogic {
             }
             guard mainMatches else { return false }
             guard !normalizedQuery.isEmpty else { return true }
-            return item.title.localizedStandardContains(normalizedQuery)
-                || item.sender.localizedStandardContains(normalizedQuery)
-                || item.preview.localizedStandardContains(normalizedQuery)
+            return item.searchText.localizedStandardContains(normalizedQuery)
         }
         .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
         .map { $0.id }

@@ -106,6 +106,17 @@ struct SchoolInboxView: View {
                 title: item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title,
                 sender: item.sender,
                 preview: item.translationUkrainian ?? item.previewPlainText ?? item.originalPlainText ?? item.originalGerman,
+                searchText: [
+                    item.title,
+                    item.titlePlainText,
+                    item.sender,
+                    item.previewPlainText,
+                    item.originalPlainText,
+                    item.originalGerman,
+                    item.translationUkrainian
+                ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n"),
                 unread: item.unread,
                 date: item.sourceTimestamp ?? item.importedAt
             )
