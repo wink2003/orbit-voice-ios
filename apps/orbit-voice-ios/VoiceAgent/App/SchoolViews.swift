@@ -147,26 +147,50 @@ struct SchoolInboxView: View {
     private func schoolRow(_ item: OrbitSchoolItem) -> some View {
         let sender = item.sender.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.sender
         let title = item.titlePlainText?.isEmpty == false ? item.titlePlainText! : (item.title.isEmpty ? String((item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).prefix(80)) : item.title)
-        return HStack(alignment: .top, spacing: 10) {
-            Circle().fill(item.unread ? Color.accentColor : .clear).frame(width: 8, height: 8).padding(.top, 6).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.callout.weight(item.unread ? .semibold : .regular)).lineLimit(2)
-                HStack(spacing: 4) {
-                    Image(systemName: item.type == "letter" ? "envelope" : "message").imageScale(.small)
-                    Text(sender).lineLimit(1)
-                    Text("·")
-                    Text(item.sourceTimestamp ?? item.importedAt ?? .now, format: .dateTime.day().month(.abbreviated))
-                }.font(.caption).foregroundStyle(.secondary)
-                Text((item.translationUkrainian?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? item.translationUkrainian : nil) ?? item.previewPlainText ?? item.originalPlainText ?? item.originalGerman)
-                    .font(.footnote).foregroundStyle(.secondary).lineLimit(2)
-                if let count = taskCount(for: item), count > 0 {
-                    Label("\(count) відкритих справ", systemImage: "checklist").font(.caption2).foregroundStyle(.tint)
+        let preview = inboxPreview(for: item)
+        return HStack(alignment: .top, spacing: 12) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: item.type == "letter" ? "envelope.fill" : "message.fill")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(item.type == "letter" ? Color.orange : Color.accentColor)
+                    .frame(width: 36, height: 36)
+                    .background((item.type == "letter" ? Color.orange : Color.accentColor).opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                if item.unread {
+                    Circle().fill(Color.accentColor).frame(width: 8, height: 8).overlay(Circle().stroke(OrbitColors.card, lineWidth: 2)).offset(x: 2, y: -2)
                 }
             }
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(title).font(.callout.weight(item.unread ? .semibold : .medium)).lineLimit(2)
+                    Spacer(minLength: 4)
+                    if let date = item.sourceTimestamp ?? item.importedAt { Text(date, format: .dateTime.day().month(.abbreviated)).font(.caption2.weight(.medium)).foregroundStyle(.secondary).fixedSize() }
+                }
+                Text(preview).font(.footnote).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Text(sender).lineLimit(1)
+                    if let count = taskCount(for: item), count > 0 { Label("\(count) відкритих справ", systemImage: "checklist") }
+                    if item.attachments.count == 1 { Label("1 вкладення", systemImage: "paperclip") }
+                    else if item.attachments.count > 1 { Label("\(item.attachments.count) вкладення", systemImage: "paperclip") }
+                }
+                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 10).padding(.horizontal, 4)
+        .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 14))
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+        .listRowSeparator(.hidden)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(item.unread ? "Непрочитано" : "")
+        .accessibilityLabel("\(title). \(preview)")
+        .accessibilityValue([item.unread ? "Непрочитано" : nil, taskCount(for: item).map { "\($0) відкритих справ" }, item.attachments.isEmpty ? nil : "\(item.attachments.count) вкладень"].compactMap { $0 }.joined(separator: ", "))
+    }
+    private func inboxPreview(for item: OrbitSchoolItem) -> String {
+        let translation = item.translationUkrainian?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = item.important?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return [translation, summary, item.previewPlainText, item.originalPlainText, item.originalGerman]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? "Без попереднього перегляду"
     }
     private func taskCount(for item: OrbitSchoolItem) -> Int? {
         guard taskResponse?.complete == true, taskResponse?.truncated != true else { return nil }
@@ -372,12 +396,18 @@ struct SchoolDetailView: View {
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
                 Label("Підсумок Orbit (ШІ), не слова школи. Звіряйте з оригіналом.", systemImage: "sparkles")
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                if !item.attachments.isEmpty {
+                    detailHeader("Вкладення")
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in attachmentRow(file) }
+                    }
+                    .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
+                }
                 detailHeader("Джерело")
                 VStack(alignment: .leading, spacing: 5) {
                     Text(item.source == "schulmanager" ? "Schulmanager · лише читання" : item.source).font(.footnote)
                     if !item.sender.isEmpty { Text("Відправник: \(item.sender)").font(.caption).foregroundStyle(.secondary) }
                     Text(item.unread ? "Стан в Orbit: непрочитано" : "Стан в Orbit: прочитано").font(.caption).foregroundStyle(.secondary)
-                    ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in Label(file.filename, systemImage: "paperclip").font(.caption) }
                 }
                 if !item.events.isEmpty {
                     detailHeader("Дати / дедлайни")
@@ -402,6 +432,40 @@ struct SchoolDetailView: View {
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
     }
     private var displayTitle: String { item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title }
+    @ViewBuilder private func attachmentRow(_ file: OrbitSchoolAttachment) -> some View {
+        let rawURL = file.url ?? file.downloadURL
+        let safeURL = rawURL.flatMap { value -> URL? in
+            guard let url = URL(string: value), url.scheme?.lowercased() == "https" else { return nil }
+            return url
+        }
+        if let safeURL {
+            Link(destination: safeURL) {
+                attachmentLabel(file).foregroundStyle(.primary)
+            }
+        } else {
+            HStack {
+                attachmentLabel(file)
+                Spacer()
+                Text("Недоступно").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        Divider().padding(.leading, 34)
+    }
+    private func attachmentLabel(_ file: OrbitSchoolAttachment) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "paperclip").foregroundStyle(.secondary).frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.filename).font(.callout).lineLimit(2)
+                if let contentType = file.contentType, !contentType.isEmpty { Text(contentType).font(.caption2).foregroundStyle(.secondary) }
+            }
+            Spacer()
+            if (file.url ?? file.downloadURL) != nil { Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(.secondary) }
+        }
+        .padding(.vertical, 10).contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(file.filename)
+        .accessibilityHint((file.url ?? file.downloadURL) == nil ? "Вкладення недоступне для відкриття" : "Відкрити вкладення")
+    }
     private func detailHeader(_ title: String) -> some View {
         Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             .tracking(0.6).padding(.top, 20).padding(.bottom, 6)
