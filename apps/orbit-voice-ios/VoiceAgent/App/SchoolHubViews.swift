@@ -1544,7 +1544,7 @@ private struct SchoolTaskDetailView: View {
                     NavigationLink { SchoolChecklistView(store: store, sourceItemId: task.sourceItemId.isEmpty ? nil : task.sourceItemId, sourceTaskId: task.actionID) } label: {
                         Label("Чекліст підготовки", systemImage: "checklist.checked")
                     }
-                    if let noteEntityID = task.kind == "family" ? task.actionID : Optional(task.id), !noteEntityID.isEmpty {
+                    if let noteEntityID = task.kind == "family" ? task.actionID : task.sourceNoteEntityId, !noteEntityID.isEmpty {
                         NavigationLink { SchoolNotesView(store: store, entityType: "task", entityId: noteEntityID) } label: {
                             Label("Мої нотатки", systemImage: "note.text")
                         }

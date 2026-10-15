@@ -708,6 +708,13 @@ extension SchoolHubTask {
     var sourceTaskKey: String {
         sourceItemId.isEmpty ? id : (id.hasPrefix("\(sourceItemId):") ? String(id.dropFirst(sourceItemId.count + 1)) : id)
     }
+    /// Canonical note identity: exactly one source item prefix, matching `/api/school/tasks`.
+    var sourceNoteEntityId: String? {
+        guard kind == "source", identityStable, !sourceItemId.isEmpty else { return nil }
+        let key = sourceTaskKey
+        guard !key.isEmpty else { return nil }
+        return key.hasPrefix("\(sourceItemId):") ? key : "\(sourceItemId):\(key)"
+    }
     var isHighPriority: Bool {
         guard let value = importance?.lowercased() else { return false }
         return ["high", "important", "critical", "urgent", "високий", "важливо", "важливий"].contains(value)

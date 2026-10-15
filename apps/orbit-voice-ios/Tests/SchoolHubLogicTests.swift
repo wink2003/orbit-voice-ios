@@ -99,6 +99,10 @@ struct SchoolHubLogicTests {
         let provenanceFamilyTask = SchoolHubTask(id: "family:id", title: "Сімейна", action: nil, dueAt: nil, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "", kind: "family")
         precondition(letterTask.provenanceLabel == "Schulmanager · Лист")
         precondition(provenanceFamilyTask.provenanceLabel == "Orbit · Сімейна справа")
+        let canonicalSource = SchoolHubTask(id: "item123:item123:stable", title: "Стабільна справа", action: nil, dueAt: nil, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "item123")
+        precondition(canonicalSource.sourceNoteEntityId == "item123:stable")
+        let fallbackSource = SchoolHubTask(id: "item123:stable", title: "Fallback", action: nil, dueAt: nil, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "item123")
+        precondition(fallbackSource.sourceNoteEntityId == "item123:stable")
 
         // Unified chronology keeps source links and never invents dates for undated records.
         let timelineLetters = [
