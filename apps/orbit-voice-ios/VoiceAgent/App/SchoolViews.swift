@@ -98,14 +98,32 @@ struct SchoolInboxView: View {
         .onAppear { Task { await load(); await refreshNotificationPermission() } }
         .alert("Школа недоступна", isPresented: .constant(error != nil)) { Button("Повторити") { error = nil; Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
     }
-    private var actionSummary: SchoolInboxActionSummary { SchoolHubLogic.inboxActionSummary(items: items, tasks: taskResponse) }
+    private var itemSnapshots: [SchoolInboxItemSnapshot] {
+        items.map { item in
+            SchoolInboxItemSnapshot(
+                id: item.id,
+                type: item.type,
+                title: item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title,
+                sender: item.sender,
+                preview: item.translationUkrainian ?? item.previewPlainText ?? item.originalPlainText ?? item.originalGerman,
+                unread: item.unread,
+                date: item.sourceTimestamp ?? item.importedAt
+            )
+        }
+    }
+    private var actionSummary: SchoolInboxActionSummary {
+        let tasks = (taskResponse?.tasks ?? []).map { SchoolInboxTaskSnapshot(sourceItemId: $0.sourceItemId, status: $0.status ?? "open") }
+        let complete = taskResponse?.complete == true && taskResponse?.truncated != true && taskResponse?.coverage == "all"
+        return SchoolHubLogic.inboxActionSummary(itemIDs: Set(items.map(\.id)), tasks: tasks, coverageComplete: complete)
+    }
     private var actionSummaryText: String {
         guard taskResponse != nil else { return "Дії тимчасово недоступні." }
         if let count = actionSummary.count { return "Потребують дії: \(count) \(count == 1 ? "розмова" : "розмови")" }
         return "Кількість дій уточнюється: дані ще неповні."
     }
     private var visibleItems: [OrbitSchoolItem] {
-        SchoolHubLogic.filterInboxItems(items, filter: filter, typeFilter: typeFilter, query: query, actionSummary: actionSummary)
+        let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        return SchoolHubLogic.filterInboxItemIDs(itemSnapshots, filter: filter, typeFilter: typeFilter, query: query, actionSummary: actionSummary).compactMap { byID[$0] }
     }
     @ViewBuilder private var notificationSection: some View {
         switch notificationPermission {

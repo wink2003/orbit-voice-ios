@@ -66,6 +66,21 @@ nonisolated struct SchoolInboxActionSummary: Equatable {
     var count: Int? { coverageComplete ? itemIDs.count : nil }
 }
 
+nonisolated struct SchoolInboxItemSnapshot: Hashable, Identifiable {
+    let id: String
+    let type: String
+    let title: String
+    let sender: String
+    let preview: String
+    let unread: Bool
+    let date: Date?
+}
+
+nonisolated struct SchoolInboxTaskSnapshot: Hashable {
+    let sourceItemId: String
+    let status: String
+}
+
 nonisolated enum SchoolEventRelevance: String, CaseIterable, Identifiable {
     case ours, likely, uncertain, unrelated, staffOnly, unclassified
     var id: String { rawValue }
@@ -319,20 +334,18 @@ nonisolated enum SchoolHubLogic {
     /// three open extracted tasks still contributes one actionable item.
     /// The count is intentionally unknown when the server did not provide a
     /// complete all-coverage task response.
-    static func inboxActionSummary(items: [OrbitSchoolItem], tasks: OrbitSchoolTasksResponse?) -> SchoolInboxActionSummary {
-        let openItemIDs = Set((tasks?.tasks ?? []).filter { $0.status != "completed" && !$0.sourceItemId.isEmpty }.map(\.sourceItemId))
-        let complete = tasks?.complete == true && tasks?.truncated != true && tasks?.coverage == "all"
-        let knownItemIDs = Set(items.map(\.id)).intersection(openItemIDs)
-        return SchoolInboxActionSummary(itemIDs: knownItemIDs, coverageComplete: complete)
+    static func inboxActionSummary(itemIDs: Set<String>, tasks: [SchoolInboxTaskSnapshot], coverageComplete: Bool) -> SchoolInboxActionSummary {
+        let openItemIDs = Set(tasks.filter { $0.status != "completed" && !$0.sourceItemId.isEmpty }.map { $0.sourceItemId })
+        return SchoolInboxActionSummary(itemIDs: itemIDs.intersection(openItemIDs), coverageComplete: coverageComplete)
     }
 
-    static func filterInboxItems(
-        _ items: [OrbitSchoolItem],
+    static func filterInboxItemIDs(
+        _ items: [SchoolInboxItemSnapshot],
         filter: SchoolInboxFilter,
         typeFilter: SchoolInboxTypeFilter,
         query: String,
         actionSummary: SchoolInboxActionSummary
-    ) -> [OrbitSchoolItem] {
+    ) -> [String] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return items.filter { item in
             let typeMatches: Bool = switch typeFilter {
@@ -349,11 +362,12 @@ nonisolated enum SchoolHubLogic {
             }
             guard mainMatches else { return false }
             guard !normalizedQuery.isEmpty else { return true }
-            return [item.title, item.titlePlainText, item.sender, item.previewPlainText, item.originalPlainText, item.originalGerman, item.translationUkrainian]
-                .compactMap { $0 }
-                .contains { $0.localizedStandardContains(normalizedQuery) }
+            return item.title.localizedStandardContains(normalizedQuery)
+                || item.sender.localizedStandardContains(normalizedQuery)
+                || item.preview.localizedStandardContains(normalizedQuery)
         }
-        .sorted { ($0.sourceTimestamp ?? $0.importedAt ?? .distantPast) > ($1.sourceTimestamp ?? $1.importedAt ?? .distantPast) }
+        .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        .map { $0.id }
     }
 
     static func dayKey(of date: Date, zone: TimeZone = schoolTimeZone) -> String {
