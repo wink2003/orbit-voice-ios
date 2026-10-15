@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 private let schoolUkrainianCalendar: Calendar = {
@@ -40,9 +41,15 @@ private func schoolAllDayRange(_ event: OrbitSchoolEvent) -> String {
     return "\(schoolUkrainianDate(start)) – \(schoolUkrainianDate(end))"
 }
 
+fileprivate struct SchoolInboxFixture: Decodable {
+    let items: [OrbitSchoolItem]
+    let taskResponse: OrbitSchoolTasksResponse
+}
+
 struct SchoolInboxView: View {
     private let embeddedInNavigation: Bool
     private let hubMode: Bool
+    private let fixture: SchoolInboxFixture?
     @State private var items: [OrbitSchoolItem] = []
     @State private var filter: SchoolInboxFilter = .all
     @State private var typeFilter: SchoolInboxTypeFilter = .all
@@ -53,7 +60,21 @@ struct SchoolInboxView: View {
     @State private var notificationPermission = SchoolNotificationPermission.notDetermined
     @State private var notificationDiagnosticMessage: String?
 
-    init(embeddedInNavigation: Bool = false, hubMode: Bool = false) { self.embeddedInNavigation = embeddedInNavigation; self.hubMode = hubMode }
+    init(embeddedInNavigation: Bool = false, hubMode: Bool = false) {
+        self.embeddedInNavigation = embeddedInNavigation
+        self.hubMode = hubMode
+        self.fixture = nil
+        _items = State(initialValue: [])
+        _taskResponse = State(initialValue: nil)
+    }
+
+    fileprivate init(embeddedInNavigation: Bool = false, hubMode: Bool = false, fixture: SchoolInboxFixture?) {
+        self.embeddedInNavigation = embeddedInNavigation
+        self.hubMode = hubMode
+        self.fixture = fixture
+        _items = State(initialValue: fixture?.items ?? [])
+        _taskResponse = State(initialValue: fixture?.taskResponse)
+    }
 
     var body: some View {
         Group {
@@ -63,17 +84,8 @@ struct SchoolInboxView: View {
     }
     private var schoolList: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                Picker("Вхідні", selection: $filter) {
-                    ForEach(SchoolInboxFilter.allCases) { option in Text(option.title).tag(option) }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityLabel("Фільтр вхідних")
-                Picker("Тип матеріалу", selection: $typeFilter) {
-                    ForEach(SchoolInboxTypeFilter.allCases) { option in Text(option.title).tag(option) }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityLabel("Тип матеріалу")
+            VStack(alignment: .leading, spacing: 12) {
+                inboxFilters
                 Text(actionSummaryText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -88,10 +100,13 @@ struct SchoolInboxView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
                 }
-                LazyVStack(spacing: 8) {
+                LazyVStack(spacing: 0) {
                     ForEach(visibleItems) { item in
                         NavigationLink { SchoolDetailView(item: item) } label: { schoolRow(item) }
                             .buttonStyle(.plain)
+                        if item.id != visibleItems.last?.id {
+                            Divider().padding(.leading, 48)
+                        }
                     }
                 }
                 if notificationPermission == .denied {
@@ -100,14 +115,20 @@ struct SchoolInboxView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.bottom, 12)
         }
         .background(OrbitColors.canvas)
-        .safeAreaPadding(.bottom, 16)
+        .novaDockAwareScrollContent()
         .navigationTitle("Вхідні")
-        .searchable(text: $query, prompt: "Шукати листи й повідомлення")
-        .refreshable { await load() }
-        .onAppear { Task { await load(); await refreshNotificationPermission() } }
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Шукати листи й повідомлення")
+        .refreshable {
+            guard fixture == nil else { return }
+            await load()
+        }
+        .onAppear {
+            guard fixture == nil else { return }
+            Task { await load(); await refreshNotificationPermission() }
+        }
         .alert("Школа недоступна", isPresented: .constant(error != nil)) { Button("Повторити") { error = nil; Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
     }
     private var itemSnapshots: [SchoolInboxItemSnapshot] {
@@ -141,8 +162,26 @@ struct SchoolInboxView: View {
     }
     private var actionSummaryText: String {
         guard taskResponse != nil else { return "Дії тимчасово недоступні." }
-        if let count = actionSummary.count { return "Потребують дії: \(count) \(count == 1 ? "розмова" : "розмови")" }
+        if let count = actionSummary.count {
+            let tasks = openTaskCount
+            let itemLabel = ukrainianCountLabel(count, one: "матеріал", few: "матеріали", many: "матеріалів")
+            let taskLabel = ukrainianCountLabel(tasks, one: "відкрита справа", few: "відкриті справи", many: "відкритих справ")
+            return "Дії: \(count) \(itemLabel) · \(tasks) \(taskLabel)"
+        }
         return "Кількість дій уточнюється: дані ще неповні."
+    }
+    private func ukrainianCountLabel(_ value: Int, one: String, few: String, many: String) -> String {
+        let mod100 = abs(value) % 100
+        let mod10 = abs(value) % 10
+        if mod100 >= 11 && mod100 <= 14 { return many }
+        if mod10 == 1 { return one }
+        if mod10 >= 2 && mod10 <= 4 { return few }
+        return many
+    }
+    private var openTaskCount: Int {
+        guard taskResponse?.complete == true, taskResponse?.truncated != true else { return 0 }
+        let inboxIDs = Set(items.map(\.id))
+        return taskResponse?.tasks.filter { inboxIDs.contains($0.sourceItemId) && $0.status != "completed" }.count ?? 0
     }
     private var visibleItems: [OrbitSchoolItem] {
         let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
@@ -156,41 +195,76 @@ struct SchoolInboxView: View {
             EmptyView()
         }
     }
+    private var inboxFilters: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Вхідні", selection: $filter) {
+                ForEach(SchoolInboxFilter.allCases) { option in Text(option.title).tag(option) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Фільтр вхідних")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(SchoolInboxTypeFilter.allCases) { option in
+                        Button {
+                            typeFilter = option
+                        } label: {
+                            Text(option.title)
+                                .font(.footnote.weight(typeFilter == option ? .semibold : .regular))
+                                .foregroundStyle(typeFilter == option ? Color.accentColor : .secondary)
+                                .lineLimit(1)
+                                .padding(.horizontal, 11)
+                                .frame(minHeight: 34)
+                                .background(typeFilter == option ? Color.accentColor.opacity(0.12) : Color.clear, in: Capsule())
+                                .overlay { Capsule().stroke(typeFilter == option ? Color.accentColor.opacity(0.3) : Color.secondary.opacity(0.18)) }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Тип: \(option.title)")
+                        .accessibilityAddTraits(typeFilter == option ? .isSelected : [])
+                    }
+                }
+                .padding(.vertical, 1)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Тип матеріалу")
+        }
+    }
     private func schoolRow(_ item: OrbitSchoolItem) -> some View {
-        let sender = item.sender.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.sender
+        let sender = item.sender.trimmingCharacters(in: .whitespacesAndNewlines)
         let title = item.titlePlainText?.isEmpty == false ? item.titlePlainText! : (item.title.isEmpty ? String((item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).prefix(80)) : item.title)
         let preview = inboxPreview(for: item)
-        return HStack(alignment: .top, spacing: 12) {
+        return HStack(alignment: .top, spacing: 11) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: item.type == "letter" ? "envelope.fill" : "message.fill")
-                    .font(.callout.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(item.type == "letter" ? Color.orange : Color.accentColor)
-                    .frame(width: 36, height: 36)
-                    .background((item.type == "letter" ? Color.orange : Color.accentColor).opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                    .frame(width: 30, height: 30)
+                    .background((item.type == "letter" ? Color.orange : Color.accentColor).opacity(0.12), in: Circle())
                 if item.unread {
-                    Circle().fill(Color.accentColor).frame(width: 8, height: 8).overlay(Circle().stroke(OrbitColors.card, lineWidth: 2)).offset(x: 2, y: -2)
+                    Circle().fill(Color.accentColor).frame(width: 8, height: 8).overlay(Circle().stroke(OrbitColors.canvas, lineWidth: 2)).offset(x: 2, y: -2)
                 }
             }
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(title).font(.callout.weight(item.unread ? .semibold : .medium)).lineLimit(2)
+                    Text(title).font(.callout.weight(item.unread ? .semibold : .regular)).lineLimit(2)
                     Spacer(minLength: 4)
                     if let date = item.sourceTimestamp ?? item.importedAt { Text(date, format: .dateTime.day().month(.abbreviated)).font(.caption2.weight(.medium)).foregroundStyle(.secondary).fixedSize() }
                 }
                 Text(preview).font(.footnote).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
-                    Text(sender).lineLimit(1)
-                    if let count = taskCount(for: item), count > 0 { Label("\(count) відкритих справ", systemImage: "checklist") }
-                    if item.attachments.count == 1 { Label("1 вкладення", systemImage: "paperclip") }
-                    else if item.attachments.count > 1 { Label("\(item.attachments.count) вкладення", systemImage: "paperclip") }
+                HStack(spacing: 9) {
+                    if !sender.isEmpty { Text(sender).lineLimit(1) }
+                    if let count = taskCount(for: item), count > 0 { Label("\(count)", systemImage: "checklist") }
+                    if !item.attachments.isEmpty { Label("\(item.attachments.count)", systemImage: "paperclip") }
+                    if item.unread { Text("Нове") }
                 }
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
         }
-        .padding(.vertical, 10).padding(.horizontal, 4)
-        .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 14))
-        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .padding(.vertical, 10)
+        .padding(.horizontal, 2)
+        .background(item.unread ? Color.accentColor.opacity(0.055) : Color.clear)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title). \(preview)")
         .accessibilityValue([item.unread ? "Непрочитано" : nil, taskCount(for: item).map { "\($0) відкритих справ" }, item.attachments.isEmpty ? nil : "\(item.attachments.count) вкладень"].compactMap { $0 }.joined(separator: ", "))
@@ -357,124 +431,182 @@ struct SchoolDetailLoaderView: View {
 
 struct SchoolDetailView: View {
     let item: OrbitSchoolItem
+    private let marksItemRead: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var calendarMessage: String?
     @State private var pendingCalendarEvent: OrbitSchoolEvent?
     @State private var showOriginal = false
+
+    init(item: OrbitSchoolItem, marksItemRead: Bool = true) {
+        self.item = item
+        self.marksItemRead = marksItemRead
+    }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if !displayTitle.isEmpty { Text(displayTitle).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
-                Text([item.sender.isEmpty ? nil : item.sender, item.sourceTimestamp.map { $0.formatted(date: .abbreviated, time: .omitted) }].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
-                if let tasks = item.tasks, !tasks.isEmpty {
-                    detailHeader("Що потрібно")
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: "list.bullet.circle")
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 19, height: 19)
-                                    .accessibilityHidden(true)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(task.title ?? task.action ?? "Справа").font(.callout.weight(.medium))
-                                    if let action = task.action, action != task.title { Text(action).font(.caption).foregroundStyle(.secondary) }
-                                    Text(task.dueAt.map { $0.count == 10 ? OrbitSchoolCivilDate.formatted($0) : (OrbitSchoolDateDecoding.date(from: $0).map(schoolLocalizedInstant) ?? $0) } ?? "Без дати · лишається відкритою")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .padding(.vertical, 9)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel("\(task.title ?? task.action ?? "Справа"). Виконання ще не підтримується.")
-                            if tasks.last?.key != task.key { Divider() }
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
-                } else {
-                    detailHeader("Що потрібно")
-                    Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
+                if !displayTitle.isEmpty {
+                    Text(displayTitle)
+                        .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
+                detailMetadata
                 detailHeader("Текст листа")
-                Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
-                    .pickerStyle(.segmented).padding(.bottom, 8)
+                Picker("Мова тексту", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
+                    .pickerStyle(.segmented)
+                    .padding(.bottom, 10)
+                    .accessibilityLabel("Мова тексту листа")
                 Text(showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian ?? "Переклад ще готується."))
-                    .font(.body).lineSpacing(3).textSelection(.enabled)
+                    .font(.body)
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
                 detailHeader("Короткий підсумок")
                 Text(item.important ?? "Підсумок відсутній — перевірте оригінал листа.")
-                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
                 Label("Підсумок Orbit (ШІ), не слова школи. Звіряйте з оригіналом.", systemImage: "sparkles")
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 6)
                 if !item.attachments.isEmpty {
                     detailHeader("Вкладення")
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in attachmentRow(file) }
+                        ForEach(Array(item.attachments.enumerated()), id: \.offset) { index, file in
+                            attachmentRow(file)
+                            if index < item.attachments.count - 1 { Divider().padding(.leading, 42) }
+                        }
                     }
-                    .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
-                }
-                detailHeader("Джерело")
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(item.source == "schulmanager" ? "Schulmanager · лише читання" : item.source).font(.footnote)
-                    if !item.sender.isEmpty { Text("Відправник: \(item.sender)").font(.caption).foregroundStyle(.secondary) }
-                    Text(item.unread ? "Стан в Orbit: непрочитано" : "Стан в Orbit: прочитано").font(.caption).foregroundStyle(.secondary)
                 }
                 if !item.events.isEmpty {
                     detailHeader("Дати / дедлайни")
-                    ForEach(item.events) { event in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(event.title).font(.callout.weight(.medium))
-                            if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)).font(.caption) }
-                            if let location = event.location { Text(location).font(.caption).foregroundStyle(.secondary) }
-                            Button("Додати до календаря") { Task { await add(event) } }.buttonStyle(.bordered)
-                        }.padding(.vertical, 5)
-                    }
+                    eventRows
+                }
+                detailHeader("Що потрібно")
+                taskRows
+                detailHeader("Джерело")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.source == "schulmanager" ? "Schulmanager · лише читання" : item.source).font(.footnote)
+                    Text(item.unread ? "Стан в Orbit: непрочитано" : "Стан в Orbit: прочитано").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 16).padding(.bottom, 24)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
         }
         .background(OrbitColors.canvas)
         .navigationTitle(item.type == "letter" ? "Лист" : "Повідомлення")
         .navigationBarTitleDisplayMode(.inline)
-        .safeAreaPadding(.bottom, 16)
-        .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }
+        .novaDockAwareScrollContent()
+        .task {
+            guard marksItemRead else { return }
+            try? await MainProductAPI.shared.markSchoolItemRead(id: item.id)
+        }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
     }
     private var displayTitle: String { item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title }
-    @ViewBuilder private func attachmentRow(_ file: OrbitSchoolAttachment) -> some View {
-        let rawURL = file.url ?? file.downloadURL
-        let safeURL = rawURL.flatMap { value -> URL? in
-            guard let url = URL(string: value), url.scheme?.lowercased() == "https" else { return nil }
-            return url
-        }
-        if let safeURL {
-            Link(destination: safeURL) {
-                attachmentLabel(file).foregroundStyle(.primary)
+    private var detailMetadata: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if !item.sender.isEmpty {
+                Label(item.sender, systemImage: item.type == "letter" ? "envelope" : "message")
+                    .lineLimit(1)
             }
-        } else {
-            attachmentLabel(file)
+            Spacer(minLength: 8)
+            if let date = item.sourceTimestamp ?? item.importedAt {
+                Text(date, format: .dateTime.day().month(.abbreviated).year())
+                    .fixedSize()
+            }
         }
-        Divider().padding(.leading, 34)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.top, 5)
     }
     private func attachmentLabel(_ file: OrbitSchoolAttachment) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "paperclip").foregroundStyle(.secondary).frame(width: 22)
+            Image(systemName: attachmentSymbol(for: file))
+                .font(.title3)
+                .foregroundStyle(file.contentType?.lowercased() == "application/pdf" ? .red : .secondary)
+                .frame(width: 30)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(file.filename).font(.callout).lineLimit(2)
-                if let contentType = file.contentType, !contentType.isEmpty { Text(contentType).font(.caption2).foregroundStyle(.secondary) }
+                Text(file.filename)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(attachmentTypeLabel(for: file))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
-            if (file.url ?? file.downloadURL) != nil { Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(.secondary) }
         }
-        .padding(.vertical, 10).contentShape(Rectangle())
+        .padding(.vertical, 10)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(file.filename)
-        .accessibilityHint((file.url ?? file.downloadURL) == nil ? "Метадані вкладення" : "Відкрити вкладення")
+        .accessibilityValue(attachmentTypeLabel(for: file))
+        .accessibilityHint("Метадані вкладення")
+    }
+    private func attachmentRow(_ file: OrbitSchoolAttachment) -> some View {
+        attachmentLabel(file)
+    }
+    private func attachmentSymbol(for file: OrbitSchoolAttachment) -> String {
+        let contentType = file.contentType?.lowercased() ?? ""
+        if contentType == "application/pdf" { return "doc.fill" }
+        if contentType.hasPrefix("image/") { return "photo" }
+        return "doc"
+    }
+    private func attachmentTypeLabel(for file: OrbitSchoolAttachment) -> String {
+        let contentType = file.contentType?.lowercased() ?? ""
+        if contentType == "application/pdf" { return "PDF-документ" }
+        if contentType.hasPrefix("image/") { return "Зображення" }
+        if contentType.hasPrefix("text/") { return "Текстовий документ" }
+        return contentType.isEmpty ? "Файл зі школи" : "Документ"
+    }
+    @ViewBuilder private var taskRows: some View {
+        if let tasks = item.tasks, !tasks.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "checklist")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20, height: 20)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(task.title ?? task.action ?? "Справа").font(.callout.weight(.medium))
+                            if let action = task.action, action != task.title { Text(action).font(.caption).foregroundStyle(.secondary) }
+                            Text(task.dueAt.map { $0.count == 10 ? OrbitSchoolCivilDate.formatted($0) : (OrbitSchoolDateDecoding.date(from: $0).map(schoolLocalizedInstant) ?? $0) } ?? "Без дати · лишається відкритою")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(task.title ?? task.action ?? "Справа"). Виконання ще не підтримується.")
+                    if index < tasks.count - 1 { Divider().padding(.leading, 30) }
+                }
+            }
+        } else {
+            Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+    private var eventRows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(item.events.enumerated()), id: \.element.id) { index, event in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(event.title).font(.callout.weight(.medium))
+                    if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)).font(.caption).foregroundStyle(.secondary) }
+                    if let location = event.location, !location.isEmpty { Label(location, systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(.secondary) }
+                    Button("Додати до календаря") { Task { await add(event) } }
+                        .buttonStyle(.bordered)
+                        .frame(minHeight: 36)
+                }
+                .padding(.vertical, 8)
+                if index < item.events.count - 1 { Divider() }
+            }
+        }
     }
     private func detailHeader(_ title: String) -> some View {
         Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            .tracking(0.6).padding(.top, 20).padding(.bottom, 6)
+            .tracking(0.5).padding(.top, 18).padding(.bottom, 6)
             .accessibilityAddTraits(.isHeader)
     }
     private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String { guard let start = event.startsAt else { return "Дата не визначена" }; if let end = event.endsAt, end != start { return "\(start.formatted(date: .long, time: .shortened)) – \(end.formatted(date: .long, time: .shortened))" }; return start.formatted(date: .long, time: .shortened) }
@@ -482,3 +614,84 @@ struct SchoolDetailView: View {
     private func add(_ event: OrbitSchoolEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false); if preview.duplicate == true { calendarMessage = "Подію вже додано." } else if preview.requiresConfirmation == true { pendingCalendarEvent = event } else { calendarMessage = "Не вдалося підготувати подію." } } catch { calendarMessage = "Не вдалося додати подію." } }
     private func confirm(_ event: OrbitSchoolEvent) async { do { let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true); calendarMessage = result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.") } catch { calendarMessage = "Не вдалося додати подію." } }
 }
+
+#if DEBUG
+struct SchoolUXFixtureScreen: View {
+    enum Screen { case inbox, detail }
+    let screen: Screen
+
+    var body: some View {
+        NavigationStack {
+            switch screen {
+            case .inbox:
+                SchoolInboxView(embeddedInNavigation: true, hubMode: true, fixture: SchoolUXFixtureData.inbox)
+            case .detail:
+                SchoolDetailView(item: SchoolUXFixtureData.inbox.items[0], marksItemRead: false)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "circle.hexagongrid.fill")
+                Text("Orbit")
+                    .font(.caption.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, minHeight: 58)
+            .background(.ultraThinMaterial)
+            .accessibilityHidden(true)
+        }
+        .environment(\.novaDockHeight, 58)
+    }
+}
+
+private enum SchoolUXFixtureData {
+    static let inbox: SchoolInboxFixture = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try! decoder.decode(SchoolInboxFixture.self, from: Data(json.utf8))
+    }()
+
+    private static let json = """
+    {
+      "items": [
+        {
+          "id": "fixture-letter-1", "type": "letter", "source": "schulmanager", "externalId": "2541320",
+          "title": "Exkursion zum Justizzentrum des Land- und Amtsgerichts Köln am 19.11.2026",
+          "sender": "Schulmanager", "originalGerman": "Die Klasse besucht am 19. November das Justizzentrum Köln. Bitte beachten Sie die Einverständniserklärung.",
+          "originalPlainText": "Die Klasse besucht am 19. November das Justizzentrum Köln. Bitte beachten Sie die Einverständniserklärung.",
+          "previewPlainText": "Bitte beachten Sie die Einverständniserklärung für die Exkursion.",
+          "titlePlainText": "Exkursion zum Justizzentrum des Land- und Amtsgerichts Köln am 19.11.2026",
+          "translationUkrainian": "Клас відвідає Центр юстиції в Кельні 19 листопада. Будь ласка, зверніть увагу на форму згоди.",
+          "important": "Потрібно переглянути інформацію про екскурсію та форму згоди до поїздки.",
+          "sourceTimestamp": "2026-10-15T09:00:00Z", "importedAt": "2026-10-15T09:01:00Z", "orbitReadAt": null, "unread": true,
+          "attachments": [{"id": "attachment-fixture-1", "filename": "JOL-15_Protagonistenvereinbarung_Film_und_Foto.pdf", "contentType": "application/pdf", "inline": false}],
+          "events": [{"key": "fixture-event-1", "title": "Екскурсія до Центру юстиції", "startsAt": "2026-11-19T08:30:00Z", "endsAt": "2026-11-19T13:30:00Z", "allDay": false, "location": "Köln"}],
+          "threadId": null, "subscriptionId": null,
+          "tasks": [{"key": "fixture-task-1", "title": "Переглянути форму згоди", "action": "Перевірити інформацію перед поїздкою", "dueAt": "2026-11-17", "allDay": true, "importance": "high", "target": null, "confidence": 0.9, "reason": "У листі є прохання до батьків."}]
+        },
+        {
+          "id": "fixture-message-2", "type": "message", "source": "schulmanager", "externalId": "fixture-2",
+          "title": "Material für den Unterricht", "sender": "Класний керівник", "originalGerman": "Bitte bringen Sie die Materialien am Montag mit.",
+          "originalPlainText": "Bitte bringen Sie die Materialien am Montag mit.", "previewPlainText": "Bitte bringen Sie die Materialien am Montag mit.",
+          "titlePlainText": "Material für den Unterricht", "translationUkrainian": "Будь ласка, принесіть матеріали в понеділок.",
+          "important": null, "sourceTimestamp": "2026-10-14T12:00:00Z", "importedAt": "2026-10-14T12:01:00Z", "orbitReadAt": "2026-10-14T12:05:00Z", "unread": false,
+          "attachments": [], "events": [], "threadId": null, "subscriptionId": null, "tasks": []
+        },
+        {
+          "id": "fixture-letter-3", "type": "letter", "source": "schulmanager", "externalId": "fixture-3",
+          "title": "Elternabend", "sender": "Schulmanager", "originalGerman": "Der Elternabend findet nächste Woche statt.",
+          "originalPlainText": "Der Elternabend findet nächste Woche statt.", "previewPlainText": "Der Elternabend findet nächste Woche statt.",
+          "titlePlainText": "Elternabend", "translationUkrainian": "Батьківські збори відбудуться наступного тижня.",
+          "important": "Дата та час у календарі нижче.", "sourceTimestamp": "2026-10-13T08:00:00Z", "importedAt": "2026-10-13T08:01:00Z", "orbitReadAt": null, "unread": true,
+          "attachments": [], "events": [], "threadId": null, "subscriptionId": null, "tasks": []
+        }
+      ],
+      "taskResponse": {
+        "from": "2026-10-01", "to": "2026-11-30", "coverage": "all", "truncated": false, "complete": true, "completionState": "complete",
+        "tasks": [{"key": "fixture-task-1", "stableIdentity": true, "title": "Переглянути форму згоди", "action": "Перевірити інформацію", "dueAt": "2026-11-17", "endsAt": null, "allDay": true, "importance": "high", "target": null, "confidence": 0.9, "reason": "У листі є прохання до батьків.", "location": null, "sourceItemId": "fixture-letter-1", "sourceType": "letter", "sourceExternalId": "2541320", "bucket": null, "status": "open", "completedAt": null, "actionTaskId": null, "calendarEventId": null}],
+        "importantEvents": []
+      }
+    }
+    """
+}
+
+#endif

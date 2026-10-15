@@ -38,6 +38,10 @@ struct VoiceAgentApp: App {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--orbit-nova-fixture") {
             OrbitTodayView(open: { _ in }, displayName: "Олена", fixture: .demo)
+        } else if ProcessInfo.processInfo.arguments.contains("--orbit-school-inbox-fixture") {
+            SchoolUXFixtureScreen(screen: .inbox)
+        } else if ProcessInfo.processInfo.arguments.contains("--orbit-school-detail-fixture") {
+            SchoolUXFixtureScreen(screen: .detail)
         } else if ProcessInfo.processInfo.arguments.contains("--orbit-interpreter-lab") {
             InterpreterLabView()
         } else {

@@ -42,3 +42,13 @@ let current = try! currentDecoder.decode(ItemsResponse<Build64Item>.self, from: 
 precondition(current.items.count == 19)
 precondition(current.items.allSatisfy { $0.events.isEmpty && $0.attachments.isEmpty })
 print("build64 production-shaped inbox decodedItems=\(current.items.count)")
+
+let attachmentMetadataFixture = Data("""
+{"id":"safe-attachment-id","filename":"JOL-15_Protagonistenvereinbarung_Film_und_Foto.pdf","contentType":"application/pdf","inline":false,"file":"must-not-be-modeled","downloadURL":"must-not-be-required"}
+""".utf8)
+let attachment = try! JSONDecoder().decode(Build64Attachment.self, from: attachmentMetadataFixture)
+precondition(attachment.id == "safe-attachment-id")
+precondition(attachment.filename == "JOL-15_Protagonistenvereinbarung_Film_und_Foto.pdf")
+precondition(attachment.contentType == "application/pdf")
+precondition(attachment.inline == false)
+print("attachment metadata decoded without requiring private resource fields")
