@@ -686,7 +686,7 @@ private struct LegacySchoolHubView: View {
 /// Parent-focused School command center. It owns only presentation and routes;
 /// all school records continue to come from the existing authorized API client.
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, letter(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, timetable, exams, letter(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -694,6 +694,10 @@ struct SchoolHubView: View {
 
     private var scopeKey: String {
         SchoolHubLoadGate.scopeKey(personId: authentication.personId, impersonating: authentication.impersonating)
+    }
+
+    private var v2Scope: SchoolV2ProfileScope {
+        SchoolV2ProfileScope(familyID: "active-family", profileID: authentication.personId ?? "active-profile")
     }
 
     var body: some View {
@@ -721,6 +725,8 @@ struct SchoolHubView: View {
                 case .brain: SchoolBrainView()
                 case .teams: SchoolTeamsFutureView()
                 case .history: SchoolActionHistoryView(store: store)
+                case .timetable: SchoolTimetableView(scope: v2Scope)
+                case .exams: SchoolExamsView(scope: v2Scope)
                 case let .letter(id): SchoolDetailLoaderView(itemID: id)
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
@@ -780,6 +786,8 @@ private struct SchoolCommandCenter: View {
                     Button { open(.search) } label: { Label("Знайти у школі", systemImage: "magnifyingglass") }
                     Button { open(.timeline) } label: { Label("Хронологія", systemImage: "list.bullet.indent") }
                     Button { open(.briefing) } label: { Label("Огляд від Orbit", systemImage: "sparkles") }
+                    Button { open(.timetable) } label: { Label("Розклад", systemImage: "calendar.day.timeline.left") }
+                    Button { open(.exams) } label: { Label("Іспити", systemImage: "pencil.and.list.clipboard") }
                     Button { open(.brain) } label: { Label("Запитати Orbit", systemImage: "bubble.left.and.text.bubble.right") }
                     Button { open(.teams) } label: { Label("Джерела школи", systemImage: "graduationcap") }
                     if store.actionCapability.canMutate {
@@ -2385,3 +2393,438 @@ private struct SchoolSearchResultsView: View {
         }
     }
 }
+
+// MARK: - School Hub V2 academic screens
+
+@MainActor @Observable
+private final class SchoolHubV2Model {
+    let scope: SchoolV2ProfileScope
+    let repository: any SchoolHubV2Repository
+    var dashboard: SchoolDashboard?
+    var schedule: SchoolScheduleWeek?
+    var exams: [SchoolExam] = []
+    var dashboardState: SchoolV2DataState = .loading
+    var scheduleState: SchoolV2DataState = .loading
+    var examsState: SchoolV2DataState = .loading
+    var errorMessage: String?
+
+    init(scope: SchoolV2ProfileScope, repository: any SchoolHubV2Repository) {
+        self.scope = scope
+        self.repository = repository
+    }
+
+    func loadDashboard() async {
+        dashboardState = .loading
+        do {
+            dashboard = try await repository.loadDashboard(scope: scope)
+            dashboardState = dashboard?.state ?? .unavailable
+        } catch is CancellationError {
+        } catch {
+            dashboardState = .failed
+            errorMessage = "Огляд школи тимчасово недоступний."
+        }
+    }
+
+    func loadSchedule(starting dayKey: String) async {
+        scheduleState = .loading
+        do {
+            schedule = try await repository.loadScheduleWeek(scope: scope, starting: dayKey)
+            scheduleState = schedule?.state ?? .unavailable
+        } catch is CancellationError {
+        } catch {
+            scheduleState = .failed
+            errorMessage = "Розклад тимчасово недоступний."
+        }
+    }
+
+    func loadExams(starting dayKey: String) async {
+        examsState = .loading
+        do {
+            exams = try await repository.loadExams(scope: scope, starting: dayKey)
+            examsState = exams.isEmpty ? .empty : .ready
+        } catch is CancellationError {
+        } catch {
+            examsState = .failed
+            errorMessage = "Іспити тимчасово недоступні."
+        }
+    }
+}
+
+private enum SchoolV2ScheduleMode: String, CaseIterable, Identifiable {
+    case day, week
+    var id: String { rawValue }
+    var title: String { self == .day ? "День" : "Тиждень" }
+}
+
+private struct SchoolV2UnavailableState: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+    var body: some View {
+        ContentUnavailableView {
+            Label(title, systemImage: systemImage)
+        } description: {
+            Text(detail)
+        }
+        .frame(maxWidth: .infinity, minHeight: 160)
+    }
+}
+
+private struct SchoolV2WeekToolbar: View {
+    let startDayKey: String
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+    let onToday: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: onPrevious) { Image(systemName: "chevron.left") }
+                .accessibilityLabel("Попередній тиждень")
+            VStack(spacing: 1) {
+                Text("Тиждень \(weekNumber)").font(.subheadline.weight(.semibold))
+                Text(SchoolHubFormat.shortDay(startDayKey) + " – " + (SchoolHubLogic.addDays(4, to: startDayKey).map(SchoolHubFormat.shortDay) ?? ""))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            Button("Сьогодні", action: onToday).font(.caption.weight(.semibold))
+            Button(action: onNext) { Image(systemName: "chevron.right") }
+                .accessibilityLabel("Наступний тиждень")
+        }
+        .frame(minHeight: OrbitSpacing.minTarget)
+    }
+
+    private var weekNumber: Int {
+        guard let date = SchoolHubLogic.date(fromDayKey: startDayKey) else { return 0 }
+        return Calendar(identifier: .iso8601).component(.weekOfYear, from: date)
+    }
+}
+
+private struct SchoolV2TypeLink: View {
+    let title: String
+    let systemImage: String
+    let detail: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage).font(.title3.weight(.semibold)).foregroundStyle(NovaTodayTokens.teal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.subheadline.weight(.semibold))
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SchoolV2OverviewView: View {
+    let scope: SchoolV2ProfileScope
+    let repository: any SchoolHubV2Repository
+    let openTimetable: () -> Void
+    let openExams: () -> Void
+    @State private var model: SchoolHubV2Model
+
+    init(scope: SchoolV2ProfileScope, repository: any SchoolHubV2Repository = SchoolHubV2UnavailableRepository(), openTimetable: @escaping () -> Void = {}, openExams: @escaping () -> Void = {}) {
+        self.scope = scope
+        self.repository = repository
+        self.openTimetable = openTimetable
+        self.openExams = openExams
+        _model = State(initialValue: SchoolHubV2Model(scope: scope, repository: repository))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Шкільний огляд").font(.system(.largeTitle, design: .rounded).weight(.bold))
+                    Text(model.dashboard?.profileTitle ?? "Поточний профіль").font(.subheadline).foregroundStyle(.secondary)
+                }
+                if model.dashboardState == .loading {
+                    ProgressView("Завантажуємо школу…").frame(maxWidth: .infinity, alignment: .leading)
+                } else if model.dashboardState == .unavailable {
+                    SchoolV2UnavailableState(title: "Огляд ще не підключено", detail: "Коли Orbit API надасть розклад та іспити, вони з’являться тут. Наявні Inbox, календар і справи працюють окремо.", systemImage: "graduationcap")
+                } else if model.dashboardState == .failed {
+                    SchoolV2UnavailableState(title: "Не вдалося оновити огляд", detail: model.errorMessage ?? "Спробуйте ще раз пізніше.", systemImage: "exclamationmark.triangle")
+                } else {
+                    populatedOverview
+                }
+                navigationSection
+            }
+            .padding(16)
+            .padding(.bottom, 24)
+        }
+        .background(NovaTodayTokens.canvas.ignoresSafeArea())
+        .novaDockAwareScrollContent()
+        .navigationTitle("Школа")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await model.loadDashboard() }
+    }
+
+    @ViewBuilder private var populatedOverview: some View {
+        if let dashboard = model.dashboard {
+            section("Найближчі іспити", icon: "pencil.and.list.clipboard") {
+                if dashboard.upcomingExams.isEmpty { Text("Найближчих іспитів не знайдено.").foregroundStyle(.secondary) }
+                else { ForEach(dashboard.upcomingExams.prefix(3)) { SchoolV2ExamRow(exam: $0) } }
+            }
+            section("Шкільні проєкти", icon: "person.3") {
+                if dashboard.projects.isEmpty { Text("Спеціальних проєктів не знайдено.").foregroundStyle(.secondary) }
+                else { ForEach(dashboard.projects) { SchoolV2ProjectRow(project: $0) } }
+            }
+        }
+    }
+
+    private var navigationSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Швидкий доступ").font(.title3.weight(.bold))
+            SchoolV2TypeLink(title: "Розклад", systemImage: "calendar.day.timeline.left", detail: "День або тиждень", action: openTimetable)
+            SchoolV2TypeLink(title: "Іспити", systemImage: "pencil.and.list.clipboard", detail: "Дати й номери уроків", action: openExams)
+        }
+    }
+
+    private func section<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: icon).font(.title3.weight(.bold))
+            content()
+        }
+    }
+}
+
+private struct SchoolTimetableView: View {
+    let scope: SchoolV2ProfileScope
+    let repository: any SchoolHubV2Repository
+    @State private var model: SchoolHubV2Model
+    @State private var mode: SchoolV2ScheduleMode = .day
+    @State private var weekStart: String
+    @State private var selectedDay: String
+
+    init(scope: SchoolV2ProfileScope, repository: any SchoolHubV2Repository = SchoolHubV2UnavailableRepository()) {
+        self.scope = scope
+        self.repository = repository
+        let today = SchoolHubLogic.dayKey(of: .now)
+        let weekday = Calendar(identifier: .iso8601).component(.weekday, from: SchoolHubLogic.date(fromDayKey: today) ?? .now)
+        let monday = SchoolHubLogic.addDays(1 - (weekday == 1 ? 7 : weekday), to: today) ?? today
+        _weekStart = State(initialValue: monday)
+        _selectedDay = State(initialValue: today)
+        _model = State(initialValue: SchoolHubV2Model(scope: scope, repository: repository))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Picker("Подання розкладу", selection: $mode) { ForEach(SchoolV2ScheduleMode.allCases) { Text($0.title).tag($0) } }
+                    .pickerStyle(.segmented)
+                SchoolV2WeekToolbar(startDayKey: weekStart, onPrevious: { moveWeek(-7) }, onNext: { moveWeek(7) }, onToday: { resetToday() })
+                daySelector
+                if model.scheduleState == .loading { ProgressView("Завантажуємо розклад…").frame(maxWidth: .infinity, minHeight: 140) }
+                else if model.scheduleState == .unavailable { SchoolV2UnavailableState(title: "Розклад ще не підключено", detail: "Orbit не вдає, що день вільний, поки джерело не надало дані.", systemImage: "calendar.badge.exclamationmark") }
+                else if model.scheduleState == .holiday { SchoolV2UnavailableState(title: "Канікули", detail: "Для цього тижня джерело позначило шкільні канікули.", systemImage: "sun.max") }
+                else if model.scheduleState == .empty { SchoolV2UnavailableState(title: "Уроків не знайдено", detail: "Це може бути вільний день або неповні дані джерела.", systemImage: "calendar") }
+                else if model.scheduleState == .failed { SchoolV2UnavailableState(title: "Розклад недоступний", detail: "Спробуйте оновити пізніше.", systemImage: "exclamationmark.triangle") }
+                else if mode == .day { dayContent }
+                else { weekContent }
+            }
+            .padding(16)
+            .padding(.bottom, 24)
+        }
+        .background(NovaTodayTokens.canvas.ignoresSafeArea())
+        .novaDockAwareScrollContent()
+        .navigationTitle("Розклад")
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: weekStart) { await model.loadSchedule(starting: weekStart) }
+    }
+
+    private var daySelector: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(weekDays, id: \.self) { day in
+                    Button { selectedDay = day } label: {
+                        VStack(spacing: 2) { Text(SchoolHubFormat.weekdayShort(day)).font(.caption.weight(.semibold)); Text(SchoolHubFormat.dayNumber(day)).font(.headline) }
+                            .frame(width: 54, minHeight: 50)
+                            .foregroundStyle(selectedDay == day ? Color.accentColor : .secondary)
+                            .background(selectedDay == day ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day))
+                }
+            }
+        }
+    }
+
+    private var dayContent: some View {
+        let entries = model.schedule?.entries.filter { $0.dayKey == selectedDay }.sorted { $0.lessonIndex < $1.lessonIndex } ?? []
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(SchoolHubFormat.long(selectedDay)).font(.title3.weight(.bold)).padding(.bottom, 8)
+            if entries.isEmpty { Text("На цей день підтверджених уроків немає.").foregroundStyle(.secondary).padding(.vertical, 18) }
+            ForEach(entries) { SchoolV2ScheduleRow(entry: $0) }
+        }
+    }
+
+    private var weekContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(weekDays, id: \.self) { day in
+                let entries = model.schedule?.entries.filter { $0.dayKey == day }.sorted { $0.lessonIndex < $1.lessonIndex } ?? []
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(SchoolHubFormat.long(day)).font(.headline)
+                    if entries.isEmpty { Text("Немає підтверджених уроків").font(.caption).foregroundStyle(.secondary) }
+                    else { ForEach(entries) { SchoolV2ScheduleRow(entry: $0, compact: true) } }
+                }
+                .padding(.bottom, 6)
+            }
+        }
+    }
+
+    private var weekDays: [String] { (0..<5).compactMap { SchoolHubLogic.addDays($0, to: weekStart) } }
+    private func moveWeek(_ days: Int) { weekStart = SchoolHubLogic.addDays(days, to: weekStart) ?? weekStart; selectedDay = weekStart }
+    private func resetToday() { let today = SchoolHubLogic.dayKey(of: .now); weekStart = today; selectedDay = today }
+}
+
+private struct SchoolV2ScheduleRow: View {
+    let entry: SchoolScheduleEntry
+    var compact = false
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(entry.lessonIndex)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .leading)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.subject).font((compact ? .subheadline : .headline).weight(.semibold)).lineLimit(2)
+                let metadata = [entry.teacher, entry.room].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
+                if !metadata.isEmpty { Text(metadata).font(.caption).foregroundStyle(.secondary) }
+                if let start = entry.startsAt, !start.isEmpty { Text([start, entry.endsAt].compactMap { $0 }.joined(separator: "–")).font(.caption).foregroundStyle(.secondary) }
+                if let status = entry.status, !status.isEmpty { Text(status).font(.caption.weight(.semibold)).foregroundStyle(.orange) }
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.vertical, compact ? 7 : 11)
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SchoolExamsView: View {
+    let scope: SchoolV2ProfileScope
+    let repository: any SchoolHubV2Repository
+    @State private var model: SchoolHubV2Model
+    @State private var weekStart: String
+
+    init(scope: SchoolV2ProfileScope, repository: any SchoolHubV2Repository = SchoolHubV2UnavailableRepository()) {
+        self.scope = scope; self.repository = repository
+        let today = SchoolHubLogic.dayKey(of: .now)
+        _weekStart = State(initialValue: today)
+        _model = State(initialValue: SchoolHubV2Model(scope: scope, repository: repository))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                SchoolV2WeekToolbar(startDayKey: weekStart, onPrevious: { moveWeek(-7) }, onNext: { moveWeek(7) }, onToday: { weekStart = SchoolHubLogic.dayKey(of: .now) })
+                if model.examsState == .loading { ProgressView("Завантажуємо іспити…").frame(maxWidth: .infinity, minHeight: 160) }
+                else if model.examsState == .unavailable { SchoolV2UnavailableState(title: "Іспити ще не підключено", detail: "Коли Orbit API надасть підтверджені дані, вони з’являться тут.", systemImage: "pencil.and.list.clipboard") }
+                else if model.examsState == .failed { SchoolV2UnavailableState(title: "Іспити недоступні", detail: "Спробуйте оновити пізніше.", systemImage: "exclamationmark.triangle") }
+                else if visibleExams.isEmpty { SchoolV2UnavailableState(title: "Іспитів цього тижня немає", detail: "Порожній тиждень не означає, що джерело повернуло всі майбутні дані.", systemImage: "calendar") }
+                else { ForEach(visibleExams) { SchoolV2ExamRow(exam: $0) } }
+            }
+            .padding(16)
+            .padding(.bottom, 24)
+        }
+        .background(NovaTodayTokens.canvas.ignoresSafeArea())
+        .novaDockAwareScrollContent()
+        .navigationTitle("Іспити")
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: weekStart) { await model.loadExams(starting: weekStart) }
+    }
+
+    private var visibleExams: [SchoolExam] {
+        let days = (0..<5).compactMap { SchoolHubLogic.addDays($0, to: weekStart) }
+        return model.exams.filter { days.contains($0.dayKey) }.sorted { ($0.dayKey, $0.lessonStart ?? 99) < ($1.dayKey, $1.lessonStart ?? 99) }
+    }
+    private func moveWeek(_ days: Int) { weekStart = SchoolHubLogic.addDays(days, to: weekStart) ?? weekStart }
+}
+
+private struct SchoolV2ExamRow: View {
+    let exam: SchoolExam
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "pencil.and.list.clipboard").foregroundStyle(NovaTodayTokens.coral).frame(width: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(exam.subject).font(.headline).lineLimit(2)
+                Text(SchoolHubFormat.long(exam.dayKey)).font(.subheadline)
+                if let start = exam.lessonStart { Text(exam.lessonEnd.map { "Уроки \(start)–\($0)" } ?? "Урок \(start)").font(.caption).foregroundStyle(.secondary) }
+                let details = [exam.room, exam.teacher, exam.group].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
+                if !details.isEmpty { Text(details).font(.caption).foregroundStyle(.secondary) }
+                if let status = exam.status, !status.isEmpty { Text(status).font(.caption.weight(.semibold)).foregroundStyle(.orange) }
+            }
+            Spacer(minLength: 4)
+        }
+        .frame(minHeight: OrbitSpacing.minTarget, alignment: .leading)
+        .padding(.vertical, 8)
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SchoolV2ProjectRow: View {
+    let project: SchoolProject
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(project.title).font(.headline)
+            let details = [project.leader, project.meeting, project.location].compactMap { $0?.isEmpty == false ? $0 : nil }
+            if !details.isEmpty { Text(details.joined(separator: " · ")).font(.subheadline).foregroundStyle(.secondary) }
+            if let from = project.fromDayKey { Text(project.toDayKey.map { "\(SchoolHubFormat.shortDay(from)) – \(SchoolHubFormat.shortDay($0))" } ?? SchoolHubFormat.shortDay(from)).font(.caption).foregroundStyle(.secondary) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+    }
+}
+
+#if DEBUG
+private struct SchoolHubV2FixtureRepository: SchoolHubV2Repository {
+    let scope = SchoolV2ProfileScope(familyID: "fixture-family", profileID: "fixture-profile-a")
+    let observed = Date(timeIntervalSince1970: 1_792_000_000)
+
+    func loadDashboard(scope: SchoolV2ProfileScope) async throws -> SchoolDashboard {
+        let exams = fixtureExams(scope: scope)
+        return SchoolDashboard(scope: scope, profileTitle: "Профіль · Софія", todayDayKey: "2026-11-02", upcomingExams: exams, projects: [SchoolProject(id: "project-week", scope: scope, title: "Tierisch kreativ – eine Stimme für die Tiere", status: "Заплановано", leader: "Schüler*innen", meeting: "П’ятниця, 13:00", location: "E206", fromDayKey: "2026-10-12", toDayKey: "2026-10-16", relatedCalendarEventID: "5566976", observedAt: observed)], upcomingEventIDs: [], state: .ready, freshness: .init(observedAt: observed, source: "debug-fixture", fingerprint: "fixture-v2", state: .ready))
+    }
+
+    func loadScheduleWeek(scope: SchoolV2ProfileScope, starting dayKey: String) async throws -> SchoolScheduleWeek {
+        let days = (0..<5).compactMap { SchoolHubLogic.addDays($0, to: dayKey) }
+        let values = [
+            SchoolScheduleEntry(id: "schedule-math", scope: scope, dayKey: days[safe: 0] ?? dayKey, lessonIndex: 1, subject: "Mathematik", teacher: "MK", room: "B204", startsAt: nil, endsAt: nil, status: nil),
+            SchoolScheduleEntry(id: "schedule-german", scope: scope, dayKey: days[safe: 0] ?? dayKey, lessonIndex: 2, subject: "Deutsch – lange Beispielbezeichnung", teacher: "LS", room: nil, startsAt: nil, endsAt: nil, status: nil),
+            SchoolScheduleEntry(id: "schedule-english", scope: scope, dayKey: days[safe: 1] ?? dayKey, lessonIndex: 3, subject: "Englisch", teacher: nil, room: "E206", startsAt: nil, endsAt: nil, status: "Vertretung nicht verifiziert"),
+            SchoolScheduleEntry(id: "schedule-science", scope: scope, dayKey: days[safe: 3] ?? dayKey, lessonIndex: 5, subject: "Naturwissenschaften", teacher: "AB", room: "Lab", startsAt: nil, endsAt: nil, status: nil)
+        ]
+        return SchoolScheduleWeek(scope: scope, startDayKey: dayKey, entries: values, state: .ready, freshness: .init(observedAt: observed, source: "debug-fixture", fingerprint: "schedule-v2", state: .ready))
+    }
+
+    func loadExams(scope: SchoolV2ProfileScope, starting dayKey: String) async throws -> [SchoolExam] { fixtureExams(scope: scope) }
+
+    private func fixtureExams(scope: SchoolV2ProfileScope) -> [SchoolExam] {
+        [SchoolExam(id: "exam-math", scope: scope, subject: "Mathematik", dayKey: "2026-11-05", lessonStart: 1, lessonEnd: nil, room: nil, teacher: nil, group: nil, providerID: nil, status: nil, source: "debug-fixture", observedAt: observed, sourceFingerprint: "exam-math"), SchoolExam(id: "exam-english", scope: scope, subject: "Englisch ab 5", dayKey: "2026-11-24", lessonStart: 3, lessonEnd: 4, room: "E206", teacher: nil, group: nil, providerID: nil, status: nil, source: "debug-fixture", observedAt: observed, sourceFingerprint: "exam-english")]
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
+}
+
+struct SchoolHubV2FixtureScreen: View {
+    let screen: Screen
+    enum Screen { case overview, timetable, exams }
+    private let repository = SchoolHubV2FixtureRepository()
+    private let scope = SchoolHubV2FixtureRepository().scope
+
+    var body: some View {
+        NavigationStack {
+            switch screen {
+            case .overview:
+                SchoolV2OverviewView(scope: scope, repository: repository, openTimetable: {}, openExams: {})
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Menu { NavigationLink("Розклад") { SchoolTimetableView(scope: scope, repository: repository) }; NavigationLink("Іспити") { SchoolExamsView(scope: scope, repository: repository) } } label: { Image(systemName: "ellipsis.circle") } } }
+            case .timetable: SchoolTimetableView(scope: scope, repository: repository)
+            case .exams: SchoolExamsView(scope: scope, repository: repository)
+            }
+        }
+    }
+}
+#endif

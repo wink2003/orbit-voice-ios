@@ -75,6 +75,107 @@ nonisolated enum SchoolInboxTypeFilter: String, CaseIterable, Identifiable, Hash
     }
 }
 
+// MARK: - School Hub V2 academic foundation
+
+/// Presentation/domain state for future Orbit API integration. These types do
+/// not model an assumed Schulmanager response schema.
+nonisolated enum SchoolV2DataState: Equatable, Sendable {
+    case loading, ready, empty, holiday, stale, unavailable, failed
+}
+
+nonisolated struct SchoolV2Freshness: Equatable, Sendable {
+    let observedAt: Date?
+    let source: String?
+    let fingerprint: String?
+    let state: SchoolV2DataState
+}
+
+nonisolated struct SchoolV2ProfileScope: Hashable, Sendable {
+    let familyID: String
+    let profileID: String
+}
+
+nonisolated struct SchoolScheduleEntry: Hashable, Identifiable, Sendable {
+    let id: String
+    let scope: SchoolV2ProfileScope
+    let dayKey: String
+    let lessonIndex: Int
+    let subject: String
+    let teacher: String?
+    let room: String?
+    let startsAt: String?
+    let endsAt: String?
+    let status: String?
+}
+
+nonisolated struct SchoolScheduleWeek: Hashable, Sendable {
+    let scope: SchoolV2ProfileScope
+    let startDayKey: String
+    let entries: [SchoolScheduleEntry]
+    let state: SchoolV2DataState
+    let freshness: SchoolV2Freshness
+}
+
+nonisolated struct SchoolExam: Hashable, Identifiable, Sendable {
+    let id: String
+    let scope: SchoolV2ProfileScope
+    let subject: String
+    let dayKey: String
+    let lessonStart: Int?
+    let lessonEnd: Int?
+    let room: String?
+    let teacher: String?
+    let group: String?
+    let providerID: String?
+    let status: String?
+    let source: String
+    let observedAt: Date?
+    let sourceFingerprint: String?
+}
+
+nonisolated struct SchoolProject: Hashable, Identifiable, Sendable {
+    let id: String
+    let scope: SchoolV2ProfileScope
+    let title: String
+    let status: String?
+    let leader: String?
+    let meeting: String?
+    let location: String?
+    let fromDayKey: String?
+    let toDayKey: String?
+    let relatedCalendarEventID: String?
+    let observedAt: Date?
+}
+
+nonisolated struct SchoolDashboard: Hashable, Sendable {
+    let scope: SchoolV2ProfileScope
+    let profileTitle: String?
+    let todayDayKey: String
+    let upcomingExams: [SchoolExam]
+    let projects: [SchoolProject]
+    let upcomingEventIDs: [String]
+    let state: SchoolV2DataState
+    let freshness: SchoolV2Freshness
+}
+
+nonisolated protocol SchoolHubV2Repository: Sendable {
+    func loadDashboard(scope: SchoolV2ProfileScope) async throws -> SchoolDashboard
+    func loadScheduleWeek(scope: SchoolV2ProfileScope, starting dayKey: String) async throws -> SchoolScheduleWeek
+    func loadExams(scope: SchoolV2ProfileScope, starting dayKey: String) async throws -> [SchoolExam]
+}
+
+struct SchoolHubV2UnavailableRepository: SchoolHubV2Repository {
+    func loadDashboard(scope: SchoolV2ProfileScope) async throws -> SchoolDashboard {
+        SchoolDashboard(scope: scope, profileTitle: nil, todayDayKey: SchoolHubLogic.dayKey(of: .now), upcomingExams: [], projects: [], upcomingEventIDs: [], state: .unavailable, freshness: .init(observedAt: nil, source: nil, fingerprint: nil, state: .unavailable))
+    }
+
+    func loadScheduleWeek(scope: SchoolV2ProfileScope, starting dayKey: String) async throws -> SchoolScheduleWeek {
+        SchoolScheduleWeek(scope: scope, startDayKey: dayKey, entries: [], state: .unavailable, freshness: .init(observedAt: nil, source: nil, fingerprint: nil, state: .unavailable))
+    }
+
+    func loadExams(scope: SchoolV2ProfileScope, starting dayKey: String) async throws -> [SchoolExam] { [] }
+}
+
 nonisolated struct SchoolInboxActionSummary: Equatable {
     let itemIDs: Set<String>
     let coverageComplete: Bool

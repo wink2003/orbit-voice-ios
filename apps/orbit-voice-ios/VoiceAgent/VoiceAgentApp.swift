@@ -44,6 +44,12 @@ struct VoiceAgentApp: App {
             SchoolUXFixtureScreen(screen: .detail)
         } else if ProcessInfo.processInfo.arguments.contains("--orbit-school-detail-actions-fixture") {
             SchoolUXFixtureScreen(screen: .detailActions)
+        } else if ProcessInfo.processInfo.arguments.contains("--orbit-school-overview-v2-fixture") {
+            SchoolHubV2FixtureScreen(screen: .overview)
+        } else if ProcessInfo.processInfo.arguments.contains("--orbit-school-timetable-v2-fixture") {
+            SchoolHubV2FixtureScreen(screen: .timetable)
+        } else if ProcessInfo.processInfo.arguments.contains("--orbit-school-exams-v2-fixture") {
+            SchoolHubV2FixtureScreen(screen: .exams)
         } else if ProcessInfo.processInfo.arguments.contains("--orbit-interpreter-lab") {
             InterpreterLabView()
         } else {

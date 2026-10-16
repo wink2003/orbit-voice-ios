@@ -287,6 +287,17 @@ struct SchoolHubLogicTests {
             precondition(!unstable.canAddToCalendar)
         }
 
+        // School Hub V2 foundation keeps provider identity explicit and does
+        // not collapse provisional records by subject/date alone.
+        let scopeA = SchoolV2ProfileScope(familyID: "family-a", profileID: "student-a")
+        let scopeB = SchoolV2ProfileScope(familyID: "family-b", profileID: "student-b")
+        let entryA = SchoolScheduleEntry(id: "same-provider-id", scope: scopeA, dayKey: "2026-11-02", lessonIndex: 1, subject: "Mathematik", teacher: nil, room: nil, startsAt: nil, endsAt: nil, status: nil)
+        let entryB = SchoolScheduleEntry(id: "same-provider-id", scope: scopeB, dayKey: "2026-11-02", lessonIndex: 1, subject: "Mathematik", teacher: nil, room: nil, startsAt: nil, endsAt: nil, status: nil)
+        precondition(entryA.scope != entryB.scope, "profile scope must remain part of academic identity")
+        precondition(entryA.lessonIndex != 0 && entryA.startsAt == nil, "lesson index must not imply a clock interval")
+        let multiLesson = SchoolExam(id: "exam", scope: scopeA, subject: "Englisch ab 5", dayKey: "2026-11-24", lessonStart: 3, lessonEnd: 4, room: nil, teacher: nil, group: nil, providerID: nil, status: nil, source: "fixture", observedAt: nil, sourceFingerprint: "fixture")
+        precondition(multiLesson.lessonStart == 3 && multiLesson.lessonEnd == 4)
+
         print("school hub logic tests passed")
     }
 }

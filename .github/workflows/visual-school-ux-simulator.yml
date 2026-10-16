@@ -1,4 +1,4 @@
-name: School Inbox UX Simulator Screenshots
+name: School Hub UX Simulator Screenshots
 
 on:
   workflow_dispatch:
@@ -34,7 +34,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
             build
 
-      - name: Capture compact Inbox and attachment Detail fixtures
+      - name: Capture School Inbox, Hub V2 and attachment fixtures
         run: |
           set -euo pipefail
           device=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone 12/ { print $2; exit }')
@@ -60,6 +60,31 @@ jobs:
           xcrun simctl launch "$device" net.opik.orbit.voice --orbit-school-detail-actions-fixture
           sleep 3
           xcrun simctl io "$device" screenshot "$output/school-letter-actions.png"
+          xcrun simctl terminate "$device" net.opik.orbit.voice || true
+          xcrun simctl launch "$device" net.opik.orbit.voice --orbit-school-overview-v2-fixture
+          sleep 3
+          xcrun simctl io "$device" screenshot "$output/school-overview-v2.png"
+          xcrun simctl terminate "$device" net.opik.orbit.voice || true
+          xcrun simctl launch "$device" net.opik.orbit.voice --orbit-school-timetable-v2-fixture
+          sleep 3
+          xcrun simctl io "$device" screenshot "$output/school-timetable-day-v2.png"
+          xcrun simctl terminate "$device" net.opik.orbit.voice || true
+          xcrun simctl launch "$device" net.opik.orbit.voice --orbit-school-exams-v2-fixture
+          sleep 3
+          xcrun simctl io "$device" screenshot "$output/school-exams-v2.png"
+          xcrun simctl terminate "$device" net.opik.orbit.voice || true
+          xcrun simctl ui "$device" appearance dark
+          xcrun simctl launch "$device" net.opik.orbit.voice --orbit-school-overview-v2-fixture
+          sleep 3
+          xcrun simctl io "$device" screenshot "$output/school-overview-v2-dark.png"
+          xcrun simctl terminate "$device" net.opik.orbit.voice || true
+          xcrun simctl launch "$device" net.opik.orbit.voice --orbit-school-timetable-v2-fixture
+          sleep 3
+          xcrun simctl io "$device" screenshot "$output/school-timetable-v2-dark.png"
+          xcrun simctl terminate "$device" net.opik.orbit.voice || true
+          xcrun simctl launch "$device" net.opik.orbit.voice --orbit-school-exams-v2-fixture
+          sleep 3
+          xcrun simctl io "$device" screenshot "$output/school-exams-v2-dark.png"
 
       - uses: actions/upload-artifact@v4
         with:
