@@ -2686,7 +2686,7 @@ private struct SchoolV2DayButton: View {
                 Text(SchoolHubFormat.weekdayShort(dayKey)).font(.caption.weight(.semibold))
                 Text(SchoolHubFormat.dayNumber(dayKey)).font(.headline)
             }
-            .frame(width: 54, minHeight: 50)
+            .frame(width: 54, height: 50)
             .foregroundStyle(selected ? Color.accentColor : Color.secondary)
             .background(selected ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
@@ -2808,11 +2808,14 @@ private struct SchoolHubV2FixtureRepository: SchoolHubV2Repository {
 
     func loadScheduleWeek(scope: SchoolV2ProfileScope, starting dayKey: String) async throws -> SchoolScheduleWeek {
         let days = (0..<5).compactMap { SchoolHubLogic.addDays($0, to: dayKey) }
+        let firstDay = days.first ?? dayKey
+        let secondDay = days.dropFirst().first ?? dayKey
+        let fourthDay = days.dropFirst(3).first ?? dayKey
         let values = [
-            SchoolScheduleEntry(id: "schedule-math", scope: scope, dayKey: days[safe: 0] ?? dayKey, lessonIndex: 1, subject: "Mathematik", teacher: "MK", room: "B204", startsAt: nil, endsAt: nil, status: nil),
-            SchoolScheduleEntry(id: "schedule-german", scope: scope, dayKey: days[safe: 0] ?? dayKey, lessonIndex: 2, subject: "Deutsch – lange Beispielbezeichnung", teacher: "LS", room: nil, startsAt: nil, endsAt: nil, status: nil),
-            SchoolScheduleEntry(id: "schedule-english", scope: scope, dayKey: days[safe: 1] ?? dayKey, lessonIndex: 3, subject: "Englisch", teacher: nil, room: "E206", startsAt: nil, endsAt: nil, status: "Vertretung nicht verifiziert"),
-            SchoolScheduleEntry(id: "schedule-science", scope: scope, dayKey: days[safe: 3] ?? dayKey, lessonIndex: 5, subject: "Naturwissenschaften", teacher: "AB", room: "Lab", startsAt: nil, endsAt: nil, status: nil)
+            SchoolScheduleEntry(id: "schedule-math", scope: scope, dayKey: firstDay, lessonIndex: 1, subject: "Mathematik", teacher: "MK", room: "B204", startsAt: nil, endsAt: nil, status: nil),
+            SchoolScheduleEntry(id: "schedule-german", scope: scope, dayKey: firstDay, lessonIndex: 2, subject: "Deutsch – lange Beispielbezeichnung", teacher: "LS", room: nil, startsAt: nil, endsAt: nil, status: nil),
+            SchoolScheduleEntry(id: "schedule-english", scope: scope, dayKey: secondDay, lessonIndex: 3, subject: "Englisch", teacher: nil, room: "E206", startsAt: nil, endsAt: nil, status: "Vertretung не верифікована"),
+            SchoolScheduleEntry(id: "schedule-science", scope: scope, dayKey: fourthDay, lessonIndex: 5, subject: "Naturwissenschaften", teacher: "AB", room: "Lab", startsAt: nil, endsAt: nil, status: nil)
         ]
         return SchoolScheduleWeek(scope: scope, startDayKey: dayKey, entries: values, state: .ready, freshness: .init(observedAt: observed, source: "debug-fixture", fingerprint: "schedule-v2", state: .ready))
     }
@@ -2822,10 +2825,6 @@ private struct SchoolHubV2FixtureRepository: SchoolHubV2Repository {
     private func fixtureExams(scope: SchoolV2ProfileScope) -> [SchoolExam] {
         [SchoolExam(id: "exam-math", scope: scope, subject: "Mathematik", dayKey: "2026-11-05", lessonStart: 1, lessonEnd: nil, room: nil, teacher: nil, group: nil, providerID: nil, status: nil, source: "debug-fixture", observedAt: observed, sourceFingerprint: "exam-math"), SchoolExam(id: "exam-english", scope: scope, subject: "Englisch ab 5", dayKey: "2026-11-24", lessonStart: 3, lessonEnd: 4, room: "E206", teacher: nil, group: nil, providerID: nil, status: nil, source: "debug-fixture", observedAt: observed, sourceFingerprint: "exam-english")]
     }
-}
-
-private extension Array {
-    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }
 
 struct SchoolHubV2FixtureScreen: View {
