@@ -2641,15 +2641,7 @@ private struct SchoolTimetableView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(weekDays, id: \.self) { day in
-                    Button { selectedDay = day } label: {
-                        VStack(spacing: 2) {
-                            Text(SchoolHubFormat.weekdayShort(day)).font(.caption.weight(.semibold))
-                            Text(SchoolHubFormat.dayNumber(day)).font(.headline)
-                        }
-                            .frame(width: 54, minHeight: 50)
-                            .foregroundStyle(selectedDay == day ? Color.accentColor : .secondary)
-                            .background(selectedDay == day ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day))
+                    SchoolV2DayButton(dayKey: day, selected: selectedDay == day) { selectedDay = day }
                 }
             }
         }
@@ -2681,6 +2673,26 @@ private struct SchoolTimetableView: View {
     private var weekDays: [String] { (0..<5).compactMap { SchoolHubLogic.addDays($0, to: weekStart) } }
     private func moveWeek(_ days: Int) { weekStart = SchoolHubLogic.addDays(days, to: weekStart) ?? weekStart; selectedDay = weekStart }
     private func resetToday() { let today = SchoolHubLogic.dayKey(of: .now); weekStart = today; selectedDay = today }
+}
+
+private struct SchoolV2DayButton: View {
+    let dayKey: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(SchoolHubFormat.weekdayShort(dayKey)).font(.caption.weight(.semibold))
+                Text(SchoolHubFormat.dayNumber(dayKey)).font(.headline)
+            }
+            .frame(width: 54, minHeight: 50)
+            .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+            .background(selected ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(SchoolHubFormat.long(dayKey))
+    }
 }
 
 private struct SchoolV2ScheduleRow: View {
