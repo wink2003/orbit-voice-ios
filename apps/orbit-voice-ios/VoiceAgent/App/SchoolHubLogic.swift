@@ -79,11 +79,11 @@ nonisolated enum SchoolInboxTypeFilter: String, CaseIterable, Identifiable, Hash
 
 /// Presentation/domain state for future Orbit API integration. These types do
 /// not model an assumed Schulmanager response schema.
-nonisolated enum SchoolV2DataState: Equatable, Sendable {
+nonisolated enum SchoolV2DataState: Equatable, Hashable, Sendable {
     case loading, ready, empty, holiday, stale, unavailable, failed
 }
 
-nonisolated struct SchoolV2Freshness: Equatable, Sendable {
+nonisolated struct SchoolV2Freshness: Equatable, Hashable, Sendable {
     let observedAt: Date?
     let source: String?
     let fingerprint: String?

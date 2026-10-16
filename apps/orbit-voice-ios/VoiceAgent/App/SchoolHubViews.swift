@@ -2642,7 +2642,10 @@ private struct SchoolTimetableView: View {
             HStack(spacing: 8) {
                 ForEach(weekDays, id: \.self) { day in
                     Button { selectedDay = day } label: {
-                        VStack(spacing: 2) { Text(SchoolHubFormat.weekdayShort(day)).font(.caption.weight(.semibold)); Text(SchoolHubFormat.dayNumber(day)).font(.headline) }
+                        VStack(spacing: 2) {
+                            Text(SchoolHubFormat.weekdayShort(day)).font(.caption.weight(.semibold))
+                            Text(SchoolHubFormat.dayNumber(day)).font(.headline)
+                        }
                             .frame(width: 54, minHeight: 50)
                             .foregroundStyle(selectedDay == day ? Color.accentColor : .secondary)
                             .background(selectedDay == day ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -2687,7 +2690,11 @@ private struct SchoolV2ScheduleRow: View {
         HStack(alignment: .top, spacing: 10) {
             Text("\(entry.lessonIndex)").font(.headline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
-                Text(entry.subject).font((compact ? .subheadline : .headline).weight(.semibold)).lineLimit(2)
+                if compact {
+                    Text(entry.subject).font(.subheadline.weight(.semibold)).lineLimit(2)
+                } else {
+                    Text(entry.subject).font(.headline.weight(.semibold)).lineLimit(2)
+                }
                 let metadata = [entry.teacher, entry.room].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
                 if !metadata.isEmpty { Text(metadata).font(.caption).foregroundStyle(.secondary) }
                 if let start = entry.startsAt, !start.isEmpty { Text([start, entry.endsAt].compactMap { $0 }.joined(separator: "–")).font(.caption).foregroundStyle(.secondary) }
