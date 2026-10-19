@@ -300,7 +300,7 @@ private struct SchoolHubV2View: View {
             Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left") }
                 .accessibilityLabel("Попередній тиждень")
             Spacer()
-            Text("\(SchoolHubFormat.shortDay(store.weekStart)) – \(SchoolHubFormat.shortDay(SchoolHubLogic.addDays(6, to: store.weekStart) ?? store.weekStart)")
+            Text("\(SchoolHubFormat.shortDay(store.weekStart)) – \(SchoolHubFormat.shortDay(SchoolHubLogic.addDays(6, to: store.weekStart) ?? store.weekStart))")
                 .font(.subheadline.weight(.semibold))
             Spacer()
             Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right") }
