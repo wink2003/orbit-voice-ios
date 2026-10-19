@@ -219,7 +219,7 @@ jobs:
         run: |
           set -euo pipefail
           xcrun swiftc \
-            apps/orbit-voice-ios/VoiceAgent/Orbit/OrbitSchoolDateDecoding.swift \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolDateDecoding.swift \
             apps/orbit-voice-ios/VoiceAgent/Orbit/KeychainStore.swift \
             apps/orbit-voice-ios/VoiceAgent/Orbit/OrbitAuthentication.swift \
             apps/orbit-voice-ios/VoiceAgent/Orbit/MainProductAPI.swift \
