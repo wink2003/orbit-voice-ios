@@ -835,7 +835,7 @@ final class SchoolHubV2Store {
     var exams: [OrbitSchoolHubV2Exam] = []
     var timetable: [OrbitSchoolHubV2TimetableEntry] = []
     var freshness: OrbitSchoolHubV2Freshness?
-    var weekStart: String = Self.currentWeekStart()
+    var weekStart: String = SchoolHubV2Store.currentWeekStart()
     var errorText: String?
     var weekEnd: String { SchoolHubLogic.addDays(7, to: weekStart) ?? weekStart }
 
