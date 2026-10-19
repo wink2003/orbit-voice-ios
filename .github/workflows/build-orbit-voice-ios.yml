@@ -225,6 +225,7 @@ jobs:
             apps/orbit-voice-ios/VoiceAgent/Orbit/MainProductAPI.swift \
             >> "$RUNNER_TEMP/orbit-school-hub-v2-models.swift"
           xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolDateDecoding.swift \
             "$RUNNER_TEMP/orbit-school-hub-v2-models.swift" \
             apps/orbit-voice-ios/VoiceAgent/App/SchoolHubLogic.swift \
             apps/orbit-voice-ios/Tests/SchoolHubLogicTests.swift \

@@ -1,6 +1,18 @@
 import Foundation
 
 enum OrbitSchoolDateDecoding {
+    static var jsonDecoderStrategy: JSONDecoder.DateDecodingStrategy {
+        .custom { decoder in
+            let value = try decoder.singleValueContainer().decode(String.self)
+            guard let date = date(from: value) else {
+                throw DecodingError.dataCorrupted(
+                    .init(codingPath: decoder.codingPath, debugDescription: "Unsupported ISO-8601 school date")
+                )
+            }
+            return date
+        }
+    }
+
     static func date(from value: String) -> Date? {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

@@ -396,7 +396,7 @@ final class MainProductAPI {
     private let baseURL = MainProductAPI.serviceBaseURL
     private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = OrbitSchoolDateDecoding.jsonDecoderStrategy
         return decoder
     }()
     private let encoder: JSONEncoder = {

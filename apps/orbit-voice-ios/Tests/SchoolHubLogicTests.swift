@@ -288,7 +288,7 @@ struct SchoolHubLogicTests {
         }
 
         // School Hub v2 contracts: half-open week and nullable backend fields.
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = OrbitSchoolDateDecoding.jsonDecoderStrategy
         let overviewJSON = Data("""
         {"overview":{"state":"READY","freshness":{"state":"READY","sourceStates":{"exams":"READY"},"observedAt":"2026-10-19T21:00:48Z","source":"schulmanager","fingerprint":"abc"},"sourceStates":{"exams":"READY"},"profileTitle":null,"todayDayKey":"2026-10-19","upcomingExams":[],"projects":[]}}
         """.utf8)
@@ -299,6 +299,16 @@ struct SchoolHubLogicTests {
         """.utf8)
         let exams = try! decoder.decode(OrbitSchoolHubV2ExamsResponse.self, from: examJSON)
         precondition(exams.from == "2026-11-02" && exams.to == "2026-11-09" && exams.exams.count == 1)
+        let populatedOverviewJSON = Data("""
+        {"overview":{"state":"READY","freshness":{"state":"READY","sourceStates":{"exams":"READY","timetable":"READY"},"observedAt":"2026-10-19T21:00:48.207Z","source":"schulmanager","fingerprint":"abc"},"sourceStates":{"exams":"READY","timetable":"READY"},"profileTitle":"Олександр","todayDayKey":"2026-10-19","upcomingExams":[{"id":"exam-1","subject":"Mathematik","dayKey":"2026-11-05","lessonStart":2,"lessonEnd":3,"startsAt":"2026-11-05T09:45:00.000Z","room":null,"teacher":null,"group":null,"groupName":null,"startClassHourNumber":2,"typeName":"Klassenarbeit","typeColor":null,"typeVisibleForStudents":true,"comment":null,"status":null,"source":"schulmanager","sourceFingerprint":"exam-fp","observedAt":"2026-10-19T21:00:48.207Z"}],"projects":[]}}
+        """.utf8)
+        let populatedOverview = try! decoder.decode(OrbitSchoolHubV2OverviewResponse.self, from: populatedOverviewJSON).overview
+        precondition(populatedOverview.upcomingExams.count == 1 && populatedOverview.upcomingExams[0].observedAt != nil)
+        let timetableJSON = Data("""
+        {"timetable":{"state":"READY","freshness":{"state":"READY","sourceStates":{"timetable":"READY"},"observedAt":"2026-10-19T21:00:48.207Z","source":"schulmanager","fingerprint":"abc"},"startDayKey":"2026-11-02","entries":[{"id":"lesson-1","dayKey":"2026-11-02","localDate":"2026-11-02","lessonIndex":1,"subject":"Mathematik","teacher":null,"room":null,"group":null,"groupName":null,"startsAt":"08:00:00","endsAt":"08:45:00","startsAtLocal":"08:00:00","endsAtLocal":"08:45:00","classHourNumber":1,"isCancelled":false,"originalLessonCount":1,"teachers":[],"groups":[],"status":null,"kind":null,"source":"schulmanager","sourceFingerprint":"lesson-fp","observedAt":"2026-10-19T21:00:48.207Z"}]}}
+        """.utf8)
+        let timetable = try! decoder.decode(OrbitSchoolHubV2TimetableResponse.self, from: timetableJSON).timetable
+        precondition(timetable.entries.count == 1 && timetable.entries[0].observedAt != nil)
         precondition(SchoolHubLogic.addDays(7, to: "2026-11-02") == "2026-11-09")
 
         print("school hub logic tests passed")

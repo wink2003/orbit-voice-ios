@@ -316,8 +316,6 @@ private struct SchoolHubV2View: View {
                     Text("Шкільний простір").font(.title3.weight(.semibold))
                     Text(studentLabel ?? "Поточний учень")
                         .font(.subheadline).foregroundStyle(.secondary)
-                    Text("Шкільні дані авторизованого учня. Профіль інтеграції не є ім’ям учня.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }.padding(.vertical, 6)
             }
             Section("Найближчі іспити") {
