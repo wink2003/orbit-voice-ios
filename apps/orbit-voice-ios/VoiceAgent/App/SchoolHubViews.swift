@@ -242,6 +242,148 @@ final class SchoolHubStore {
     }
 }
 
+// MARK: - School Hub v2
+
+private struct SchoolHubV2View: View {
+    let studentLabel: String?
+    @State private var store = SchoolHubV2Store()
+    @State private var tab = 0
+
+    var body: some View {
+        Group {
+            switch store.phase {
+            case .loading, .idle: ProgressView("Завантажуємо шкільні дані…")
+            case .unauthorized: SchoolV2StateView(title: "Потрібна авторизація", message: "Активуйте цей iPhone для перегляду шкільних даних.", icon: "lock", retry: nil)
+            case .forbidden: SchoolV2StateView(title: "Доступ обмежено", message: "Цей профіль не має доступу до шкільного простору.", icon: "hand.raised", retry: nil)
+            case .unavailable: SchoolV2StateView(title: "Школа тимчасово недоступна", message: "Спробуйте ще раз пізніше. Синхронізація з провайдером із цього екрана не запускається.", icon: "cloud.slash", retry: reload)
+            case .failed: SchoolV2StateView(title: "Не вдалося завантажити", message: "Перевірте з’єднання й повторіть спробу.", icon: "exclamationmark.triangle", retry: reload)
+            case .empty: content
+            case .ready: content
+            }
+        }
+        .navigationTitle("Школа v2")
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: store.weekStart) { await store.load() }
+        .refreshable { await store.load() }
+    }
+
+    private var content: some View {
+        VStack(spacing: 0) {
+            weekToolbar
+            Picker("Розділ", selection: $tab) {
+                Text("Огляд").tag(0)
+                Text("Іспити").tag(1)
+                Text("Розклад").tag(2)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            if let freshness = store.freshness {
+                HStack(spacing: 6) {
+                    Image(systemName: freshness.state == "READY" ? "checkmark.circle.fill" : "clock.badge.exclamationmark")
+                    Text(freshness.state == "READY" ? "Дані готові" : "Стан: \(freshness.state)")
+                    if let label = OrbitFreshness.label(from: freshness.observedAt) { Text("· \(label)") }
+                    Spacer()
+                }
+                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.bottom, 4)
+            }
+            switch tab {
+            case 1: examsView
+            case 2: timetableView
+            default: overviewView
+            }
+        }
+        .background(NovaTodayTokens.canvas.ignoresSafeArea())
+    }
+
+    private var weekToolbar: some View {
+        HStack {
+            Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left") }
+                .accessibilityLabel("Попередній тиждень")
+            Spacer()
+            Text("\(SchoolHubFormat.shortDay(store.weekStart)) – \(SchoolHubFormat.shortDay(SchoolHubLogic.addDays(6, to: store.weekStart) ?? store.weekStart)")
+                .font(.subheadline.weight(.semibold))
+            Spacer()
+            Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right") }
+                .accessibilityLabel("Наступний тиждень")
+        }
+        .frame(minHeight: 40).padding(.horizontal, 16)
+    }
+
+    private var overviewView: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Шкільний простір").font(.title3.weight(.semibold))
+                    Text(studentLabel ?? "Поточний учень")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Text("Шкільні дані авторизованого учня. Профіль інтеграції не є ім’ям учня.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(.vertical, 6)
+            }
+            Section("Найближчі іспити") {
+                if store.exams.isEmpty { Text("Іспитів за цей період немає.").foregroundStyle(.secondary) }
+                else { ForEach(store.exams) { examRow($0) } }
+            }
+            Section("Розклад") {
+                Button { tab = 2 } label: { Label("Відкрити розклад (\(store.timetable.count) уроків)", systemImage: "calendar") }
+            }
+            if !(store.overview?.projects.isEmpty ?? true) {
+                Section("Проєкти") { Text("Проєкти доступні в окремому оновленні.").foregroundStyle(.secondary) }
+            }
+        }.listStyle(.insetGrouped)
+    }
+
+    private var examsView: some View {
+        List {
+            if store.exams.isEmpty { ContentUnavailableView("Іспитів немає", systemImage: "checkmark.circle", description: Text("За вибраний період іспитів не знайдено.")) }
+            else { ForEach(store.exams) { examRow($0) } }
+        }.listStyle(.insetGrouped)
+    }
+
+    private var timetableView: some View {
+        let grouped = Dictionary(grouping: store.timetable, by: \.dayKey)
+        return List {
+            if store.timetable.isEmpty { ContentUnavailableView("Розклад порожній", systemImage: "calendar.badge.exclamationmark", description: Text("За вибраний період уроків не знайдено.")) }
+            else {
+                ForEach(grouped.keys.sorted(), id: \.self) { day in
+                    Section(SchoolHubFormat.long(day)) {
+                        ForEach(grouped[day] ?? []) { entry in
+                            HStack(alignment: .top, spacing: 12) {
+                                Text("\(entry.lessonIndex)").font(.headline.monospacedDigit()).frame(width: 24)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(entry.subject).font(.subheadline.weight(.semibold))
+                                    let details = [entry.startsAtLocal ?? entry.startsAt, entry.room, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }
+                                    if !details.isEmpty { Text(details.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
+                                    if entry.isCancelled { Label("Скасовано", systemImage: "xmark.circle").font(.caption.weight(.semibold)).foregroundStyle(.red) }
+                                }
+                            }.padding(.vertical, 4).accessibilityElement(children: .combine)
+                        }
+                    }
+                }
+            }
+        }.listStyle(.insetGrouped)
+    }
+
+    private func examRow(_ exam: OrbitSchoolHubV2Exam) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(exam.subject).font(.subheadline.weight(.semibold))
+            let details = [SchoolHubFormat.long(exam.dayKey), exam.room, exam.teacher, exam.typeName].compactMap { $0 }.filter { !$0.isEmpty }
+            Text(details.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+        }.padding(.vertical, 4).accessibilityElement(children: .combine)
+    }
+
+    private func reload() { Task { await store.load() } }
+}
+
+private struct SchoolV2StateView: View {
+    let title: String; let message: String; let icon: String; let retry: (() -> Void)?
+    var body: some View {
+        ContentUnavailableView { Label(title, systemImage: icon) } description: { Text(message) } actions: {
+            if let retry { Button("Повторити", action: retry).buttonStyle(.bordered) }
+        }
+    }
+}
+
 private struct SchoolActionsUnavailableView: View {
     let capability: SchoolActionsCapability
     let retry: () -> Void
@@ -685,8 +827,52 @@ private struct LegacySchoolHubView: View {
 
 /// Parent-focused School command center. It owns only presentation and routes;
 /// all school records continue to come from the existing authorized API client.
+@MainActor @Observable
+final class SchoolHubV2Store {
+    enum Phase: Equatable { case idle, loading, ready, empty, unavailable, unauthorized, forbidden, failed }
+    var phase: Phase = .idle
+    var overview: OrbitSchoolHubV2Overview?
+    var exams: [OrbitSchoolHubV2Exam] = []
+    var timetable: [OrbitSchoolHubV2TimetableEntry] = []
+    var freshness: OrbitSchoolHubV2Freshness?
+    var weekStart: String = Self.currentWeekStart()
+    var errorText: String?
+    var weekEnd: String { SchoolHubLogic.addDays(7, to: weekStart) ?? weekStart }
+
+    func load() async {
+        phase = .loading; errorText = nil
+        do {
+            async let overviewResult = MainProductAPI.shared.schoolOverview(start: weekStart, end: weekEnd)
+            async let examsResult = MainProductAPI.shared.schoolExams(from: weekStart, to: weekEnd)
+            async let timetableResult = MainProductAPI.shared.schoolTimetable(from: weekStart, to: weekEnd)
+            let (overviewResponse, examsResponse, timetableResponse) = try await (overviewResult, examsResult, timetableResult)
+            overview = overviewResponse.overview
+            exams = examsResponse.exams
+            timetable = timetableResponse.timetable.entries
+            freshness = overviewResponse.overview.freshness
+            phase = (exams.isEmpty && timetable.isEmpty && overviewResponse.overview.state != "READY") ? .empty : .ready
+        } catch is CancellationError {
+            if phase == .loading { phase = .idle }
+        } catch let failure as OrbitHTTPResponseFailure {
+            switch failure.status { case 401: phase = .unauthorized; case 403: phase = .forbidden; case 503: phase = .unavailable; default: phase = .failed }
+            errorText = failure.code
+        } catch {
+            phase = .failed; errorText = error.localizedDescription
+        }
+    }
+
+    func shiftWeek(_ days: Int) { weekStart = SchoolHubLogic.addDays(days, to: weekStart) ?? weekStart }
+
+    private static func currentWeekStart() -> String {
+        let calendar = Calendar(identifier: .iso8601)
+        let today = SchoolHubLogic.dayKey(of: Date())
+        guard let date = SchoolHubLogic.date(fromDayKey: today), let monday = calendar.dateInterval(of: .weekOfYear, for: date)?.start else { return today }
+        return SchoolHubLogic.dayKey(of: monday)
+    }
+}
+
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, letter(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, v2, letter(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -721,6 +907,7 @@ struct SchoolHubView: View {
                 case .brain: SchoolBrainView()
                 case .teams: SchoolTeamsFutureView()
                 case .history: SchoolActionHistoryView(store: store)
+                case .v2: SchoolHubV2View(studentLabel: store.studentNames.first)
                 case let .letter(id): SchoolDetailLoaderView(itemID: id)
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
@@ -764,6 +951,7 @@ private struct SchoolCommandCenter: View {
                 if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed { availabilityNotice }
                 prioritySection
                 quickAccessSection
+                schoolHubV2Section
                 messagesSection
                 eventsSection
                 assistantEntry
@@ -790,6 +978,22 @@ private struct SchoolCommandCenter: View {
             }
         }
         .refreshable { await store.load() }
+    }
+
+    private var schoolHubV2Section: some View {
+        Button { open(.v2) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "graduationcap.fill").font(.title3).foregroundStyle(NovaTodayTokens.teal)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Школа · огляд, іспити й розклад").font(.subheadline.weight(.semibold))
+                    Text("Дані Schulmanager v2").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+            }
+            .padding(14).background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Відкрити огляд шкільних даних")
     }
 
     private var header: some View {

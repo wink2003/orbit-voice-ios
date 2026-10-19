@@ -287,6 +287,20 @@ struct SchoolHubLogicTests {
             precondition(!unstable.canAddToCalendar)
         }
 
+        // School Hub v2 contracts: half-open week and nullable backend fields.
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let overviewJSON = Data("""
+        {"overview":{"state":"READY","freshness":{"state":"READY","sourceStates":{"exams":"READY"},"observedAt":"2026-10-19T21:00:48Z","source":"schulmanager","fingerprint":"abc"},"sourceStates":{"exams":"READY"},"profileTitle":null,"todayDayKey":"2026-10-19","upcomingExams":[],"projects":[]}}
+        """.utf8)
+        let overview = try! decoder.decode(OrbitSchoolHubV2OverviewResponse.self, from: overviewJSON).overview
+        precondition(overview.state == "READY" && overview.upcomingExams.isEmpty && overview.freshness.observedAt != nil)
+        let examJSON = Data("""
+        {"state":"READY","freshness":{"state":"READY","sourceStates":{},"observedAt":null,"source":null,"fingerprint":null},"from":"2026-11-02","to":"2026-11-09","exams":[{"id":"e1","subject":"Mathematik","dayKey":"2026-11-05","lessonStart":2,"lessonEnd":3,"startsAt":null,"room":null,"teacher":null,"group":null,"groupName":null,"startClassHourNumber":null,"typeName":null,"typeColor":null,"typeVisibleForStudents":null,"comment":null,"status":null,"source":"schulmanager","sourceFingerprint":null,"observedAt":null}]}
+        """.utf8)
+        let exams = try! decoder.decode(OrbitSchoolHubV2ExamsResponse.self, from: examJSON)
+        precondition(exams.from == "2026-11-02" && exams.to == "2026-11-09" && exams.exams.count == 1)
+        precondition(SchoolHubLogic.addDays(7, to: "2026-11-02") == "2026-11-09")
+
         print("school hub logic tests passed")
     }
 }

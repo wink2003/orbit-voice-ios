@@ -51,6 +51,91 @@ struct OrbitSchulmanagerCalendarEvent: Decodable, Identifiable, Hashable { let u
 struct OrbitSchoolTask: Decodable, Identifiable, Hashable { let key: String; let stableIdentity: Bool?; let title: String; let action: String?; let dueAt: String?; let endsAt: String?; let allDay: Bool; let importance: String?; let target: String?; let confidence: Double?; let reason: String?; let location: String?; let sourceItemId: String; let sourceType: String; let sourceExternalId: String; let bucket: String?; let status: String?; let completedAt: String?; let actionTaskId: String?; let calendarEventId: String?; var id: String { key.hasPrefix("\(sourceItemId):") ? key : "\(sourceItemId):\(key)" } }
 struct OrbitSchulmanagerCalendarResponse: Decodable { let events: [OrbitSchulmanagerCalendarEvent] }
 struct OrbitSchoolTasksResponse: Decodable { let from: String; let to: String; let coverage: String?; let truncated: Bool?; let complete: Bool?; let completionState: String?; let tasks: [OrbitSchoolTask]; let importantEvents: [OrbitSchulmanagerCalendarEvent] }
+struct OrbitSchoolHubV2Freshness: Decodable, Hashable {
+    let state: String
+    let sourceStates: [String: String]
+    let observedAt: Date?
+    let source: String?
+    let fingerprint: String?
+}
+struct OrbitSchoolHubV2Overview: Decodable, Hashable {
+    let state: String
+    let freshness: OrbitSchoolHubV2Freshness
+    let sourceStates: [String: String]
+    let profileTitle: String?
+    let todayDayKey: String?
+    let upcomingExams: [OrbitSchoolHubV2Exam]
+    let projects: [OrbitSchoolHubV2Project]
+}
+struct OrbitSchoolHubV2OverviewResponse: Decodable { let overview: OrbitSchoolHubV2Overview }
+struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
+    let id: String
+    let subject: String
+    let dayKey: String
+    let lessonStart: Int?
+    let lessonEnd: Int?
+    let startsAt: String?
+    let room: String?
+    let teacher: String?
+    let group: String?
+    let groupName: String?
+    let startClassHourNumber: Int?
+    let typeName: String?
+    let typeColor: String?
+    let typeVisibleForStudents: Bool?
+    let comment: String?
+    let status: String?
+    let source: String?
+    let sourceFingerprint: String?
+    let observedAt: Date?
+}
+struct OrbitSchoolHubV2ExamsResponse: Decodable { let state: String; let freshness: OrbitSchoolHubV2Freshness; let from: String; let to: String; let exams: [OrbitSchoolHubV2Exam] }
+struct OrbitSchoolHubV2Project: Decodable, Identifiable, Hashable {
+    let id: String
+    let title: String
+    let status: String?
+    let leader: String?
+    let meeting: String?
+    let location: String?
+    let fromDayKey: String?
+    let toDayKey: String?
+    let relatedCalendarEventID: String?
+    let observedAt: Date?
+}
+struct OrbitSchoolHubV2TimetableEntry: Decodable, Identifiable, Hashable {
+    let id: String
+    let dayKey: String
+    let localDate: String
+    let lessonIndex: Int
+    let subject: String
+    let teacher: String?
+    let room: String?
+    let group: String?
+    let groupName: String?
+    let startsAt: String?
+    let endsAt: String?
+    let startsAtLocal: String?
+    let endsAtLocal: String?
+    let classHourNumber: Int?
+    let isCancelled: Bool
+    let originalLessonCount: Int
+    let teachers: [OrbitSchoolHubV2Teacher]
+    let groups: [OrbitSchoolHubV2Group]
+    let status: String?
+    let kind: String?
+    let source: String?
+    let sourceFingerprint: String?
+    let observedAt: Date?
+}
+struct OrbitSchoolHubV2Teacher: Decodable, Hashable { let abbreviation: String? }
+struct OrbitSchoolHubV2Group: Decodable, Hashable { let name: String? }
+struct OrbitSchoolHubV2Timetable: Decodable, Hashable {
+    let state: String
+    let freshness: OrbitSchoolHubV2Freshness
+    let startDayKey: String
+    let entries: [OrbitSchoolHubV2TimetableEntry]
+}
+struct OrbitSchoolHubV2TimetableResponse: Decodable { let timetable: OrbitSchoolHubV2Timetable }
 struct OrbitSchoolActionTask: Codable, Identifiable, Hashable {
     let id: String
     let kind: String
@@ -336,6 +421,15 @@ final class MainProductAPI {
         let f = ISO8601DateFormatter(); let path = "/api/school/calendar?scope=\(scope)&from=\(f.string(from: from).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&to=\(f.string(from: to).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"; return try await request(path: path, as: OrbitSchulmanagerCalendarResponse.self).events
     }
     func schoolTasks(coverage: String = "window") async throws -> OrbitSchoolTasksResponse { try await request(path: "/api/school/tasks?coverage=\(coverage)", as: OrbitSchoolTasksResponse.self) }
+    func schoolOverview(start: String? = nil, end: String? = nil) async throws -> OrbitSchoolHubV2OverviewResponse {
+        try await request(path: schoolV2Path("/api/school/overview", start: start, end: end), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true)
+    }
+    func schoolExams(from: String, to: String) async throws -> OrbitSchoolHubV2ExamsResponse {
+        try await request(path: schoolV2Path("/api/school/exams", start: from, end: to), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true)
+    }
+    func schoolTimetable(from: String, to: String) async throws -> OrbitSchoolHubV2TimetableResponse {
+        try await request(path: schoolV2Path("/api/school/timetable", start: from, end: to), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true)
+    }
     func schoolActionTasks(preserveHTTPStatus: Bool = false) async throws -> OrbitSchoolActionTasksResponse {
         try await request(
             path: "/api/school/actions/tasks",
@@ -608,6 +702,17 @@ final class MainProductAPI {
 
 private struct SchoolItemResponse: Decodable { let item: OrbitSchoolItem }
 struct SchoolCalendarResult: Decodable { let created: Bool; let duplicate: Bool?; let requiresConfirmation: Bool?; let eventId: String? }
+
+private func schoolV2Path(_ path: String, start: String?, end: String?) -> String {
+    var items = [(String, String)]()
+    if let start { items.append(("start", start)) }
+    if let end { items.append(("end", end)) }
+    guard !items.isEmpty else { return path }
+    let query = items.map { key, value in
+        "\(key)=\(value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value)"
+    }.joined(separator: "&")
+    return "\(path)?\(query)"
+}
 
 nonisolated struct OrbitSchoolSyncResponse: Decodable, Sendable {
     let ok: Bool
