@@ -220,9 +220,10 @@ jobs:
           set -euo pipefail
           # Compile the production v2 model declarations without pulling the
           # app's networking/authentication module graph into this focused test.
+          printf '%s\n' 'import Foundation' > "$RUNNER_TEMP/orbit-school-hub-v2-models.swift"
           sed -n '54,138p' \
             apps/orbit-voice-ios/VoiceAgent/Orbit/MainProductAPI.swift \
-            > "$RUNNER_TEMP/orbit-school-hub-v2-models.swift"
+            >> "$RUNNER_TEMP/orbit-school-hub-v2-models.swift"
           xcrun swiftc \
             "$RUNNER_TEMP/orbit-school-hub-v2-models.swift" \
             apps/orbit-voice-ios/VoiceAgent/App/SchoolHubLogic.swift \
