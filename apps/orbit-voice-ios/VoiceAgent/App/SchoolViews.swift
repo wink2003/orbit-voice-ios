@@ -409,10 +409,10 @@ struct SchoolDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(Array(SchoolTranslatedBody.paragraphs(from: body).enumerated()), id: \.offset) { _, paragraph in
                             Text(verbatim: paragraph)
-                                .font(.body)
-                                .lineSpacing(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
+                            .font(.body)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
                         }
                     }
                 }
