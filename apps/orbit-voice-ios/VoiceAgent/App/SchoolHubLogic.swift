@@ -1,5 +1,14 @@
 import Foundation
 
+nonisolated enum SchoolTranslatedBody {
+    /// Keeps source line breaks and list markers intact while exposing paragraph spacing to the view.
+    static func paragraphs(from text: String) -> [String] {
+        text.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n\n")
+            .filter { !$0.isEmpty }
+    }
+}
+
 nonisolated enum SchoolTaskStatusConfirmation: Equatable {
     case complete, reopen
 

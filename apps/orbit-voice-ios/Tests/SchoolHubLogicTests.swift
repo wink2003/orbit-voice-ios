@@ -100,6 +100,17 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.searchTasks(tasks, query: "T3").map(\.id) == ["3"])
         precondition(SchoolHubLogic.searchScopeNote.contains("завантажених"))
 
+        // Translated letter bodies keep paragraph boundaries and list lines intact.
+        let translatedBody = "Вітаємо, родино.\n\n- Перша справа\n- Друга справа\n\n1. Перший крок\n2. Другий крок"
+        precondition(SchoolTranslatedBody.paragraphs(from: translatedBody) == [
+            "Вітаємо, родино.", "- Перша справа\n- Друга справа", "1. Перший крок\n2. Другий крок"
+        ])
+        precondition(SchoolTranslatedBody.paragraphs(from: "Один абзац") == ["Один абзац"])
+        precondition(SchoolTranslatedBody.paragraphs(from: "Перший\n\n\nДругий") == ["Перший", "\nДругий"])
+        precondition(SchoolTranslatedBody.paragraphs(from: "") == [])
+        let unicodeBody = "Übermorgen — Олексій\r\n\r\nДякуємо, родино."
+        precondition(SchoolTranslatedBody.paragraphs(from: unicodeBody) == ["Übermorgen — Олексій", "Дякуємо, родино."])
+
         // Source provenance stays honest and does not invent email/calendar identities.
         let letterTask = SchoolHubTask(id: "letter:key", title: "Лист", action: nil, dueAt: nil, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "letter", sourceType: "letter", sourceExternalId: "ext-letter")
         let provenanceFamilyTask = SchoolHubTask(id: "family:id", title: "Сімейна", action: nil, dueAt: nil, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "", kind: "family")
