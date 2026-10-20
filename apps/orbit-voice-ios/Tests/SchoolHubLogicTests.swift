@@ -210,6 +210,24 @@ struct SchoolHubLogicTests {
         precondition(SchoolTaskStatusConfirmation(completed: true).title == "Повернути справу у відкриті?")
         precondition(SchoolTaskStatusConfirmation(completed: true).actionTitle == "Повернути")
 
+        // School Hub v2 coverage is window-specific: an unsynchronized week
+        // must remain distinguishable from a verified empty week.
+        let coverageJSON = """
+        {"state":"READY_EMPTY","rowCount":0,"sourceStatus":"schulmanager","sourceFingerprint":null,"successfulSyncAt":"2026-10-19T21:00:48.207Z","observedAt":"2026-10-19T21:00:48.207Z","errorCode":null,"startDayKey":"2026-11-02","endDayKey":"2026-11-09"}
+        """.data(using: .utf8)!
+        let coverageDecoder = JSONDecoder(); coverageDecoder.dateDecodingStrategy = OrbitSchoolDateDecoding.jsonDecoderStrategy
+        let coverage = try! coverageDecoder.decode(OrbitSchoolHubV2Coverage.self, from: coverageJSON)
+        precondition(coverage.state == "READY_EMPTY" && coverage.rowCount == 0 && coverage.startDayKey == "2026-11-02")
+
+        // Populated timetable payloads keep local dates and lesson ordering
+        // stable while accepting the deployed numeric-string class-hour field.
+        let timetableJSON = """
+        {"state":"READY_WITH_DATA","freshness":{"state":"READY_WITH_DATA","sourceStates":{"timetable":"READY"},"observedAt":"2026-10-19T21:00:48.207Z","source":"schulmanager","fingerprint":"f"},"startDayKey":"2026-11-02","coverage":{"state":"READY_WITH_DATA","rowCount":2,"startDayKey":"2026-11-02","endDayKey":"2026-11-09"},"entries":[{"id":"b","dayKey":"2026-11-03","localDate":"2026-11-03","lessonIndex":2,"subject":"Deutsch","teacher":null,"room":null,"group":null,"groupName":null,"startsAt":null,"endsAt":null,"startsAtLocal":"08:00","endsAtLocal":"08:45","classHourNumber":"2","isCancelled":false,"originalLessonCount":0,"teachers":[],"groups":[],"status":"regular","kind":"regularLesson","source":"schulmanager","sourceFingerprint":"f","observedAt":"2026-10-19T21:00:48.207Z"},{"id":"a","dayKey":"2026-11-02","localDate":"2026-11-02","lessonIndex":1,"subject":"Mathematik","teacher":null,"room":null,"group":null,"groupName":null,"startsAt":null,"endsAt":null,"startsAtLocal":"08:00","endsAtLocal":"08:45","classHourNumber":1,"isCancelled":false,"originalLessonCount":0,"teachers":[],"groups":[],"status":"regular","kind":"regularLesson","source":"schulmanager","sourceFingerprint":"f","observedAt":"2026-10-19T21:00:48.207Z"}]}
+        """.data(using: .utf8)!
+        let timetable = try! coverageDecoder.decode(OrbitSchoolHubV2Timetable.self, from: timetableJSON)
+        precondition(timetable.entries[0].classHourNumber == 2 || timetable.entries[1].classHourNumber == 1)
+        precondition(timetable.entries.contains { $0.classHourNumber == 2 } && timetable.entries.contains { $0.classHourNumber == 1 })
+
         // School Inbox v2: the visible controls are composable and actionable
         // counts are distinct communications, not the number of open tasks.
         do {

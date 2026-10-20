@@ -257,6 +257,8 @@ private struct SchoolHubV2View: View {
             case .forbidden: SchoolV2StateView(title: "Доступ обмежено", message: "Цей профіль не має доступу до шкільного простору.", icon: "hand.raised", retry: nil)
             case .unavailable: SchoolV2StateView(title: "Школа тимчасово недоступна", message: "Спробуйте ще раз пізніше. Синхронізація з провайдером із цього екрана не запускається.", icon: "cloud.slash", retry: reload)
             case .failed: SchoolV2StateView(title: "Не вдалося завантажити", message: "Перевірте з’єднання й повторіть спробу.", icon: "exclamationmark.triangle", retry: reload)
+            case .notSynced: content
+            case .stale: content
             case .empty: content
             case .ready: content
             }
@@ -279,8 +281,9 @@ private struct SchoolHubV2View: View {
             .padding(.horizontal, 16).padding(.vertical, 10)
             if let freshness = store.freshness {
                 HStack(spacing: 6) {
-                    Image(systemName: freshness.state == "READY" ? "checkmark.circle.fill" : "clock.badge.exclamationmark")
-                    Text(freshness.state == "READY" ? "Дані готові" : "Стан: \(freshness.state)")
+                    let state = store.coverageState
+                    Image(systemName: state == "READY_WITH_DATA" ? "checkmark.circle.fill" : state == "READY_EMPTY" ? "checkmark.circle" : "clock.badge.exclamationmark")
+                    Text(state == "READY_WITH_DATA" ? "Дані за тиждень оновлено" : state == "READY_EMPTY" ? "Тиждень перевірено: даних немає" : state == "NOT_SYNCED" ? "Тиждень ще не синхронізовано" : state == "STALE" ? "Дані можуть бути застарілими" : "Дані тимчасово недоступні")
                     if let label = OrbitFreshness.label(from: freshness.observedAt) { Text("· \(label)") }
                     Spacer()
                 }
@@ -319,7 +322,9 @@ private struct SchoolHubV2View: View {
                 }.padding(.vertical, 6)
             }
             Section("Найближчі іспити") {
-                if store.exams.isEmpty { Text("Іспитів за цей період немає.").foregroundStyle(.secondary) }
+                if store.coverageState == "NOT_SYNCED" { Text("Дані за цей тиждень ще не завантажені.").foregroundStyle(.secondary) }
+                else if ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState) { Text("Дані за цей тиждень тимчасово недоступні.").foregroundStyle(.secondary) }
+                else if store.exams.isEmpty { Text("Іспитів за цей період немає.").foregroundStyle(.secondary) }
                 else { ForEach(store.exams) { examRow($0) } }
             }
             Section("Розклад") {
@@ -333,15 +338,27 @@ private struct SchoolHubV2View: View {
 
     private var examsView: some View {
         List {
-            if store.exams.isEmpty { ContentUnavailableView("Іспитів немає", systemImage: "checkmark.circle", description: Text("За вибраний період іспитів не знайдено.")) }
+            if store.coverageState == "NOT_SYNCED" { ContentUnavailableView("Дані за цей тиждень ще не завантажені", systemImage: "clock.badge.exclamationmark", description: Text("Для вибраного тижня ще немає підтвердженої синхронізації.")) }
+            else if ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState) { ContentUnavailableView("Дані тимчасово недоступні", systemImage: "cloud.slash", description: Text("Стан синхронізації не підтверджено для цього тижня.")) }
+            else if store.exams.isEmpty { ContentUnavailableView("Іспитів немає", systemImage: "checkmark.circle", description: Text("За вибраний період іспитів не знайдено.")) }
             else { ForEach(store.exams) { examRow($0) } }
         }.listStyle(.insetGrouped)
     }
 
     private var timetableView: some View {
-        let grouped = Dictionary(grouping: store.timetable, by: \.dayKey)
+        let grouped = Dictionary(grouping: store.timetable.sorted { lhs, rhs in
+            if lhs.dayKey != rhs.dayKey { return lhs.dayKey < rhs.dayKey }
+            if lhs.lessonIndex != rhs.lessonIndex { return lhs.lessonIndex < rhs.lessonIndex }
+            return lhs.id < rhs.id
+        }, by: \.dayKey)
         return List {
-            if store.timetable.isEmpty { ContentUnavailableView("Розклад порожній", systemImage: "calendar.badge.exclamationmark", description: Text("За вибраний період уроків не знайдено.")) }
+            if store.timetable.isEmpty {
+                let unsynced = store.coverageState == "NOT_SYNCED"
+                let unavailable = ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState)
+                let title = unsynced ? "Дані за цей тиждень ще не завантажені" : unavailable ? "Дані тимчасово недоступні" : store.coverageState == "STALE" ? "Дані можуть бути застарілими" : "На цей тиждень уроків немає"
+                let message = unsynced ? "Для вибраного тижня ще немає підтвердженої синхронізації." : unavailable ? "Стан синхронізації не підтверджено для цього тижня." : "За вибраний період уроків не знайдено."
+                ContentUnavailableView(title, systemImage: "calendar.badge.exclamationmark", description: Text(message))
+            }
             else {
                 ForEach(grouped.keys.sorted(), id: \.self) { day in
                     Section(SchoolHubFormat.long(day)) {
@@ -476,7 +493,15 @@ private enum SchoolHubFormat {
     }
     static func long(_ key: String) -> String {
         guard let date = SchoolHubLogic.date(fromDayKey: key) else { return key }
-        return formatter("EEEE, d MMMM").string(from: date)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = SchoolHubLogic.schoolTimeZone
+        let weekday = calendar.component(.weekday, from: date)
+        let month = calendar.component(.month, from: date)
+        let day = calendar.component(.day, from: date)
+        let weekdays = ["неділя", "понеділок", "вівторок", "середа", "четвер", "п’ятниця", "субота"]
+        let months = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"]
+        guard (1...7).contains(weekday), (1...12).contains(month) else { return formatter("EEEE, d MMMM").string(from: date) }
+        return "\(weekdays[weekday - 1]), \(day) \(months[month - 1])"
     }
     static func weekday(_ key: String) -> String {
         guard let date = SchoolHubLogic.date(fromDayKey: key) else { return "" }
@@ -827,12 +852,13 @@ private struct LegacySchoolHubView: View {
 /// all school records continue to come from the existing authorized API client.
 @MainActor @Observable
 final class SchoolHubV2Store {
-    enum Phase: Equatable { case idle, loading, ready, empty, unavailable, unauthorized, forbidden, failed }
+    enum Phase: Equatable { case idle, loading, ready, empty, notSynced, stale, unavailable, unauthorized, forbidden, failed }
     var phase: Phase = .idle
     var overview: OrbitSchoolHubV2Overview?
     var exams: [OrbitSchoolHubV2Exam] = []
     var timetable: [OrbitSchoolHubV2TimetableEntry] = []
     var freshness: OrbitSchoolHubV2Freshness?
+    var coverageState: String = "NOT_SYNCED"
     var weekStart: String = SchoolHubV2Store.currentWeekStart()
     var errorText: String?
     var weekEnd: String { SchoolHubLogic.addDays(7, to: weekStart) ?? weekStart }
@@ -846,9 +872,20 @@ final class SchoolHubV2Store {
             let (overviewResponse, examsResponse, timetableResponse) = try await (overviewResult, examsResult, timetableResult)
             overview = overviewResponse.overview
             exams = examsResponse.exams
-            timetable = timetableResponse.timetable.entries
+            timetable = timetableResponse.timetable.entries.sorted { lhs, rhs in
+                if lhs.dayKey != rhs.dayKey { return lhs.dayKey < rhs.dayKey }
+                if lhs.lessonIndex != rhs.lessonIndex { return lhs.lessonIndex < rhs.lessonIndex }
+                return lhs.id < rhs.id
+            }
             freshness = overviewResponse.overview.freshness
-            phase = (exams.isEmpty && timetable.isEmpty && overviewResponse.overview.state != "READY") ? .empty : .ready
+            let states = [examsResponse.coverage?.state, timetableResponse.timetable.coverage?.state].compactMap { $0 }
+            coverageState = states.first(where: { ["PARTIAL", "UNAVAILABLE", "ERROR"].contains($0) }) ?? (states.contains("STALE") ? "STALE" : states.contains("READY_WITH_DATA") ? "READY_WITH_DATA" : states.contains("READY_EMPTY") ? "READY_EMPTY" : "NOT_SYNCED")
+            switch coverageState {
+            case "NOT_SYNCED": phase = .notSynced
+            case "STALE": phase = .stale
+            case "READY_EMPTY": phase = .empty
+            default: phase = .ready
+            }
         } catch is CancellationError {
             if phase == .loading { phase = .idle }
         } catch let failure as OrbitHTTPResponseFailure {

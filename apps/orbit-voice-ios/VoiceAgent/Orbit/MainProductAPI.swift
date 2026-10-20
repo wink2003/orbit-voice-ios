@@ -75,6 +75,17 @@ struct OrbitSchoolHubV2Freshness: Decodable, Hashable {
     let source: String?
     let fingerprint: String?
 }
+struct OrbitSchoolHubV2Coverage: Decodable, Hashable {
+    let state: String
+    let rowCount: Int?
+    let sourceStatus: String?
+    let sourceFingerprint: String?
+    let successfulSyncAt: Date?
+    let observedAt: Date?
+    let errorCode: String?
+    let startDayKey: String?
+    let endDayKey: String?
+}
 struct OrbitSchoolHubV2Overview: Decodable, Hashable {
     let state: String
     let freshness: OrbitSchoolHubV2Freshness
@@ -83,6 +94,7 @@ struct OrbitSchoolHubV2Overview: Decodable, Hashable {
     let todayDayKey: String?
     let upcomingExams: [OrbitSchoolHubV2Exam]
     let projects: [OrbitSchoolHubV2Project]
+    let coverage: [String: OrbitSchoolHubV2Coverage]?
 }
 struct OrbitSchoolHubV2OverviewResponse: Decodable { let overview: OrbitSchoolHubV2Overview }
 struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
@@ -135,7 +147,7 @@ struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
         observedAt = try container.decodeIfPresent(Date.self, forKey: .observedAt)
     }
 }
-struct OrbitSchoolHubV2ExamsResponse: Decodable { let state: String; let freshness: OrbitSchoolHubV2Freshness; let from: String; let to: String; let exams: [OrbitSchoolHubV2Exam] }
+struct OrbitSchoolHubV2ExamsResponse: Decodable { let state: String; let freshness: OrbitSchoolHubV2Freshness; let coverage: OrbitSchoolHubV2Coverage?; let from: String; let to: String; let exams: [OrbitSchoolHubV2Exam] }
 struct OrbitSchoolHubV2Project: Decodable, Identifiable, Hashable {
     let id: String
     let title: String
@@ -213,6 +225,7 @@ struct OrbitSchoolHubV2Timetable: Decodable, Hashable {
     let freshness: OrbitSchoolHubV2Freshness
     let startDayKey: String
     let entries: [OrbitSchoolHubV2TimetableEntry]
+    let coverage: OrbitSchoolHubV2Coverage?
 }
 struct OrbitSchoolHubV2TimetableResponse: Decodable { let timetable: OrbitSchoolHubV2Timetable }
 struct OrbitSchoolActionTask: Codable, Identifiable, Hashable {
