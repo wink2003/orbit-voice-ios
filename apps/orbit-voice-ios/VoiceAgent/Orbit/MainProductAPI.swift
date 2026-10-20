@@ -51,6 +51,23 @@ struct OrbitSchulmanagerCalendarEvent: Decodable, Identifiable, Hashable { let u
 struct OrbitSchoolTask: Decodable, Identifiable, Hashable { let key: String; let stableIdentity: Bool?; let title: String; let action: String?; let dueAt: String?; let endsAt: String?; let allDay: Bool; let importance: String?; let target: String?; let confidence: Double?; let reason: String?; let location: String?; let sourceItemId: String; let sourceType: String; let sourceExternalId: String; let bucket: String?; let status: String?; let completedAt: String?; let actionTaskId: String?; let calendarEventId: String?; var id: String { key.hasPrefix("\(sourceItemId):") ? key : "\(sourceItemId):\(key)" } }
 struct OrbitSchulmanagerCalendarResponse: Decodable { let events: [OrbitSchulmanagerCalendarEvent] }
 struct OrbitSchoolTasksResponse: Decodable { let from: String; let to: String; let coverage: String?; let truncated: Bool?; let complete: Bool?; let completionState: String?; let tasks: [OrbitSchoolTask]; let importantEvents: [OrbitSchulmanagerCalendarEvent] }
+
+private extension KeyedDecodingContainer {
+    /// Decodes the two School Hub lesson-hour fields emitted by the backend.
+    /// The deployed serializer preserves the database text type, so both JSON
+    /// integers and canonical integer strings are valid. Other representations
+    /// remain decoding errors rather than being silently treated as nil.
+    func decodeStrictOptionalInt(forKey key: Key) throws -> Int? {
+        guard contains(key), try !decodeNil(forKey: key) else { return nil }
+        if let value = try? decode(Int.self, forKey: key) { return value }
+        let string = try decode(String.self, forKey: key)
+        guard !string.isEmpty, let value = Int(string) else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Expected an integer or integer string")
+        }
+        return value
+    }
+}
+
 struct OrbitSchoolHubV2Freshness: Decodable, Hashable {
     let state: String
     let sourceStates: [String: String]
@@ -88,6 +105,35 @@ struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
     let source: String?
     let sourceFingerprint: String?
     let observedAt: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, subject, dayKey, lessonStart, lessonEnd, startsAt, room, teacher, group, groupName,
+             startClassHourNumber, typeName, typeColor, typeVisibleForStudents, comment, status,
+             source, sourceFingerprint, observedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        subject = try container.decode(String.self, forKey: .subject)
+        dayKey = try container.decode(String.self, forKey: .dayKey)
+        lessonStart = try container.decodeIfPresent(Int.self, forKey: .lessonStart)
+        lessonEnd = try container.decodeIfPresent(Int.self, forKey: .lessonEnd)
+        startsAt = try container.decodeIfPresent(String.self, forKey: .startsAt)
+        room = try container.decodeIfPresent(String.self, forKey: .room)
+        teacher = try container.decodeIfPresent(String.self, forKey: .teacher)
+        group = try container.decodeIfPresent(String.self, forKey: .group)
+        groupName = try container.decodeIfPresent(String.self, forKey: .groupName)
+        startClassHourNumber = try container.decodeStrictOptionalInt(forKey: .startClassHourNumber)
+        typeName = try container.decodeIfPresent(String.self, forKey: .typeName)
+        typeColor = try container.decodeIfPresent(String.self, forKey: .typeColor)
+        typeVisibleForStudents = try container.decodeIfPresent(Bool.self, forKey: .typeVisibleForStudents)
+        comment = try container.decodeIfPresent(String.self, forKey: .comment)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        sourceFingerprint = try container.decodeIfPresent(String.self, forKey: .sourceFingerprint)
+        observedAt = try container.decodeIfPresent(Date.self, forKey: .observedAt)
+    }
 }
 struct OrbitSchoolHubV2ExamsResponse: Decodable { let state: String; let freshness: OrbitSchoolHubV2Freshness; let from: String; let to: String; let exams: [OrbitSchoolHubV2Exam] }
 struct OrbitSchoolHubV2Project: Decodable, Identifiable, Hashable {
@@ -126,6 +172,39 @@ struct OrbitSchoolHubV2TimetableEntry: Decodable, Identifiable, Hashable {
     let source: String?
     let sourceFingerprint: String?
     let observedAt: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, dayKey, localDate, lessonIndex, subject, teacher, room, group, groupName,
+             startsAt, endsAt, startsAtLocal, endsAtLocal, classHourNumber, isCancelled,
+             originalLessonCount, teachers, groups, status, kind, source, sourceFingerprint, observedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        dayKey = try container.decode(String.self, forKey: .dayKey)
+        localDate = try container.decode(String.self, forKey: .localDate)
+        lessonIndex = try container.decode(Int.self, forKey: .lessonIndex)
+        subject = try container.decode(String.self, forKey: .subject)
+        teacher = try container.decodeIfPresent(String.self, forKey: .teacher)
+        room = try container.decodeIfPresent(String.self, forKey: .room)
+        group = try container.decodeIfPresent(String.self, forKey: .group)
+        groupName = try container.decodeIfPresent(String.self, forKey: .groupName)
+        startsAt = try container.decodeIfPresent(String.self, forKey: .startsAt)
+        endsAt = try container.decodeIfPresent(String.self, forKey: .endsAt)
+        startsAtLocal = try container.decodeIfPresent(String.self, forKey: .startsAtLocal)
+        endsAtLocal = try container.decodeIfPresent(String.self, forKey: .endsAtLocal)
+        classHourNumber = try container.decodeStrictOptionalInt(forKey: .classHourNumber)
+        isCancelled = try container.decode(Bool.self, forKey: .isCancelled)
+        originalLessonCount = try container.decode(Int.self, forKey: .originalLessonCount)
+        teachers = try container.decode([OrbitSchoolHubV2Teacher].self, forKey: .teachers)
+        groups = try container.decode([OrbitSchoolHubV2Group].self, forKey: .groups)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        sourceFingerprint = try container.decodeIfPresent(String.self, forKey: .sourceFingerprint)
+        observedAt = try container.decodeIfPresent(Date.self, forKey: .observedAt)
+    }
 }
 struct OrbitSchoolHubV2Teacher: Decodable, Hashable { let abbreviation: String? }
 struct OrbitSchoolHubV2Group: Decodable, Hashable { let name: String? }
