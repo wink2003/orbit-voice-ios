@@ -400,13 +400,20 @@ struct SchoolDetailView: View {
                 Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
                     .pickerStyle(.segmented).padding(.bottom, 8)
                 let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian ?? "Переклад ще готується.")
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(SchoolTranslatedBody.paragraphs(from: body).enumerated()), id: \.offset) { _, paragraph in
-                        Text(verbatim: paragraph)
-                            .font(.body)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
+                if showOriginal {
+                    Text(verbatim: body)
+                        .font(.body)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(SchoolTranslatedBody.paragraphs(from: body).enumerated()), id: \.offset) { _, paragraph in
+                            Text(verbatim: paragraph)
+                                .font(.body)
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
+                        }
                     }
                 }
                 detailHeader("Короткий підсумок")
