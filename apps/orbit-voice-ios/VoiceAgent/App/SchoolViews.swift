@@ -44,7 +44,6 @@ struct SchoolInboxView: View {
     private let embeddedInNavigation: Bool
     private let hubMode: Bool
     @State private var items: [OrbitSchoolItem] = []
-    @State private var filter: SchoolInboxFilter = .all
     @State private var typeFilter: SchoolInboxTypeFilter = .all
     @State private var taskResponse: OrbitSchoolTasksResponse?
     @State private var query = ""
@@ -64,11 +63,29 @@ struct SchoolInboxView: View {
     private var schoolList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Picker("Вхідні", selection: $filter) {
-                    ForEach(SchoolInboxFilter.allCases) { option in Text(option.title).tag(option) }
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    TextField("Пошук у вхідних", text: $query)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.search)
+                        .accessibilityLabel("Пошук листів і повідомлень")
+                    if !query.isEmpty {
+                        Button {
+                            query = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Очистити пошук")
+                    }
                 }
-                .pickerStyle(.segmented)
-                .accessibilityLabel("Фільтр вхідних")
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 14))
                 Picker("Тип матеріалу", selection: $typeFilter) {
                     ForEach(SchoolInboxTypeFilter.allCases) { option in Text(option.title).tag(option) }
                 }
@@ -83,7 +100,7 @@ struct SchoolInboxView: View {
                     ContentUnavailableView(
                         query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Шкільних матеріалів не знайдено" : "Нічого не знайдено",
                         systemImage: query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "graduationcap" : "magnifyingglass",
-                        description: Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Для цього профілю або фільтра немає отриманих листів чи повідомлень." : "Спробуйте інший запит або фільтр.")
+                        description: Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Для цього профілю або фільтра немає отриманих листів чи повідомлень." : "Спробуйте інший пошуковий запит або тип матеріалу.")
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
@@ -105,7 +122,6 @@ struct SchoolInboxView: View {
         .background(OrbitColors.canvas)
         .safeAreaPadding(.bottom, 16)
         .navigationTitle("Вхідні")
-        .searchable(text: $query, prompt: "Шукати листи й повідомлення")
         .refreshable { await load() }
         .onAppear { Task { await load(); await refreshNotificationPermission() } }
         .alert("Школа недоступна", isPresented: .constant(error != nil)) { Button("Повторити") { error = nil; Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
@@ -146,7 +162,7 @@ struct SchoolInboxView: View {
     }
     private var visibleItems: [OrbitSchoolItem] {
         let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-        return SchoolHubLogic.filterInboxItemIDs(itemSnapshots, filter: filter, typeFilter: typeFilter, query: query, actionSummary: actionSummary).compactMap { byID[$0] }
+        return SchoolHubLogic.filterInboxItemIDs(itemSnapshots, filter: .all, typeFilter: typeFilter, query: query, actionSummary: actionSummary).compactMap { byID[$0] }
     }
     @ViewBuilder private var notificationSection: some View {
         switch notificationPermission {
