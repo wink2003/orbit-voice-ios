@@ -24,13 +24,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          device_line=$(xcrun simctl list devices available | awk '/iPhone 12 \(/ { print; exit }')
+          device_line=$(xcrun simctl list devices available | awk '/iPhone 12[^()]*\(/ { print; exit }')
           if [ -z "$device_line" ]; then
-            device_line=$(xcrun simctl list devices available | awk '/iPhone \(/ { print; exit }')
+            device_line=$(xcrun simctl list devices available | awk '/iPhone [^()]*\(/ { print; exit }')
           fi
           test -n "$device_line"
-          udid=$(printf '%s\n' "$device_line" | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
-          name=$(printf '%s\n' "$device_line" | sed -E 's/^    (.*) \([A-F0-9-]+\) \(.*/\1/')
+          udid=$(printf '%s\n' "$device_line" | sed -E 's/.*\(([A-F0-9-]{36})\).*/\1/')
+          name=$(printf '%s\n' "$device_line" | sed -E 's/^    (.*) \([A-F0-9-]{36}\) \(.*/\1/')
           runtime=$(xcrun simctl list devices available | sed -n '1p' | tr -d '\r')
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           echo "name=$name" >> "$GITHUB_OUTPUT"
