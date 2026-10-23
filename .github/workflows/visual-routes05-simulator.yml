@@ -92,9 +92,9 @@ jobs:
               args="--routes05-$screen"
               if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
               printf 'Launching %s / %s with args: %s\n' "$screen" "$appearance" "$args"
-              timeout 45s xcrun simctl launch "$device" net.opik.orbit.voice $args
+              perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
               sleep 3
-              timeout 30s xcrun simctl io "$device" screenshot "$out/routes05-${screen}-${appearance}.png"
+              perl -e 'alarm shift; exec @ARGV' 30 xcrun simctl io "$device" screenshot "$out/routes05-${screen}-${appearance}.png"
               test -s "$out/routes05-${screen}-${appearance}.png"
             done
           done
