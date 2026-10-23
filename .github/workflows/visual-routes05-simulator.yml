@@ -91,9 +91,11 @@ jobs:
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
               args="--routes05-$screen"
               if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
-              xcrun simctl launch "$device" net.opik.orbit.voice $args
+              printf 'Launching %s / %s with args: %s\n' "$screen" "$appearance" "$args"
+              timeout 45s xcrun simctl launch "$device" net.opik.orbit.voice $args
               sleep 3
-              xcrun simctl io "$device" screenshot "$out/routes05-${screen}-${appearance}.png"
+              timeout 30s xcrun simctl io "$device" screenshot "$out/routes05-${screen}-${appearance}.png"
+              test -s "$out/routes05-${screen}-${appearance}.png"
             done
           done
 
