@@ -148,3 +148,22 @@ struct Routes05Rail<Content: View>: View {
             .padding(.horizontal, 16)
     }
 }
+
+/// Shared treatment for contextual ROUTES screens. It deliberately changes
+/// presentation only; Lists, stores, navigation destinations and actions keep
+/// their existing behavior.
+struct Routes05ContextSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .scrollContentBackground(.hidden)
+            .background(Routes05Tokens.canvas)
+            .tint(Routes05Tokens.blue)
+            .toolbarBackground(Routes05Tokens.canvas, for: .navigationBar)
+    }
+}
+
+extension View {
+    func routes05ContextSurface() -> some View {
+        modifier(Routes05ContextSurface())
+    }
+}
