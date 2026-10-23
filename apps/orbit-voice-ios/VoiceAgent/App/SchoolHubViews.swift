@@ -956,6 +956,15 @@ struct SchoolHubView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
+                #if DEBUG
+                if fixture != nil || store.scopeKey == scopeKey {
+                    SchoolCommandCenter(store: store, open: { path.append($0) })
+                } else {
+                    ProgressView("Завантаження школи…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(NovaTodayTokens.canvas)
+                }
+                #else
                 if store.scopeKey == scopeKey {
                     SchoolCommandCenter(store: store, open: { path.append($0) })
                 } else {
@@ -963,6 +972,7 @@ struct SchoolHubView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(NovaTodayTokens.canvas)
                 }
+                #endif
             }
             .navigationDestination(for: Route.self) { route in
                 switch route {
