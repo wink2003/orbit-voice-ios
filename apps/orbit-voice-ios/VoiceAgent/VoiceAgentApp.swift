@@ -36,7 +36,9 @@ struct VoiceAgentApp: App {
     @ViewBuilder
     private var rootContent: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--orbit-nova-fixture") {
+        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--routes05-") }) {
+            Routes05DebugRoot()
+        } else if ProcessInfo.processInfo.arguments.contains("--orbit-nova-fixture") {
             OrbitTodayView(open: { _ in }, displayName: "Олена", fixture: .demo)
         } else if ProcessInfo.processInfo.arguments.contains("--orbit-interpreter-lab") {
             InterpreterLabView()

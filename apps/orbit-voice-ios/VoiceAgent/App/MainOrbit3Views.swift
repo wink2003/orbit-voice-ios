@@ -13,7 +13,7 @@ private enum Orbit3Theme {
             : UIColor(red: 0.965, green: 0.969, blue: 0.984, alpha: 1)
     })
     static let surface = Color(uiColor: .secondarySystemGroupedBackground)
-    static let radius: CGFloat = 20
+    static let radius: CGFloat = 4
 }
 
 private struct Orbit3Card<Content: View>: View {
@@ -29,7 +29,7 @@ private struct Orbit3Card<Content: View>: View {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Orbit3Theme.radius, style: .continuous))
+            .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: Orbit3Theme.radius))
             .overlay(alignment: .leading) {
                 Capsule().fill(tint).frame(width: 3).padding(.vertical, 15)
             }
@@ -351,21 +351,29 @@ private struct Orbit3LoadingRows: View {
 }
 
 struct MainOrbit3FamilyView: View {
+    #if DEBUG
+    let fixture: Routes05FamilyFixture?
+    #endif
     @State private var profiles: [OrbitFamilyProfile] = []
     @State private var messages: [OrbitFamilyMessage] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
 
+    #if DEBUG
+    init(fixture: Routes05FamilyFixture? = nil) {
+        self.fixture = fixture
+        _profiles = State(initialValue: fixture?.profiles ?? [])
+        _messages = State(initialValue: fixture?.messages ?? [])
+        _isLoading = State(initialValue: fixture == nil)
+    }
+    #endif
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("FAMILY · AUTHORIZED CONTEXT").font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(NovaTodayTokens.teal)
-                        Text("Разом, але приватно").font(.system(.largeTitle, design: .rounded).weight(.bold)).tracking(-0.6)
-                        Text("Профілі, спільний ритм і межі доступу — без змішування особистих даних.")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
+                    Routes05Mast(section: "family")
+                    Routes05Chapter("FAMILY / AUTHORIZED", title: "Разом, але приватно.", detail: "Профілі, спільний ритм і межі доступу — без змішування особистих даних.", accent: Routes05Tokens.mint)
                     Orbit3Card(tint: NovaTodayTokens.teal) {
                         VStack(alignment: .leading, spacing: 14) {
                             Orbit3SectionTitle(title: "Профілі родини", detail: "Доступ визначається сервером")
@@ -425,8 +433,20 @@ struct MainOrbit3FamilyView: View {
             .background(NovaTodayTokens.canvas.ignoresSafeArea())
             .navigationTitle("Сім’я")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await load() }
-            .refreshable { await load() }
+            .task {
+                #if DEBUG
+                if fixture == nil { await load() }
+                #else
+                await load()
+                #endif
+            }
+            .refreshable {
+                #if DEBUG
+                if fixture == nil { await load() }
+                #else
+                await load()
+                #endif
+            }
             .alert("Сімейні дані недоступні", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("Гаразд") { errorMessage = nil }
             } message: { Text(errorMessage ?? "Спробуйте оновити ще раз.") }

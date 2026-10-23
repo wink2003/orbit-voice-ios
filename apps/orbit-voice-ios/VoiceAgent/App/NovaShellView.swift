@@ -76,10 +76,10 @@ private struct NovaDock: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .foregroundStyle(selection == item ? NovaTodayTokens.indigo : .secondary)
+                    .foregroundStyle(selection == item ? Routes05Tokens.ink : Routes05Tokens.secondary)
                     .background {
                         if selection == item {
-                            Capsule(style: .continuous).fill(NovaTodayTokens.indigo.opacity(0.12))
+                            Rectangle().fill(Routes05Tokens.yellow)
                         }
                     }
                     .contentShape(Rectangle())
@@ -92,8 +92,8 @@ private struct NovaDock: View {
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 8)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(NovaTodayTokens.indigo.opacity(0.10)).frame(height: 1) }
+        .background(Routes05Tokens.canvas)
+        .overlay(alignment: .top) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
     }
 }
 

@@ -24,6 +24,7 @@ struct OrbitTodayView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
+                    Routes05Mast(section: "core") { open(.orbit) }
                     compactHeader
                     focusBand
                     glance
@@ -44,94 +45,25 @@ struct OrbitTodayView: View {
     }
 
     private var compactHeader: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("ORBIT FAMILY")
-                    .font(.caption.weight(.bold))
-                    .tracking(2.2)
-                    .foregroundStyle(NovaTodayTokens.indigo)
-                Text(today, format: .dateTime.weekday(.wide).day().month(.wide))
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .environment(\.locale, Locale(identifier: "uk_UA"))
-                Text(OrbitTodayLogic.greeting(
-                    hour: Calendar.current.component(.hour, from: today),
-                    name: displayName?.split(separator: " ").first.map(String.init)
-                ))
-                .font(.system(.title2, design: .rounded).weight(.bold))
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-            NavigationLink { OrbitVoiceSheet() } label: {
-                Image(systemName: "waveform")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(NovaTodayTokens.indigo, in: Circle())
-            }
-            .accessibilityLabel("Почати голосову розмову")
-        }
-        .accessibilityElement(children: .combine)
+        Routes05Chapter(
+            today.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased(),
+            title: "Ваш день.",
+            detail: OrbitTodayLogic.greeting(hour: Calendar.current.component(.hour, from: today), name: displayName?.split(separator: " ").first.map(String.init)),
+            accent: Routes05Tokens.mint
+        )
+        .environment(\.locale, Locale(identifier: "uk_UA"))
     }
 
     private var focusBand: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("DAY IN FOCUS")
-                        .font(.caption2.weight(.bold))
-                        .tracking(1.4)
-                        .foregroundStyle(.white.opacity(0.76))
-                    Text(focusTitle)
-                        .font(.system(.title3, design: .rounded).weight(.bold))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 12)
-                Image(systemName: focusIcon)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(.white.opacity(0.16), in: Circle())
-            }
-            Text(focusDetail)
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.84))
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button("Запитати Orbit") { open(.orbit) }
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(NovaTodayTokens.indigo)
-                    .frame(minHeight: 40)
-                    .padding(.horizontal, 13)
-                    .background(.white, in: Capsule())
-                NavigationLink { OrbitVoiceSheet() } label: {
-                    Image(systemName: "waveform")
-                        .frame(width: 40, height: 40)
-                        .foregroundStyle(.white)
-                        .background(.white.opacity(0.16), in: Circle())
-                }
-                .accessibilityLabel("Голос до Orbit")
+        Routes05Hero(accent: Routes05Tokens.yellow) {
+            VStack(alignment: .leading, spacing: 11) {
+                Text("NEXT UP / ROUTE 01").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.5)
+                Text(focusTitle).font(.system(.title, design: .rounded).weight(.black)).tracking(-1.3).fixedSize(horizontal: false, vertical: true)
+                Text(focusDetail).font(.subheadline).foregroundStyle(Routes05Tokens.ink.opacity(0.72))
+                Button("Запитати Orbit →") { open(.orbit) }
+                    .font(.footnote.weight(.black)).foregroundStyle(.white).padding(.horizontal, 10).frame(minHeight: 36).background(Routes05Tokens.blue).cornerRadius(2)
             }
         }
-        .padding(17)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [NovaTodayTokens.night, NovaTodayTokens.indigo, NovaTodayTokens.coral],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-        )
-        .overlay(alignment: .bottomTrailing) {
-            Circle()
-                .stroke(.white.opacity(0.16), lineWidth: 18)
-                .frame(width: 130, height: 130)
-                .offset(x: 42, y: 45)
-                .allowsHitTesting(false)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var glance: some View {
@@ -323,12 +255,12 @@ struct NovaTodayFixture {
 }
 
 enum NovaTodayTokens {
-    static let indigo = Color(red: 0.28, green: 0.30, blue: 0.82)
-    static let teal = Color(red: 0.03, green: 0.52, blue: 0.50)
-    static let coral = Color(red: 0.84, green: 0.35, blue: 0.24)
+    static let indigo = Routes05Tokens.blue
+    static let teal = Routes05Tokens.mint
+    static let coral = Routes05Tokens.orange
     static let night = Color(red: 0.10, green: 0.13, blue: 0.28)
-    static let canvas = Color(uiColor: UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(red: 0.045, green: 0.05, blue: 0.07, alpha: 1) : UIColor(red: 0.965, green: 0.968, blue: 0.982, alpha: 1) })
-    static let surface = Color(uiColor: .systemBackground)
+    static let canvas = Routes05Tokens.canvas
+    static let surface = Routes05Tokens.surface
 }
 
 /// Shared Nova presentation primitives. They intentionally contain no data or
@@ -346,7 +278,7 @@ struct NovaSurface<Content: View>: View {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 4))
             .overlay(alignment: .leading) {
                 Capsule().fill(tint).frame(width: 4).padding(.vertical, 15)
             }
@@ -408,8 +340,8 @@ struct NovaDestinationHeader: View {
         .padding(16)
         .background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(tint.opacity(0.20), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(Routes05Tokens.ink, lineWidth: 1.2)
         }
         .accessibilityElement(children: .combine)
     }

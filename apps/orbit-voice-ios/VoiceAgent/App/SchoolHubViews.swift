@@ -24,7 +24,32 @@ final class SchoolHubStore {
     var calendarLinks: [String: String] = [:]
     private(set) var updatingTaskIDs: Set<String> = []
     private(set) var gate = SchoolHubLoadGate()
+    #if DEBUG
+    private let fixture: Routes05SchoolFixture?
+    #endif
     var scopeKey: String? { gate.scopeKey }
+
+    #if DEBUG
+    init(fixture: Routes05SchoolFixture? = nil) {
+        self.fixture = fixture
+        if let fixture {
+            items = fixture.items
+            events = fixture.events
+            canonicalTasks = fixture.tasks
+            studentNames = fixture.studentNames
+            itemsLoadedOnce = true
+            calendarLoadedOnce = true
+            tasksLoadedOnce = true
+            itemsPhase = .loaded
+            calendarPhase = .loaded
+            tasksPhase = .loaded
+            actionTasksPhase = .loaded
+            actionCapability = .unavailable
+            taskCoverage = "all"
+            gate.reset(to: "routes05-fixture")
+        }
+    }
+    #endif
 
     func reset(to key: String) {
         gate.reset(to: key)
@@ -102,6 +127,9 @@ final class SchoolHubStore {
     func calendarEvent(uid: String) -> OrbitSchulmanagerCalendarEvent? { events.first { $0.uid == uid } }
 
     func load() async {
+        #if DEBUG
+        if fixture != nil { return }
+        #endif
         guard let token = gate.token() else { return }
         itemsPhase = .loading
         calendarPhase = .loading
@@ -913,6 +941,14 @@ struct SchoolHubView: View {
     @State private var path: [Route] = []
     @EnvironmentObject private var authentication: OrbitAuthentication
 
+    #if DEBUG
+    private let fixture: Routes05SchoolFixture?
+    init(fixture: Routes05SchoolFixture? = nil) {
+        self.fixture = fixture
+        _store = State(initialValue: SchoolHubStore(fixture: fixture))
+    }
+    #endif
+
     private var scopeKey: String {
         SchoolHubLoadGate.scopeKey(personId: authentication.personId, impersonating: authentication.impersonating)
     }
@@ -951,6 +987,9 @@ struct SchoolHubView: View {
             }
         }
         .task(id: scopeKey) {
+            #if DEBUG
+            if fixture != nil { return }
+            #endif
             if store.scopeKey != scopeKey { store.reset(to: scopeKey) }
             await store.load()
         }
@@ -982,6 +1021,7 @@ private struct SchoolCommandCenter: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
+                Routes05Mast(section: "school") { open(.search) }
                 header
                 if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed { availabilityNotice }
                 prioritySection
@@ -1033,7 +1073,7 @@ private struct SchoolCommandCenter: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Школа").font(.system(.largeTitle, design: .rounded).weight(.bold))
+            Routes05Chapter("SCHOOL / SOURCE", title: "Школа.", detail: "Schulmanager · лише читання", accent: Routes05Tokens.mint)
             if !store.studentNames.isEmpty {
                 Text(store.studentNames.count == 1 ? store.studentNames[0] : store.studentNames.joined(separator: " · "))
                     .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)

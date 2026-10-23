@@ -4,6 +4,9 @@ import UIKit
 
 struct OrbitChatsView: View {
     var contactPrompt: String? = nil
+    #if DEBUG
+    var fixture: Routes05ChatFixture? = nil
+    #endif
     @State private var profile: OrbitProfile?
     @State private var chats: [OrbitConversation] = []
     @State private var selectedChat: OrbitConversation?
@@ -14,6 +17,18 @@ struct OrbitChatsView: View {
     @State private var showingVoice = false
     @State private var isCreatingConversation = false
 
+    #if DEBUG
+    init(contactPrompt: String? = nil, fixture: Routes05ChatFixture? = nil) {
+        self.contactPrompt = contactPrompt
+        self.fixture = fixture
+        _profile = State(initialValue: fixture?.profile)
+        _chats = State(initialValue: fixture?.chats ?? [])
+        _isLoading = State(initialValue: fixture == nil)
+    }
+    #endif
+
+    private var visibleChats: [OrbitConversation] { fixture?.chats ?? chats }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -22,7 +37,8 @@ struct OrbitChatsView: View {
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 12) {
-                            NovaScreenHeading(eyebrow: "ORBIT · CORE AGENT", title: "Розмови", detail: "Контекст, джерела й підтвердження у звичних безпечних межах")
+                            Routes05Mast(section: "core") { showingVoice = true }
+                            Routes05Chapter("CORE / CONVERSATIONS", title: "Розмови.", detail: "Контекст, джерела й підтвердження — в одному маршруті.", accent: Routes05Tokens.blue)
                             Button { showingSchoolBrain = true } label: {
                                 NovaSurface(tint: NovaTodayTokens.teal) {
                                     HStack(spacing: 12) {
@@ -39,7 +55,7 @@ struct OrbitChatsView: View {
                                 }
                             }
                             .buttonStyle(.plain)
-                            if chats.isEmpty {
+                            if visibleChats.isEmpty {
                                 ContentUnavailableView {
                                     Label("Чатів Orbit ще немає", systemImage: "bubble.left.and.bubble.right")
                                 } description: {
@@ -48,7 +64,7 @@ struct OrbitChatsView: View {
                                     Button("Оновити") { Task { await load() } }
                                 }
                             }
-                            ForEach(chats) { chat in
+                            ForEach(visibleChats) { chat in
                                 Button { selectedChat = chat } label: {
                                     NovaSurface(tint: chat.kind == "family" ? NovaTodayTokens.teal : NovaTodayTokens.indigo) {
                                         HStack(spacing: 12) {
@@ -118,8 +134,20 @@ struct OrbitChatsView: View {
             .navigationDestination(isPresented: $showingSchoolBrain) {
                 SchoolBrainView()
             }
-            .task { await load() }
-            .refreshable { await load() }
+            .task {
+                #if DEBUG
+                if fixture == nil { await load() }
+                #else
+                await load()
+                #endif
+            }
+            .refreshable {
+                #if DEBUG
+                if fixture == nil { await load() }
+                #else
+                await load()
+                #endif
+            }
             .alert("Не вдалося відкрити чати", isPresented: .constant(error != nil)) {
                 Button("Гаразд") { error = nil }
             } message: {

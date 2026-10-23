@@ -1,0 +1,104 @@
+name: ROUTES 05 Batch 1 native simulator evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/routes05-batch1
+    paths:
+      - "apps/orbit-voice-ios/**"
+      - ".github/workflows/visual-routes05-simulator.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  routes05-batch1:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select iPhone 12 simulator when available
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          device_line=$(xcrun simctl list devices available | awk '/iPhone 12 \(/ { print; exit }')
+          if [ -z "$device_line" ]; then
+            device_line=$(xcrun simctl list devices available | awk '/iPhone \(/ { print; exit }')
+          fi
+          test -n "$device_line"
+          udid=$(printf '%s\n' "$device_line" | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          name=$(printf '%s\n' "$device_line" | sed -E 's/^    (.*) \([A-F0-9-]+\) \(.*/\1/')
+          runtime=$(xcrun simctl list devices available | sed -n '1p' | tr -d '\r')
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          printf 'Selected simulator: %s (%s)\n' "$name" "$udid"
+          printf 'Available runtimes:\n%s\n' "$runtime"
+
+      - name: Build Debug simulator app at checked-out commit
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-routes05-simulator" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            build | tee "$RUNNER_TEMP/routes05-xcodebuild.log"
+
+      - name: Run existing unit tests
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
+            -scheme VoiceAgent \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=${{ steps.simulator.outputs.name }}' \
+            -derivedDataPath "$RUNNER_TEMP/orbit-routes05-tests" \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM='' \
+            test | tee "$RUNNER_TEMP/routes05-xcode test.log"
+
+      - name: Capture light and dark native screenshots
+        env:
+          DEVICE_UDID: ${{ steps.simulator.outputs.udid }}
+          DEVICE_NAME: ${{ steps.simulator.outputs.name }}
+        run: |
+          set -euo pipefail
+          device="$DEVICE_UDID"
+          xcrun simctl boot "$device" 2>/dev/null || true
+          xcrun simctl bootstatus "$device" -b
+          app="$RUNNER_TEMP/orbit-routes05-simulator/Build/Products/Debug-iphonesimulator/VoiceAgent.app"
+          test -d "$app"
+          xcrun simctl install "$device" "$app"
+          out="$RUNNER_TEMP/orbit-routes05-screenshots"
+          mkdir -p "$out"
+          printf 'simulator=%s\nudid=%s\n' "$DEVICE_NAME" "$device" > "$out/metadata.txt"
+          xcrun simctl list runtimes >> "$out/metadata.txt"
+
+          for screen in today orbit school family; do
+            for appearance in light dark; do
+              xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+              args="--routes05-$screen"
+              if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
+              xcrun simctl launch "$device" net.opik.orbit.voice $args
+              sleep 3
+              xcrun simctl io "$device" screenshot "$out/routes05-${screen}-${appearance}.png"
+            done
+          done
+
+      - name: Upload native screenshots, metadata and build logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-ROUTES05-Batch1-native-evidence
+          path: |
+            ${{ runner.temp }}/orbit-routes05-screenshots/
+            ${{ runner.temp }}/routes05-xcodebuild.log
+            ${{ runner.temp }}/routes05-xcode test.log
+          retention-days: 14
+          if-no-files-found: error
