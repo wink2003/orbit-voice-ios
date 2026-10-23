@@ -27,7 +27,13 @@ struct OrbitChatsView: View {
     }
     #endif
 
-    private var visibleChats: [OrbitConversation] { fixture?.chats ?? chats }
+    private var visibleChats: [OrbitConversation] {
+        #if DEBUG
+        fixture?.chats ?? chats
+        #else
+        chats
+        #endif
+    }
 
     var body: some View {
         NavigationStack {
