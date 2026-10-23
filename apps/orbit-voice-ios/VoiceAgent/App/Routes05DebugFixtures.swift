@@ -18,6 +18,10 @@ struct Routes05FamilyFixture {
     let messages: [OrbitFamilyMessage]
 }
 
+enum Routes05DebugScreen {
+    case today, orbit, school, family
+}
+
 enum Routes05DebugFixtures {
     private static let now = Date(timeIntervalSince1970: 1_729_555_200)
     private static let iso: ISO8601DateFormatter = {
