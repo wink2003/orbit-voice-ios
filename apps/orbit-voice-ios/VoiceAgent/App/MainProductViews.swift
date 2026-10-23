@@ -1380,7 +1380,16 @@ struct OrbitSettingsView: View {
                     }
                 }
                 Section("Стан") {
-                    LabeledContent("Сервер", value: serverOnline == true ? "Доступний" : serverOnline == false ? "Недоступний" : "Перевірка…")
+                    LabeledContent("Сервер") {
+                        HStack(spacing: 4) {
+                            if serverOnline == true {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .accessibilityHidden(true)
+                            }
+                            Text(serverOnline == true ? "Доступний" : serverOnline == false ? "Недоступний" : "Перевірка…")
+                        }
+                    }
                     LabeledContent("Telegram", value: "Керується сервером")
                     LabeledContent("Версія / збірка", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"))")
                 }
