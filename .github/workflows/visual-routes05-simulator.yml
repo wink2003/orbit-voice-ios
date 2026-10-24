@@ -102,7 +102,9 @@ jobs:
               bottom_args="--routes05-$screen --routes05-bottom"
               if [ "$appearance" = dark ]; then bottom_args="$bottom_args --routes05-dark"; fi
               perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $bottom_args
-              sleep 3
+              # Bottom capture also exercises the debug scroll-to-bottom path;
+              # allow the app and its fixture task to settle before taking evidence.
+              sleep 8
               perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-${screen}-${appearance}-bottom.png"
               test -s "$out/routes05-${screen}-${appearance}-bottom.png"
             done
