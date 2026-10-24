@@ -25,23 +25,156 @@ struct OrbitTodayView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     Routes05Mast(section: "core") { open(.orbit) }
-                    compactHeader
-                    focusBand
-                    glance
-                    rhythm
-                    schoolSignal
-                    preparation
+                    routesHeader
+                    routesNextUp
+                    routesSchedule
+                    routesTasks
+                    routesMessages
                     freshness
                 }
-                .padding(.horizontal, 18)
                 .padding(.top, 8)
                 .padding(.bottom, 24)
             }
-            .background(NovaTodayTokens.canvas.ignoresSafeArea())
+            .background(Routes05Tokens.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await load() }
             .task { await load() }
         }
+    }
+
+    private var routesHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(today.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased())
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(Routes05Tokens.secondary)
+                Text("Ваш день.\nБез шуму.")
+                    .font(.system(.largeTitle, design: .rounded).weight(.black))
+                    .tracking(-1.8)
+                    .lineSpacing(-4)
+                Text("Один маршрут для всього, що має значення.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Routes05Tokens.secondary)
+            }
+            Spacer(minLength: 4)
+            Text("↗")
+                .font(.system(size: 29, weight: .black))
+                .foregroundStyle(Routes05Tokens.ink)
+                .frame(width: 59, height: 59)
+                .background(Routes05Tokens.mint, in: Circle())
+                .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+        }
+        .padding(.horizontal, 16)
+        .environment(\.locale, Locale(identifier: "uk_UA"))
+    }
+
+    private var routesNextUp: some View {
+        Routes05Hero(accent: Routes05Tokens.yellow) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("NEXT UP / SCHOOL")
+                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                    .tracking(1.4)
+                Text(unreadCount > 0 ? "Дві новини\nзі школи" : "Шкільний маршрут")
+                    .font(.system(.title, design: .rounded).weight(.black))
+                    .tracking(-1.1)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(unreadCount > 0 ? "Доступні нові повідомлення зі Schulmanager." : "Нових повідомлень зі школи немає.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Routes05Tokens.ink.opacity(0.78))
+                Button("ПЕРЕГЛЯНУТИ →") { open(.school) }
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 36)
+                    .background(Routes05Tokens.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
+            }
+        }
+    }
+
+    private var routesSchedule: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Routes05SectionHeader("Далі за планом", action: "Увесь день") { open(.calendar) }
+            switch calendar {
+            case .loading: Routes05StateRow(text: "Завантажуємо календар…", tint: Routes05Tokens.blue)
+            case .unavailable: Routes05StateRow(text: "Календар недоступний для цього профілю.", tint: Routes05Tokens.blue)
+            case let .failed(message): Routes05StateRow(text: message, tint: Routes05Tokens.orange)
+            case .empty: Routes05StateRow(text: "Подій у доступному календарі немає.", tint: Routes05Tokens.blue)
+            case let .loaded(events, _):
+                let visible = events.filter { OrbitTodayLogic.overlapsDay(start: $0.startsAt, end: $0.endsAt, day: today) }.sorted { $0.startsAt < $1.startsAt }
+                if visible.isEmpty { Routes05StateRow(text: "Подій на сьогодні немає.", tint: Routes05Tokens.blue) }
+                else {
+                    ForEach(Array(visible.prefix(4))) { event in
+                        Routes05IndexedRow(index: event.startsAt.formatted(.dateTime.hour().minute()), tint: Routes05Tokens.blue) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(event.title).font(.subheadline.weight(.bold)).lineLimit(2)
+                                Text(event.allDay ? "Весь день" : event.startsAt.formatted(date: .omitted, time: .shortened))
+                                    .font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var routesTasks: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Routes05SectionHeader("Маленькі справи", action: "Переглянути") { open(.school) }
+            let count: Int = {
+                guard case let .loaded(value, _) = tasks else { return 0 }
+                return value.tasks.filter { $0.status != "completed" }.count
+            }()
+            Button { open(.school) } label: {
+                HStack(spacing: 0) {
+                    Text(String(format: "%02d", count))
+                        .font(.system(size: 42, weight: .black, design: .rounded))
+                        .frame(width: 88, maxHeight: .infinity)
+                        .foregroundStyle(Routes05Tokens.ink)
+                        .background(Routes05Tokens.orange)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(count == 0 ? "На сьогодні" : "Відкриті справи").font(.headline.weight(.black))
+                        Text(count == 0 ? "Усе під контролем" : "Потребують уваги").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                        Text(count == 0 ? "0 / завершено" : "(count) / у роботі")
+                            .font(.caption.weight(.bold)).padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Routes05Tokens.mint, in: RoundedRectangle(cornerRadius: 2))
+                    }
+                    .padding(12)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 94, alignment: .leading)
+                .background(Routes05Tokens.surface)
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var routesMessages: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Routes05SectionHeader("На зв’язку", action: "Вхідні") { open(.school) }
+            switch school {
+            case .loading: Routes05StateRow(text: "Завантажуємо вхідні…", tint: Routes05Tokens.mint)
+            case .unavailable: Routes05StateRow(text: "Шкільні дані недоступні для цього профілю.", tint: Routes05Tokens.mint)
+            case let .failed(message): Routes05StateRow(text: message, tint: Routes05Tokens.orange)
+            case .empty: Routes05StateRow(text: "Нових шкільних матеріалів немає.", tint: Routes05Tokens.mint)
+            case let .loaded(value, _):
+                if let item = value.items.first(where: { $0.unread }) ?? value.items.first {
+                    NavigationLink { SchoolDetailView(item: item) } label: {
+                        Routes05Ticket(tint: Routes05Tokens.mint) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(item.title.isEmpty ? "Повідомлення зі школи" : item.title).font(.subheadline.weight(.bold)).lineLimit(2)
+                                Text(item.sender.isEmpty ? "Schulmanager · read only" : item.sender).font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                            }
+                        }
+                    }.buttonStyle(.plain)
+                } else { Routes05StateRow(text: "Нових шкільних матеріалів немає.", tint: Routes05Tokens.mint) }
+            }
+        }
+        .padding(.horizontal, 16)
     }
 
     private var compactHeader: some View {

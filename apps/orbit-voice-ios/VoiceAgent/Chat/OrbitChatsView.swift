@@ -16,6 +16,7 @@ struct OrbitChatsView: View {
     @State private var familyProfiles: [OrbitFamilyProfile] = []
     @State private var showingVoice = false
     @State private var isCreatingConversation = false
+    @State private var selectedFilter = "Всі"
 
     #if DEBUG
     init(contactPrompt: String? = nil, fixture: Routes05ChatFixture? = nil) {
@@ -35,104 +36,50 @@ struct OrbitChatsView: View {
         #endif
     }
 
+    private var filteredChats: [OrbitConversation] {
+        switch selectedFilter {
+        case "Особисті": return visibleChats.filter { $0.kind == "personal" }
+        case "Сімейні": return visibleChats.filter { $0.kind == "family" }
+        default: return visibleChats
+        }
+    }
+
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView("Завантажую чати…")
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 12) {
-                            Routes05Mast(section: "core") { showingVoice = true }
-                            Routes05Chapter("CORE / CONVERSATIONS", title: "Розмови.", detail: "Контекст, джерела й підтвердження — в одному маршруті.", accent: Routes05Tokens.blue)
-                            Button { showingSchoolBrain = true } label: {
-                                NovaSurface(tint: NovaTodayTokens.teal) {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "graduationcap.fill")
-                                            .font(.headline).foregroundStyle(.white).frame(width: 38, height: 38)
-                                            .background(NovaTodayTokens.teal, in: Circle())
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Шкільний чат").font(.headline)
-                                            Text("Окрема розмова про школу").font(.subheadline).foregroundStyle(.secondary)
-                                        }
-                                        Spacer(minLength: 0)
-                                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            if visibleChats.isEmpty {
-                                ContentUnavailableView {
-                                    Label("Чатів Orbit ще немає", systemImage: "bubble.left.and.bubble.right")
-                                } description: {
-                                    Text("Створіть особисту або родинну розмову — шкільний чат доступний окремо.")
-                                } actions: {
-                                    Button("Оновити") { Task { await load() } }
-                                }
-                            }
-                            ForEach(visibleChats) { chat in
-                                Button { selectedChat = chat } label: {
-                                    NovaSurface(tint: chat.kind == "family" ? NovaTodayTokens.teal : NovaTodayTokens.indigo) {
-                                        HStack(spacing: 12) {
-                                            Image(systemName: chat.kind == "family" ? "person.3.fill" : "sparkles")
-                                                .font(.headline).foregroundStyle(.white).frame(width: 38, height: 38)
-                                                .background(chat.kind == "family" ? NovaTodayTokens.teal : NovaTodayTokens.indigo, in: Circle())
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                HStack {
-                                                    Text(OrbitChatPresentation.displayTitle(kind: chat.kind, title: chat.title)).font(.headline)
-                                                    Spacer()
-                                                    if let timestamp = OrbitChatPresentation.updatedLabel(chat.updatedAt) {
-                                                        Text(timestamp).font(.caption2).foregroundStyle(.tertiary)
-                                                    }
-                                                }
-                                                Text(chat.lastMessage ?? chat.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                                            }
-                                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-                                        }
-                                    }
-                                }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    Routes05Mast(section: "core") { showingVoice = true }
+                    Routes05Chapter("ORBIT / 02", title: "Orbit / розмови", detail: "Ваші розмови, збережені в Orbit.", accent: Routes05Tokens.yellow)
+                    coreAgentHero
+                    Routes05SectionHeader("Розмови", action: "Створити") { createConversation() }
+                    filterChips
+                    if isLoading { ProgressView("Завантажую чати…").frame(maxWidth: .infinity, minHeight: 80) }
+                    else if filteredChats.isEmpty { Routes05StateRow(text: "Для цього фільтра розмов немає.", tint: Routes05Tokens.blue) }
+                    else {
+                        ForEach(Array(filteredChats.enumerated()), id: \.element.id) { index, chat in
+                            Button { selectedChat = chat } label: { chatRow(chat, index: index + 1) }
                                 .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(18)
-                        .padding(.bottom, 14)
-                    }
-                    .background(NovaTodayTokens.canvas)
-                }
-            }
-            .navigationTitle("Orbit")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showingVoice = true } label: { Image(systemName: "waveform") }
-                        .frame(minWidth: OrbitSpacing.minTarget, minHeight: OrbitSpacing.minTarget)
-                        .accessibilityLabel("Голосова розмова")
-                }
-                if let profile {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            Button { createConversation() } label: { Label("Нова розмова", systemImage: "plus.bubble") }
-                            Label("Активний профіль", systemImage: "checkmark.circle")
-                            if !familyProfiles.isEmpty {
-                                Section("Профілі родини") {
-                                    ForEach(familyProfiles) { familyProfile in
-                                        Label(
-                                            familyProfile.displayName + (familyProfile.personId == profile.personId ? " · активний" : ""),
-                                            systemImage: familyProfile.personId == profile.personId ? "checkmark" : "person"
-                                        )
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(profile.displayName).font(.footnote)
-                                Image(systemName: "chevron.down").font(.caption2)
-                            }
-                            .foregroundStyle(.secondary)
                         }
                     }
+                    Button { showingVoice = true } label: {
+                        HStack {
+                            Text("◉ ГОЛОС").font(.caption.weight(.black))
+                            Text("Говорити з Orbit").font(.caption)
+                            Spacer()
+                            Image(systemName: "arrow.right").font(.caption.weight(.black))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
+                        .background(Routes05Tokens.ink)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
                 }
+                .padding(.bottom, 24)
             }
+            .background(Routes05Tokens.canvas.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
             .navigationDestination(item: $selectedChat) { chat in
                 OrbitConversationView(conversation: chat, initialDraft: contactPrompt)
@@ -160,6 +107,76 @@ struct OrbitChatsView: View {
                 Text(error?.localizedDescription ?? "Спробуй ще раз.")
             }
         }
+    }
+
+    private var coreAgentHero: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("CORE AGENT / READY").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
+                    Spacer(minLength: 4)
+                    if let profile {
+                        Menu {
+                            Button { createConversation() } label: { Label("Нова розмова", systemImage: "plus.bubble") }
+                            Label("Активний профіль", systemImage: "checkmark.circle")
+                            if !familyProfiles.isEmpty {
+                                Section("Профілі родини") {
+                                    ForEach(familyProfiles) { familyProfile in
+                                        Label(familyProfile.displayName + (familyProfile.personId == profile.personId ? " · активний" : ""), systemImage: familyProfile.personId == profile.personId ? "checkmark" : "person")
+                                    }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "person.crop.circle")
+                                .font(.headline)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("Профіль \(profile.displayName)")
+                    }
+                }
+                Text("Запитайте\nщо завгодно.").font(.system(.title, design: .rounded).weight(.black)).tracking(-1)
+                Button("НОВА РОЗМОВА ↗") { createConversation() }
+                    .font(.caption.weight(.black)).foregroundStyle(Routes05Tokens.ink)
+                    .padding(.horizontal, 8).frame(minHeight: 34).background(Routes05Tokens.mint)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            ZStack {
+                Circle().stroke(Routes05Tokens.ink, lineWidth: 7).frame(width: 66, height: 66)
+                Circle().fill(Routes05Tokens.yellow).frame(width: 40, height: 40)
+            }
+            .frame(width: 126, maxHeight: .infinity)
+            .background(Routes05Tokens.mint)
+        }
+        .frame(minHeight: 162)
+        .background(Routes05Tokens.ink)
+        .overlay(Rectangle().stroke(Routes05Tokens.ink, lineWidth: 1))
+        .padding(.horizontal, 16)
+    }
+
+    private var filterChips: some View {
+        HStack(spacing: 8) {
+            ForEach(["Всі", "Особисті", "Сімейні"], id: \.self) { value in
+                Button(value) { selectedFilter = value }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(selectedFilter == value ? .white : Routes05Tokens.ink)
+                    .padding(.horizontal, 13).frame(minHeight: 36)
+                    .background(selectedFilter == value ? Routes05Tokens.ink : Routes05Tokens.surface, in: Capsule())
+                    .overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: 1))
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func chatRow(_ chat: OrbitConversation, index: Int) -> some View {
+        Routes05IndexedRow(index: String(format: "%02d", index), tint: chat.kind == "family" ? Routes05Tokens.mint : Routes05Tokens.blue) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(OrbitChatPresentation.displayTitle(kind: chat.kind, title: chat.title)).font(.subheadline.weight(.bold)).lineLimit(1)
+                Text(chat.lastMessage ?? chat.subtitle).font(.caption).foregroundStyle(Routes05Tokens.secondary).lineLimit(2)
+            }
+        }
+        .padding(.horizontal, 16)
     }
 
     private func load() async {

@@ -1032,37 +1032,95 @@ private struct SchoolCommandCenter: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
                 Routes05Mast(section: "school") { open(.search) }
-                header
+                routesHeader
                 if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed { availabilityNotice }
-                prioritySection
-                quickAccessSection
-                schoolHubV2Section
-                messagesSection
-                eventsSection
-                assistantEntry
+                routesGrid
+                routesAttention
+                routesUpcoming
+                routesAsk
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
             .padding(.bottom, 120)
         }
-        .background(NovaTodayTokens.canvas.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button { open(.search) } label: { Label("Знайти у школі", systemImage: "magnifyingglass") }
-                    Button { open(.timeline) } label: { Label("Хронологія", systemImage: "list.bullet.indent") }
-                    Button { open(.briefing) } label: { Label("Огляд від Orbit", systemImage: "sparkles") }
-                    Button { open(.brain) } label: { Label("Запитати Orbit", systemImage: "bubble.left.and.text.bubble.right") }
-                    Button { open(.teams) } label: { Label("Джерела школи", systemImage: "graduationcap") }
-                    if store.actionCapability.canMutate {
-                        Button { open(.history) } label: { Label("Історія змін", systemImage: "clock.arrow.circlepath") }
-                    }
-                } label: { Image(systemName: "ellipsis.circle") }
-                    .accessibilityLabel("Інструменти школи")
-            }
-        }
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
         .refreshable { await store.load() }
+    }
+
+    private var routesHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("SOURCE / SCHULMANAGER · READ ONLY")
+                    .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
+                    .foregroundStyle(Routes05Tokens.secondary)
+                Text("Школа.\nНа зв’язку.")
+                    .font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineSpacing(-4)
+                Text("Профіль учня · події, листи й підготовка.")
+                    .font(.subheadline.weight(.medium)).foregroundStyle(Routes05Tokens.secondary)
+                if !store.studentNames.isEmpty {
+                    Text(store.studentNames.joined(separator: " · ")).font(.subheadline.weight(.bold))
+                }
+            }
+            Spacer(minLength: 4)
+            Text("↗").font(.system(size: 29, weight: .black)).foregroundStyle(Routes05Tokens.ink)
+                .frame(width: 59, height: 59).background(Routes05Tokens.mint, in: Circle())
+                .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+        }
+        .padding(.horizontal, 16).padding(.top, 12)
+    }
+
+    private var routesGrid: some View {
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)], spacing: 9) {
+            Routes05FilledTile(title: "Вхідні", detail: unread == 0 ? "Усе прочитано" : "\(unread) нові", icon: "arrow.down.left", tint: Routes05Tokens.blue) { open(.inbox) }
+            Routes05FilledTile(title: "Справи", detail: tasksQuickDetail, icon: "square", tint: Routes05Tokens.orange) { open(.tasks) }
+            Routes05FilledTile(title: "Розклад", detail: "Відкрити огляд", icon: "list.bullet.rectangle", tint: Routes05Tokens.mint) { open(.v2) }
+            Routes05FilledTile(title: "Іспити", detail: "Відкрити огляд", icon: "circle", tint: Routes05Tokens.lilac) { open(.v2) }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var routesAttention: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Routes05SectionHeader("Потребує уваги", action: "Усі справи") { open(.tasks) }
+            if let item = priorities.first {
+                Button { open(priority: item) } label: {
+                    HStack(spacing: 0) {
+                        Text("!").font(.system(size: 38, weight: .black)).frame(width: 88, minHeight: 86).background(Routes05Tokens.yellow)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title).font(.headline.weight(.black)).lineLimit(2)
+                            Text(priorityDetail(item)).font(.caption).foregroundStyle(Routes05Tokens.secondary).lineLimit(2)
+                            Text(item.detail.hasPrefix("Прострочено") ? "ДЛЯ РОДИНИ" : "УВАГА")
+                                .font(.caption2.weight(.black)).padding(.horizontal, 8).padding(.vertical, 4).background(Routes05Tokens.orange)
+                        }.padding(10)
+                        Spacer(minLength: 0)
+                    }
+                    .background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
+                }.buttonStyle(.plain)
+            } else { Routes05StateRow(text: "Немає термінових справ або нових важливих повідомлень.", tint: Routes05Tokens.yellow) }
+        }.padding(.horizontal, 16)
+    }
+
+    private var routesUpcoming: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Routes05SectionHeader("Найближче", action: "Всі дати") { open(.calendar) }
+            if upcomingEvents.isEmpty { Routes05StateRow(text: "Найближчих шкільних подій немає.", tint: Routes05Tokens.mint) }
+            else {
+                ForEach(Array(upcomingEvents.prefix(3).enumerated()), id: \.element.uid) { index, event in
+                    Routes05IndexedRow(index: eventDay(event), tint: index.isMultiple(of: 2) ? Routes05Tokens.orange : Routes05Tokens.mint) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(event.title).font(.subheadline.weight(.bold)).lineLimit(2)
+                            Text(eventSummary(event)).font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                        }
+                    }
+                }
+            }
+        }.padding(.horizontal, 16)
+    }
+
+    private var routesAsk: some View {
+        Button { open(.brain) } label: {
+            HStack { Text("Запитати про школу").font(.headline.weight(.black)); Spacer(); Text("Пошук і хронологія →").font(.caption.weight(.bold)).foregroundStyle(Routes05Tokens.blue) }
+                .foregroundStyle(Routes05Tokens.ink).frame(minHeight: 52).padding(.horizontal, 16)
+        }.buttonStyle(.plain)
     }
 
     private var schoolHubV2Section: some View {
