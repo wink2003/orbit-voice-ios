@@ -391,6 +391,7 @@ struct MainOrbit3FamilyView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 24)
                 }
+                .safeAreaPadding(.bottom, 96)
                 .onAppear {
                     guard Routes05DebugCapture.scrollToBottom else { return }
                     DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
@@ -432,7 +433,7 @@ struct MainOrbit3FamilyView: View {
                     .lineLimit(2)
                 }
             Image(systemName: "heart.fill")
-                .font(.title2.weight(.black)).foregroundStyle(Routes05Tokens.ink)
+                .font(.title2.weight(.black)).foregroundStyle(Routes05Tokens.accentInk)
                 .frame(width: 59, height: 59).background(Routes05Tokens.lilac, in: Circle())
                 .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
         }
@@ -453,7 +454,7 @@ struct MainOrbit3FamilyView: View {
                 Circle().fill(Routes05Tokens.yellow).frame(width: 27, height: 27)
             }
         }
-        .foregroundStyle(Routes05Tokens.ink)
+        .foregroundStyle(Routes05Tokens.accentInk)
         .padding(16)
         .frame(minHeight: 158)
         .background(Routes05Tokens.mint)
@@ -470,7 +471,7 @@ struct MainOrbit3FamilyView: View {
                     HStack(spacing: 14) {
                         ForEach(profiles) { profile in
                             VStack(spacing: 4) {
-                                Text(initials(profile.displayName)).font(.headline.weight(.black)).foregroundStyle(Routes05Tokens.ink)
+                                Text(initials(profile.displayName)).font(.headline.weight(.black)).foregroundStyle(Routes05Tokens.accentInk)
                                     .frame(width: 56, height: 56).background(profile.isMinor ? Routes05Tokens.yellow : Routes05Tokens.lilac, in: Circle())
                                     .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 1.5))
                                 Text(profile.displayName.split(separator: " ").first.map(String.init) ?? profile.displayName)
@@ -499,7 +500,7 @@ struct MainOrbit3FamilyView: View {
     private func familyRoute<Destination: View>(_ title: String, _ detail: String, _ icon: String, _ tint: Color, @ViewBuilder destination: @escaping () -> Destination) -> some View {
         NavigationLink { destination() } label: {
             HStack(spacing: 10) {
-                Image(systemName: icon).font(.caption.weight(.bold)).foregroundStyle(Routes05Tokens.ink)
+                Image(systemName: icon).font(.caption.weight(.bold)).foregroundStyle(Routes05Tokens.accentInk)
                     .frame(width: 36, height: 36).background(tint, in: Circle()).overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 1))
                 VStack(alignment: .leading, spacing: 2) { Text(title).font(.subheadline.weight(.bold)); Text(detail).font(.caption).foregroundStyle(Routes05Tokens.secondary) }
                 Spacer(minLength: 6); Image(systemName: "arrow.right").font(.caption.weight(.black))

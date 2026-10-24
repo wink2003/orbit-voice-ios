@@ -105,7 +105,7 @@ struct Routes05Chapter: View {
                     Text(title).font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineLimit(nil)
                 }
                 Spacer(minLength: 8)
-                Text("↗").font(.system(size: 27, weight: .black)).foregroundStyle(Routes05Tokens.ink)
+                Text("↗").font(.system(size: 27, weight: .black)).foregroundStyle(Routes05Tokens.accentInk)
                     .frame(width: 59, height: 59).background(accent).clipShape(Circle())
                     .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
             }
@@ -220,11 +220,13 @@ struct Routes05FilledTile: View {
 struct Routes05IndexedRow<Content: View>: View {
     let index: String
     let tint: Color
+    let indexWidth: CGFloat
     let content: Content
 
-    init(index: String, tint: Color, @ViewBuilder content: () -> Content) {
+    init(index: String, tint: Color, indexWidth: CGFloat = 48, @ViewBuilder content: () -> Content) {
         self.index = index
         self.tint = tint
+        self.indexWidth = indexWidth
         self.content = content()
     }
 
@@ -232,7 +234,7 @@ struct Routes05IndexedRow<Content: View>: View {
         HStack(spacing: 10) {
             Text(index)
                 .font(.system(.title2, design: .rounded).weight(.black))
-                .frame(width: 48, alignment: .leading)
+                .frame(width: indexWidth, alignment: .leading)
             Rectangle().fill(tint).frame(width: 4)
             content
             Spacer(minLength: 4)

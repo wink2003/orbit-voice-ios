@@ -37,6 +37,7 @@ struct OrbitTodayView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 24)
                 }
+                .safeAreaPadding(.bottom, 96)
                 .onAppear {
                     guard Routes05DebugCapture.scrollToBottom else { return }
                     DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
@@ -67,7 +68,7 @@ struct OrbitTodayView: View {
             }
             Text("↗")
                 .font(.system(size: 29, weight: .black))
-                .foregroundStyle(Routes05Tokens.ink)
+                .foregroundStyle(Routes05Tokens.accentInk)
                 .frame(width: 59, height: 59)
                 .background(Routes05Tokens.mint, in: Circle())
                 .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
@@ -88,7 +89,7 @@ struct OrbitTodayView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text(unreadCount > 0 ? "Доступні нові повідомлення зі Schulmanager." : "Нових повідомлень зі школи немає.")
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Routes05Tokens.ink.opacity(0.78))
+                    .foregroundStyle(Routes05Tokens.accentInk.opacity(0.78))
                 Button("ПЕРЕГЛЯНУТИ →") { open(.school) }
                     .font(.caption.weight(.black))
                     .foregroundStyle(Routes05Tokens.accentInk)
@@ -113,7 +114,7 @@ struct OrbitTodayView: View {
                 if visible.isEmpty { Routes05StateRow(text: "Подій на сьогодні немає.", tint: Routes05Tokens.blue) }
                 else {
                     ForEach(Array(visible.prefix(4))) { event in
-                        Routes05IndexedRow(index: Routes05DisplayFormat.compactTime(event.startsAt), tint: Routes05Tokens.blue) {
+                        Routes05IndexedRow(index: Routes05DisplayFormat.compactTime(event.startsAt), tint: Routes05Tokens.blue, indexWidth: 68) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(event.title).font(.subheadline.weight(.bold)).lineLimit(2)
                                 Text(event.allDay ? "Весь день" : Routes05DisplayFormat.compactTime(event.startsAt))
@@ -139,7 +140,7 @@ struct OrbitTodayView: View {
                     Text(String(format: "%02d", count))
                         .font(.system(size: 42, weight: .black, design: .rounded))
                         .frame(width: 88).frame(maxHeight: .infinity)
-                        .foregroundStyle(Routes05Tokens.ink)
+                        .foregroundStyle(Routes05Tokens.accentInk)
                         .background(Routes05Tokens.orange)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(count == 0 ? "На сьогодні" : "Відкриті справи").font(.headline.weight(.black))

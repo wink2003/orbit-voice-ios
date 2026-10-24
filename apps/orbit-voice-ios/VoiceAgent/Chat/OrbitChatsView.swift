@@ -81,6 +81,7 @@ struct OrbitChatsView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 24)
                 }
+                .safeAreaPadding(.bottom, 96)
                 .onAppear {
                     guard Routes05DebugCapture.scrollToBottom else { return }
                     DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
