@@ -1047,14 +1047,16 @@ private struct SchoolCommandCenter: View {
                 routesGrid
                 routesAttention
                 routesUpcoming
-                routesAsk
-                        Color.clear.frame(height: 1).id("routes05-bottom")
+                        routesAsk
                     }
                     .padding(.bottom, 120)
                 }
+                .safeAreaPadding(.bottom, 96)
                 .onAppear {
                     guard Routes05DebugCapture.scrollToBottom else { return }
-                    DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
+                    DispatchQueue.main.async {
+                        proxy.scrollTo("routes05-school-brain", anchor: .center)
+                    }
                 }
         }
         .background(Routes05Tokens.canvas.ignoresSafeArea())
@@ -1136,7 +1138,10 @@ private struct SchoolCommandCenter: View {
         Button { open(.brain) } label: {
             HStack { Text("Запитати про школу").font(.headline.weight(.black)); Spacer(); Text("Пошук і хронологія →").font(.caption.weight(.bold)).foregroundStyle(Routes05Tokens.blue) }
                 .foregroundStyle(Routes05Tokens.ink).frame(minHeight: 52).padding(.horizontal, 16)
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
+        .id("routes05-school-brain")
+        .accessibilityIdentifier("routes05-school-brain")
     }
 
     private var schoolHubV2Section: some View {

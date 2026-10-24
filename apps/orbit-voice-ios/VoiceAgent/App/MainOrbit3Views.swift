@@ -386,6 +386,7 @@ struct MainOrbit3FamilyView: View {
                         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                         .padding(.horizontal, 14)
                         .background(Routes05Tokens.darkSurface)
+                        .accessibilityIdentifier("routes05-family-privacy")
                         Color.clear.frame(height: 1).id("routes05-bottom")
                     }
                     .padding(.top, 8)

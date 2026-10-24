@@ -178,7 +178,9 @@ struct OrbitTodayView: View {
                                 Text(item.sender.isEmpty ? "Schulmanager · read only" : item.sender).font(.caption).foregroundStyle(Routes05Tokens.secondary)
                             }
                         }
-                    }.buttonStyle(.plain)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("routes05-today-last-source")
                 } else { Routes05StateRow(text: "Нових шкільних матеріалів немає.", tint: Routes05Tokens.mint) }
             }
         }

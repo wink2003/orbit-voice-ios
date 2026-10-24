@@ -75,6 +75,7 @@ struct OrbitChatsView: View {
                         .background(Routes05Tokens.darkSurface)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("routes05-orbit-voice")
                         .padding(.top, 2)
                     Color.clear.frame(height: 1).id("routes05-bottom")
                     }
