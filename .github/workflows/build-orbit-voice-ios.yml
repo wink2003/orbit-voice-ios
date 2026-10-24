@@ -252,7 +252,7 @@ jobs:
         run: |
           set -euo pipefail
           school_hub="apps/orbit-voice-ios/VoiceAgent/App/SchoolHubViews.swift"
-          grep -F 'case .inbox: SchoolInboxView(embeddedInNavigation: true, hubMode: true)' "$school_hub"
+          grep -F 'SchoolInboxView(embeddedInNavigation: true, hubMode: true' "$school_hub"
           if grep -F 'case .inbox: SchoolInboxView()' "$school_hub"; then
             echo "School Inbox must not create a nested NavigationStack"; exit 1
           fi

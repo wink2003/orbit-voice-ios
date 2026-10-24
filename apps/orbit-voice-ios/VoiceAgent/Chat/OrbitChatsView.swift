@@ -17,13 +17,18 @@ struct OrbitChatsView: View {
     @State private var showingVoice = false
     @State private var isCreatingConversation = false
     @State private var selectedFilter = "Всі"
+    #if DEBUG
+    private let debugConversation: Bool
+    #endif
 
     #if DEBUG
-    init(contactPrompt: String? = nil, fixture: Routes05ChatFixture? = nil) {
+    init(contactPrompt: String? = nil, fixture: Routes05ChatFixture? = nil, debugConversation: Bool = false) {
         self.contactPrompt = contactPrompt
         self.fixture = fixture
+        self.debugConversation = debugConversation
         _profile = State(initialValue: fixture?.profile)
         _chats = State(initialValue: fixture?.chats ?? [])
+        _selectedChat = State(initialValue: debugConversation ? fixture?.chats.first : nil)
         _isLoading = State(initialValue: fixture == nil)
     }
     #endif
@@ -53,6 +58,7 @@ struct OrbitChatsView: View {
                     Routes05Chapter("ORBIT / 02", title: "Orbit / розмови", detail: "Ваші розмови, збережені в Orbit.", accent: Routes05Tokens.yellow)
                     coreAgentHero
                     Routes05SectionHeader("Розмови", action: "Створити") { createConversation() }
+                        .padding(.horizontal, 16)
                     filterChips
                     if isLoading { ProgressView("Завантажую чати…").frame(maxWidth: .infinity, minHeight: 80) }
                     else if filteredChats.isEmpty { Routes05StateRow(text: "Для цього фільтра розмов немає.", tint: Routes05Tokens.blue) }
@@ -92,7 +98,11 @@ struct OrbitChatsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
             .navigationDestination(item: $selectedChat) { chat in
+                #if DEBUG
+                OrbitConversationView(conversation: chat, initialDraft: contactPrompt, debugMessages: debugConversation ? Routes05DebugFixtures.conversationMessages : nil)
+                #else
                 OrbitConversationView(conversation: chat, initialDraft: contactPrompt)
+                #endif
             }
             .navigationDestination(isPresented: $showingSchoolBrain) {
                 SchoolBrainView()
@@ -242,15 +252,29 @@ private struct OrbitConversationView: View {
     @State private var showingVoice = false
     @State private var searchText = ""
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
+    private let debugMessages: [OrbitChatMessage]?
 
-    init(conversation: OrbitConversation, initialDraft: String? = nil) {
+    init(conversation: OrbitConversation, initialDraft: String? = nil, debugMessages: [OrbitChatMessage]? = nil) {
         self.conversation = conversation
         self.initialDraft = initialDraft
+        self.debugMessages = debugMessages
         _draft = State(initialValue: initialDraft ?? "")
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            Routes05ContextHeader(
+                section: "core",
+                eyebrow: "CORE AGENT / CONVERSATION",
+                title: OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title),
+                detail: "Контекст, джерела й підтвердження — в одному маршруті.",
+                accent: Routes05Tokens.blue
+            )
+            // The parent chat list hides its navigation bar. Reserve the
+            // native conversation toolbar footprint before the fixed route
+            // masthead so the two native layers never overlap.
+            .padding(.top, 24)
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 2) {
@@ -269,7 +293,8 @@ private struct OrbitConversationView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(20)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .background(Routes05Tokens.surface)
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                             .padding(.horizontal)
                             .padding(.top, 24)
                         }
@@ -372,7 +397,7 @@ private struct OrbitConversationView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(.bar)
+            .background(Routes05Tokens.canvas)
         }
         .overlay(alignment: .bottomTrailing) {
             if showLatestButton {
@@ -393,8 +418,12 @@ private struct OrbitConversationView: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
         .navigationTitle(OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(Routes05Tokens.canvas, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Пошук у завантажених")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -488,6 +517,12 @@ private struct OrbitConversationView: View {
     }
 
     private func loadMessages() async {
+        #if DEBUG
+        if let debugMessages {
+            messages = debugMessages
+            return
+        }
+        #endif
         do { messages = try await OrbitChatAPI.shared.messages(in: conversation) }
         catch { self.error = error }
     }
@@ -604,9 +639,16 @@ private struct MessageBubble: View {
         HStack {
             if message.senderKind == "person" { Spacer(minLength: 52) }
             VStack(alignment: message.senderKind == "person" ? .trailing : .leading, spacing: 4) {
+                Text(message.senderKind == "person" ? "ВИ" : "ORBIT / ВІДПОВІДЬ")
+                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(message.senderKind == "person" ? Routes05Tokens.accentInk : Routes05Tokens.darkSurfaceInk)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(message.senderKind == "person" ? Routes05Tokens.mint : Routes05Tokens.darkSurface)
                 SelectableMarkdownText(
                     content: message.content,
-                    foregroundColor: message.senderKind == "person" ? .white : .label
+                    foregroundColor: message.senderKind == "person" ? .black : .label
                 )
                     .equatable()
                     .contextMenu {
@@ -633,8 +675,13 @@ private struct MessageBubble: View {
             }
             .padding(.horizontal, 13)
             .padding(.vertical, compactMessages ? 7 : 10)
-                .background(message.senderKind == "person" ? OrbitColors.bubbleOwn : OrbitColors.bubbleOther)
-                .clipShape(RoundedRectangle(cornerRadius: OrbitRadius.bubble))
+                .background(message.senderKind == "person" ? Routes05Tokens.lilac : Routes05Tokens.surface)
+                .overlay(alignment: .leading) {
+                    if message.senderKind == "orbit" {
+                        Rectangle().fill(Routes05Tokens.blue).frame(width: 4)
+                    }
+                }
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
             if message.senderKind == "orbit" { Spacer(minLength: 52) }
         }
         .padding(.horizontal)
@@ -686,7 +733,8 @@ private struct ActionConfirmationCard: View {
             .disabled(isActionInFlight || confirmAction == nil || cancelAction == nil)
         }
         .padding(10)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Routes05Tokens.surface)
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Підтвердження надсилання повідомлення для \(confirmation.recipient)")
     }

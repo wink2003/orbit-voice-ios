@@ -277,14 +277,30 @@ fileprivate enum SchoolV2Section: Hashable { case overview, exams, timetable }
 private struct SchoolHubV2View: View {
     let studentLabel: String?
     let initialSection: SchoolV2Section
+#if DEBUG
+    private let debugFixture: Routes05SchoolFixture?
+#endif
     @State private var store = SchoolHubV2Store()
     @State private var tab = 0
 
     init(studentLabel: String?, initialSection: SchoolV2Section = .overview) {
         self.studentLabel = studentLabel
         self.initialSection = initialSection
+#if DEBUG
+        self.debugFixture = nil
+#endif
         _tab = State(initialValue: initialSection == .exams ? 1 : initialSection == .timetable ? 2 : 0)
     }
+
+#if DEBUG
+    init(studentLabel: String?, initialSection: SchoolV2Section = .overview, fixture: Routes05SchoolFixture) {
+        self.studentLabel = studentLabel
+        self.initialSection = initialSection
+        self.debugFixture = fixture
+        _store = State(initialValue: SchoolHubV2Store(fixture: fixture))
+        _tab = State(initialValue: initialSection == .exams ? 1 : initialSection == .timetable ? 2 : 0)
+    }
+#endif
 
     var body: some View {
         Group {
@@ -300,14 +316,27 @@ private struct SchoolHubV2View: View {
             case .ready: content
             }
         }
-        .navigationTitle("Школа v2")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: store.weekStart) { await store.load() }
+        .task(id: store.weekStart) {
+#if DEBUG
+            if debugFixture == nil { await store.load() }
+#else
+            await store.load()
+#endif
+        }
         .refreshable { await store.load() }
     }
 
     private var content: some View {
         VStack(spacing: 0) {
+            Routes05ContextHeader(
+                section: "school",
+                eyebrow: initialSection == .exams ? "SCHOOL / UPCOMING" : "WEEK / TIMETABLE",
+                title: initialSection == .exams ? "Контрольні.\nСпокійно." : "Розклад\n5F.",
+                detail: "Підтверджуйте інформацію джерелом; стан покриття відображається нижче.",
+                accent: initialSection == .exams ? Routes05Tokens.lilac : Routes05Tokens.mint
+            )
             weekToolbar
             Picker("Розділ", selection: $tab) {
                 Text("Огляд").tag(0)
@@ -332,7 +361,7 @@ private struct SchoolHubV2View: View {
             default: overviewView
             }
         }
-        .background(NovaTodayTokens.canvas.ignoresSafeArea())
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
     }
 
     private var weekToolbar: some View {
@@ -351,6 +380,9 @@ private struct SchoolHubV2View: View {
 
     private var overviewView: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "school", eyebrow: "SCHOOL / OVERVIEW", title: "Школа.\nНа зв’язку.", detail: "Підтверджені дані тижня для активного учнівського профілю.", accent: Routes05Tokens.mint)
+            }
             Section {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Шкільний простір").font(.title3.weight(.semibold))
@@ -383,37 +415,50 @@ private struct SchoolHubV2View: View {
     }
 
     private var timetableView: some View {
-        let grouped = Dictionary(grouping: store.timetable.sorted { lhs, rhs in
-            if lhs.dayKey != rhs.dayKey { return lhs.dayKey < rhs.dayKey }
-            if lhs.lessonIndex != rhs.lessonIndex { return lhs.lessonIndex < rhs.lessonIndex }
-            return lhs.id < rhs.id
-        }, by: \.dayKey)
-        return List {
-            if store.timetable.isEmpty {
-                let unsynced = store.coverageState == "NOT_SYNCED"
-                let unavailable = ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState)
-                let title = unsynced ? "Дані за цей тиждень ще не завантажені" : unavailable ? "Дані тимчасово недоступні" : store.coverageState == "STALE" ? "Дані можуть бути застарілими" : "На цей тиждень уроків немає"
-                let message = unsynced ? "Для вибраного тижня ще немає підтвердженої синхронізації." : unavailable ? "Стан синхронізації не підтверджено для цього тижня." : "За вибраний період уроків не знайдено."
-                ContentUnavailableView(title, systemImage: "calendar.badge.exclamationmark", description: Text(message))
-            }
-            else {
-                ForEach(grouped.keys.sorted(), id: \.self) { day in
-                    Section(SchoolHubFormat.long(day)) {
-                        ForEach(grouped[day] ?? []) { entry in
-                            HStack(alignment: .top, spacing: 12) {
-                                Text("\(entry.lessonIndex)").font(.headline.monospacedDigit()).frame(width: 24)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(entry.subject).font(.subheadline.weight(.semibold))
-                                    let details = [entry.startsAtLocal ?? entry.startsAt, entry.room, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }
-                                    if !details.isEmpty { Text(details.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
-                                    if entry.isCancelled { Label("Скасовано", systemImage: "xmark.circle").font(.caption.weight(.semibold)).foregroundStyle(.red) }
-                                }
-                            }.padding(.vertical, 4).accessibilityElement(children: .combine)
+        if store.timetable.isEmpty {
+            let unsynced = store.coverageState == "NOT_SYNCED"
+            let unavailable = ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState)
+            let title = unsynced ? "Дані за цей тиждень ще не завантажені" : unavailable ? "Дані тимчасово недоступні" : store.coverageState == "STALE" ? "Дані можуть бути застарілими" : "На цей тиждень уроків немає"
+            let message = unsynced ? "Для вибраного тижня ще немає підтвердженої синхронізації." : unavailable ? "Стан синхронізації не підтверджено для цього тижня." : "За вибраний період уроків не знайдено."
+            return AnyView(ContentUnavailableView(title, systemImage: "calendar.badge.exclamationmark", description: Text(message)))
+        }
+
+        let days = Array(Set(store.timetable.map(\.dayKey))).sorted()
+        let lessonIndexes = Array(Set(store.timetable.map(\.lessonIndex))).sorted()
+        return AnyView(ScrollView([.horizontal, .vertical]) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("УРОК").font(.caption2.weight(.black).monospaced()).frame(width: 56, alignment: .leading)
+                    ForEach(days, id: \.self) { day in
+                        Text(SchoolHubFormat.shortDay(day).uppercased())
+                            .font(.caption2.weight(.black).monospaced())
+                            .frame(width: 148, alignment: .leading)
+                    }
+                }
+                .padding(.horizontal, 16)
+                ForEach(lessonIndexes, id: \.self) { lessonIndex in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(String(format: "%02d", lessonIndex))
+                            .font(.headline.monospacedDigit())
+                            .frame(width: 56, height: 92, alignment: .topLeading)
+                        ForEach(days, id: \.self) { day in
+                            if let entry = store.timetable.first(where: { $0.dayKey == day && $0.lessonIndex == lessonIndex }) {
+                                Routes05TimetableCell(entry: entry, lessonIndex: lessonIndex)
+                            } else {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(Routes05Tokens.ink.opacity(0.18), lineWidth: 1)
+                                    .frame(width: 148, height: 92)
+                                    .overlay(Text("—").foregroundStyle(.secondary))
+                            }
                         }
                     }
                 }
             }
-        }.listStyle(.insetGrouped)
+            .padding(.vertical, 12)
+            .safeAreaPadding(.horizontal, 0)
+        }
+        .scrollIndicators(.visible)
+        .accessibilityElement(children: .contain))
     }
 
     private func examRow(_ exam: OrbitSchoolHubV2Exam) -> some View {
@@ -430,9 +475,22 @@ private struct SchoolHubV2View: View {
 private struct SchoolV2StateView: View {
     let title: String; let message: String; let icon: String; let retry: (() -> Void)?
     var body: some View {
-        ContentUnavailableView { Label(title, systemImage: icon) } description: { Text(message) } actions: {
-            if let retry { Button("Повторити", action: retry).buttonStyle(.bordered) }
+        ScrollView {
+            VStack(spacing: 16) {
+                Routes05ContextHeader(
+                    section: "school",
+                    eyebrow: "SCHOOL / COVERAGE",
+                    title: "Дані школи.\nПід контролем.",
+                    detail: "Стан джерела відображається чесно; зовнішні записи залишаються лише для читання.",
+                    accent: Routes05Tokens.mint
+                )
+                ContentUnavailableView { Label(title, systemImage: icon) } description: { Text(message) } actions: {
+                    if let retry { Button("Повторити", action: retry).buttonStyle(.bordered) }
+                }
+                .padding(.vertical, 32)
+            }
         }
+        .background(Routes05Tokens.canvas)
     }
 }
 
@@ -460,12 +518,20 @@ private struct SchoolActionHistoryView: View {
     var body: some View {
         Group {
             if !store.actionCapability.canMutate {
-                SchoolActionsUnavailableView(capability: store.actionCapability) { Task { await store.refreshActionCapability() } }
+                List {
+                    Section {
+                        Routes05ContextHeader(section: "discovery", eyebrow: "AUDIT / FAMILY ACTIONS", title: "Що\nзмінилось?", detail: "Історія лише Orbit-власних дій і підтверджених сервером результатів.", accent: Routes05Tokens.mint)
+                    }
+                    Section {
+                        SchoolActionsUnavailableView(capability: store.actionCapability) { Task { await store.refreshActionCapability() } }
+                    }
+                }
+                .listStyle(.plain)
             } else {
                 historyList
             }
         }
-        .navigationTitle("Історія змін")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if store.actionCapability.canMutate { await reload() } }
         .refreshable { if store.actionCapability.canMutate { await reload() } }
@@ -473,6 +539,9 @@ private struct SchoolActionHistoryView: View {
 
     private var historyList: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "discovery", eyebrow: "AUDIT / FAMILY ACTIONS", title: "Що\nзмінилось?", detail: "Історія лише Orbit-власних дій і підтверджених сервером результатів.", accent: Routes05Tokens.mint)
+            }
             if phase == .failed {
                 SchoolNotice(text: "Історія змін тимчасово недоступна. Спробуйте ще раз.", systemImage: "exclamationmark.triangle")
                 Button("Повторити") { load() }.frame(minHeight: OrbitSpacing.minTarget)
@@ -579,6 +648,39 @@ private enum SchoolHubFormat {
     static func due(_ task: SchoolHubTask) -> String? {
         guard let key = SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) else { return nil }
         return long(key)
+    }
+}
+
+private struct Routes05TimetableCell: View {
+    let entry: OrbitSchoolHubV2TimetableEntry
+    let lessonIndex: Int
+
+    private var fill: Color {
+        [Routes05Tokens.blue, Routes05Tokens.mint, Routes05Tokens.lilac, Routes05Tokens.yellow, Routes05Tokens.orange][(lessonIndex - 1) % 5]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(entry.subject)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Routes05Tokens.accentInk)
+                .lineLimit(2)
+            Text([entry.startsAtLocal ?? entry.startsAt, entry.room, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(Routes05Tokens.accentInk.opacity(0.78))
+                .lineLimit(3)
+            if entry.isCancelled {
+                Label("Скасовано", systemImage: "xmark.circle")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Routes05Tokens.accentInk)
+            }
+        }
+        .frame(width: 148, height: 92, alignment: .topLeading)
+        .padding(10)
+        .background(fill)
+        .overlay(Rectangle().stroke(Routes05Tokens.ink, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Урок \(lessonIndex), \(entry.subject)")
     }
 }
 
@@ -900,6 +1002,28 @@ final class SchoolHubV2Store {
     var errorText: String?
     var weekEnd: String { SchoolHubLogic.addDays(7, to: weekStart) ?? weekStart }
 
+    init() {}
+
+#if DEBUG
+    init(fixture: Routes05SchoolFixture) {
+        let observed = Date(timeIntervalSince1970: 1_729_555_200)
+        let freshness = OrbitSchoolHubV2Freshness(state: "READY_WITH_DATA", sourceStates: ["schulmanager": "READY"], observedAt: observed, source: "schulmanager", fingerprint: "routes05")
+        let coverage = OrbitSchoolHubV2Coverage(state: "READY_WITH_DATA", rowCount: 2, sourceStatus: "READY", sourceFingerprint: "routes05", successfulSyncAt: observed, observedAt: observed, errorCode: nil, startDayKey: "2026-10-19", endDayKey: "2026-10-25")
+        let exam = OrbitSchoolHubV2Exam(id: "routes05-exam", subject: "Deutsch", dayKey: "2026-10-24", lessonStart: 3, lessonEnd: 4, startsAt: "2026-10-24T10:00:00+02:00", room: "5F", teacher: "M. Bauer", group: nil, groupName: nil, startClassHourNumber: 3, typeName: "Klassenarbeit", typeColor: "#C9B8FF", typeVisibleForStudents: true, comment: "Projektwoche", status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
+        let lessonDays = ["2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23"]
+        let subjects = ["Deutsch", "Mathematik", "Sport", "Englisch", "Biologie"]
+        let lessons = lessonDays.enumerated().map { index, day in
+            OrbitSchoolHubV2TimetableEntry(id: "routes05-lesson-\(index)", dayKey: day, localDate: day, lessonIndex: index + 1, subject: subjects[index], teacher: "M. Bauer", room: "5F", group: nil, groupName: nil, startsAt: "\(day)T08:00:00+02:00", endsAt: "\(day)T08:45:00+02:00", startsAtLocal: String(format: "%02d:00", 8 + index), endsAtLocal: String(format: "%02d:45", 8 + index), classHourNumber: index + 1, isCancelled: false, originalLessonCount: 1, teachers: [OrbitSchoolHubV2Teacher(abbreviation: "MB")], groups: [OrbitSchoolHubV2Group(name: "5F")], status: "scheduled", kind: "lesson", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
+        }
+        overview = OrbitSchoolHubV2Overview(state: "READY", freshness: freshness, sourceStates: ["schulmanager": "READY"], profileTitle: fixture.studentNames.first, todayDayKey: "2026-10-24", upcomingExams: [exam], projects: [], coverage: ["timetable": coverage, "exams": coverage])
+        exams = [exam]
+        timetable = lessons
+        self.freshness = freshness
+        coverageState = "READY_WITH_DATA"
+        phase = .ready
+    }
+#endif
+
     func load() async {
         phase = .loading; errorText = nil
         do {
@@ -944,7 +1068,7 @@ final class SchoolHubV2Store {
 }
 
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, v2(SchoolV2Section), letter(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, notes(String, String), v2(SchoolV2Section), letter(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -952,9 +1076,30 @@ struct SchoolHubView: View {
 
     #if DEBUG
     private let fixture: Routes05SchoolFixture?
-    init(fixture: Routes05SchoolFixture? = nil) {
+    private let initialDebugRoute: String?
+    init(fixture: Routes05SchoolFixture? = nil, initialDebugRoute: String? = nil) {
         self.fixture = fixture
+        self.initialDebugRoute = initialDebugRoute
         _store = State(initialValue: SchoolHubStore(fixture: fixture))
+        _path = State(initialValue: Self.debugPath(initialDebugRoute))
+    }
+
+    private static func debugPath(_ value: String?) -> [Route] {
+        switch value {
+        case "inbox": return [.inbox]
+        case "letter": return [.letter("routes05-letter")]
+        case "tasks": return [.tasks]
+        case "timetable": return [.v2(.timetable)]
+        case "exams": return [.v2(.exams)]
+        case "brain": return [.brain]
+        case "calendar": return [.calendar]
+        case "search": return [.search]
+        case "timeline": return [.timeline]
+        case "briefing": return [.briefing]
+        case "notes": return [.notes("task", "routes05-task")]
+        case "history": return [.history]
+        default: return []
+        }
     }
     #endif
 
@@ -988,17 +1133,40 @@ struct SchoolHubView: View {
                 // SchoolHubView owns the navigation stack for this route. The inbox
                 // must render its list directly so its letter links stay in the same
                 // Route path and SwiftUI never compares nested path element types.
-                case .inbox: SchoolInboxView(embeddedInNavigation: true, hubMode: true)
-                case .tasks: SchoolTaskListView(store: store).navigationTitle("Справи").navigationBarTitleDisplayMode(.inline)
-                case .calendar: SchoolWeekCalendarView(store: store).navigationTitle("Дати").navigationBarTitleDisplayMode(.inline)
-                case .timeline: SchoolTimelineView(store: store)
-                case .search: SchoolUnifiedSearchView(store: store)
-                case .briefing: SchoolTasksView()
-                case .brain: SchoolBrainView()
+                case .inbox:
+                    #if DEBUG
+                    SchoolInboxView(embeddedInNavigation: true, hubMode: true, fixture: fixture).routes05ContextSurface()
+                    #else
+                    SchoolInboxView(embeddedInNavigation: true, hubMode: true).routes05ContextSurface()
+                    #endif
+                case .tasks: SchoolTaskListView(store: store).routes05ContextSurface()
+                case .calendar: SchoolWeekCalendarView(store: store).routes05ContextSurface()
+                case .timeline: SchoolTimelineView(store: store).routes05ContextSurface()
+                case .search: SchoolUnifiedSearchView(store: store).routes05ContextSurface()
+#if DEBUG
+                case .briefing: SchoolTasksView(fixture: fixture ?? Routes05DebugFixtures.school).routes05ContextSurface()
+                case .brain: SchoolBrainView(fixture: fixture ?? Routes05DebugFixtures.school).routes05ContextSurface()
+#else
+                case .briefing: SchoolTasksView().routes05ContextSurface()
+                case .brain: SchoolBrainView().routes05ContextSurface()
+#endif
                 case .teams: SchoolTeamsFutureView()
-                case .history: SchoolActionHistoryView(store: store)
-                case let .v2(section): SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section)
-                case let .letter(id): SchoolDetailLoaderView(itemID: id)
+                case .history: SchoolActionHistoryView(store: store).routes05ContextSurface()
+                case let .notes(entityType, entityId): SchoolNotesView(store: store, entityType: entityType, entityId: entityId).routes05ContextSurface()
+                case let .v2(section):
+#if DEBUG
+                    if let fixture { SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section, fixture: fixture).routes05ContextSurface() }
+                    else { SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface() }
+#else
+                    SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface()
+#endif
+                case let .letter(id):
+                    #if DEBUG
+                    if let item = fixture?.items.first(where: { $0.id == id }) { SchoolDetailView(item: item) }
+                    else { SchoolDetailLoaderView(itemID: id) }
+                    #else
+                    SchoolDetailLoaderView(itemID: id)
+                    #endif
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
                     else { ContentUnavailableView("Подія недоступна", systemImage: "calendar.badge.exclamationmark") }
@@ -1065,11 +1233,13 @@ private struct SchoolCommandCenter: View {
     }
 
     private var routesHeader: some View {
-        ZStack(alignment: .topTrailing) {
+        HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("SOURCE / SCHULMANAGER · READ ONLY")
                     .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
                     .foregroundStyle(Routes05Tokens.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(2)
                 Text("Школа.\nНа зв’язку.")
                     .font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineSpacing(-4)
                 Text("Профіль учня · події, листи й підготовка.")
@@ -1079,9 +1249,11 @@ private struct SchoolCommandCenter: View {
                     Text(store.studentNames.joined(separator: " · ")).font(.subheadline.weight(.bold))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Text("↗").font(.system(size: 29, weight: .black)).foregroundStyle(Routes05Tokens.accentInk)
                 .frame(width: 59, height: 59).background(Routes05Tokens.mint, in: Circle())
                 .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+                .layoutPriority(1)
         }
         .padding(.horizontal, 16).padding(.top, 12)
     }
@@ -1830,6 +2002,9 @@ private struct SchoolTaskDetailView: View {
     var body: some View {
         List {
             Section {
+                Routes05ContextHeader(section: "school", eyebrow: "TASK / DETAIL", title: "Справу\nпо черзі.", detail: "Стан Orbit-справи та її джерело залишаються окремими.", accent: Routes05Tokens.orange)
+            }
+            Section {
                 Text(task.title)
                     .font(.title3.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1977,6 +2152,9 @@ private struct SchoolChecklistView: View {
     private var checklistList: some View {
         List {
             Section {
+                Routes05ContextHeader(section: "school", eyebrow: "ACTION CENTER / FAMILY", title: "Справи.\nПо черзі.", detail: "Стан Orbit-справ і джерел школи залишається розділеним.", accent: Routes05Tokens.orange)
+            }
+            Section {
                 TextField("Нова підготовка", text: $newTitle)
                 Button("Створити чекліст") { createChecklist() }.disabled(newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } header: { Text("Сімейна підготовка") } footer: { Text("Пункти чекліста належать родині Orbit і не змінюють шкільне джерело.") }
@@ -2046,12 +2224,20 @@ private struct SchoolNotesView: View {
     var body: some View {
         Group {
             if !store.actionCapability.canMutate {
-                SchoolActionsUnavailableView(capability: store.actionCapability) { Task { await store.refreshActionCapability() } }
+                List {
+                    Section {
+                        Routes05ContextHeader(section: "discovery", eyebrow: "PRIVATE / NOTES", title: "Місце\nдля думок.", detail: "Приватні нотатки поточного Orbit-профілю, окремо від тексту школи.", accent: Routes05Tokens.lilac)
+                    }
+                    Section {
+                        SchoolActionsUnavailableView(capability: store.actionCapability) { Task { await store.refreshActionCapability() } }
+                    }
+                }
+                .listStyle(.plain)
             } else {
                 notesList
             }
         }
-        .navigationTitle("Нотатки")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if store.actionCapability.canMutate { await load() } }
         .refreshable { if store.actionCapability.canMutate { await load() } }
@@ -2061,6 +2247,9 @@ private struct SchoolNotesView: View {
 
     private var notesList: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "discovery", eyebrow: "PRIVATE / NOTES", title: "Місце\nдля думок.", detail: "Приватні нотатки поточного Orbit-профілю, окремо від тексту школи.", accent: Routes05Tokens.lilac)
+            }
             Section {
                 TextField("Нова нотатка", text: $draft, axis: .vertical).lineLimit(2...5)
                 Button { create() } label: { HStack { Text("Зберегти нотатку"); if saving { Spacer(); ProgressView() } } }
@@ -2310,6 +2499,9 @@ private struct SchoolTaskListView: View {
         let sections = SchoolHubLogic.taskSections(searched, filter: filter, today: today, sourceDates: store.sourceDates, now: Date())
         List {
             Section {
+                Routes05ContextHeader(section: "school", eyebrow: "ACTION CENTER / FAMILY", title: "Справи.\nПо черзі.", detail: "Стан Orbit-справ і джерел школи залишається розділеним.", accent: Routes05Tokens.orange)
+            }
+            Section {
                 Picker("Показати", selection: $filter) {
                     ForEach(SchoolTaskFilter.allCases) { item in
                         Text("\(item.title) \(count(for: item, counts))").tag(item)
@@ -2422,6 +2614,9 @@ private struct SchoolWeekCalendarView: View {
             return key > selected
         }.sorted { ($0.startsAt ?? "") < ($1.startsAt ?? "") }.prefix(3)
         List {
+            Section {
+                Routes05ContextHeader(section: "school", eyebrow: "SOURCE / SCHOOL CALENDAR", title: "Щодалі\nу школі?", detail: "Події джерела; додавання до сімейного календаря — лише через підтвердження.", accent: Routes05Tokens.yellow)
+            }
             Section {
                 weekHeader(week: week)
                 weekStrip(week: week, events: filtered)
@@ -2590,6 +2785,9 @@ private struct SchoolTimelineView: View {
     var body: some View {
         List {
             Section {
+                Routes05ContextHeader(section: "discovery", eyebrow: "SCHOOL / TIMELINE", title: "Усе\nпо порядку.", accent: Routes05Tokens.yellow)
+            }
+            Section {
                 SchoolNotice(text: "Хронологія об’єднує лише завантажені записи. Кожен рядок зберігає посилання на своє джерело.", systemImage: "link")
             }
             Picker("Період", selection: $horizon) {
@@ -2622,7 +2820,7 @@ private struct SchoolTimelineView: View {
                 }
             }
         }
-        .navigationTitle("Хронологія")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -2676,6 +2874,9 @@ private struct SchoolUnifiedSearchView: View {
 
     var body: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "school", eyebrow: "SEARCH / VERIFIED SOURCES", title: "Знайти.\nШвидко.", detail: "Пошук лише серед авторизованих завантажених джерел.", accent: Routes05Tokens.lilac)
+            }
             Section { SchoolNotice(text: SchoolHubLogic.searchScopeNote + ". Пошук не заявляє повну історію, якщо сервер не повернув її в завантаженому вікні.", systemImage: "magnifyingglass") }
             Picker("Тип", selection: $kind) { ForEach(SearchKind.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -2704,7 +2905,7 @@ private struct SchoolUnifiedSearchView: View {
                 }
             }
         }
-        .navigationTitle("Знайти у школі")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Листи, справи, події")
     }

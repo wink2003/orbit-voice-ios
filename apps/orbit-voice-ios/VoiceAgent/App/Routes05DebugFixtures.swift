@@ -20,6 +20,7 @@ struct Routes05FamilyFixture {
 
 enum Routes05DebugScreen {
     case today, orbit, school, family
+    case conversation, inbox, letter, tasks, timetable, exams, brain, calendar, search, timeline, briefing, notes, history
 }
 
 enum Routes05DebugFixtures {
@@ -41,6 +42,21 @@ enum Routes05DebugFixtures {
         ]
     )
 
+    static let conversationMessages: [OrbitChatMessage] = [
+        OrbitChatMessage(id: "routes05-user-message", conversationId: "routes05-personal", senderKind: "person", senderPersonId: nil, content: "Допоможи підготувати день: школа, басейн і справи.", createdAt: now.addingTimeInterval(-900), clientMessageId: "routes05-client", actionConfirmation: nil),
+        OrbitChatMessage(id: "routes05-orbit-message", conversationId: "routes05-personal", senderKind: "orbit", senderPersonId: nil, content: "Ось ваш маршрут на завтра.\n\n08:00 — Школа\nПочаток занять\n\n13:40 — Плавання\nВзяти спортивну сумку\n\n19:00 — Підготовка\nПереглянути справи", createdAt: now.addingTimeInterval(-840), clientMessageId: nil, actionConfirmation: nil)
+    ]
+
+    static let schoolBrainMessages: [OrbitSchoolBrainMessage] = [
+        OrbitSchoolBrainMessage(
+            id: "routes05-brain-answer",
+            role: "assistant",
+            content: "Цього тижня важливо підготувати матеріали до Projektwoche. Перевірте дату в оригіналі листа та підтвердіть сімейні дії окремо.",
+            sourceRefs: [["id": "routes05-letter", "type": "letter"]],
+            createdAt: now
+        )
+    ]
+
     static let school: Routes05SchoolFixture = {
         let letter = OrbitSchoolItem(
             id: "routes05-letter", type: "letter", source: "schulmanager", externalId: "routes05-letter",
@@ -54,7 +70,11 @@ enum Routes05DebugFixtures {
             subscriptionId: nil, tasks: [OrbitSchoolItemTask(key: "prepare", title: "Підготувати матеріали", action: "Перевірити дату в джерелі", dueAt: "2026-10-24", allDay: true, importance: "normal", target: nil, confidence: 1, reason: "Source text",)]
         )
         let task = OrbitSchoolTask(key: "prepare", stableIdentity: true, title: "Підготовка до тесту", action: "Перевірити дату в джерелі", dueAt: "2026-10-24", endsAt: nil, allDay: true, importance: "high", target: nil, confidence: 1, reason: "Source text", location: nil, sourceItemId: letter.id, sourceType: "letter", sourceExternalId: letter.externalId, bucket: nil, status: "open", completedAt: nil, actionTaskId: nil, calendarEventId: nil)
-        return Routes05SchoolFixture(items: [letter], events: [], tasks: [task], studentNames: ["Ліна"])
+        let events = [
+            OrbitSchulmanagerCalendarEvent(uid: "routes05-event-1", title: "Projektwoche", description: "Підготовка до проєктного тижня", location: "Gymnasium am Park", startsAt: "2026-10-20T09:00:00+02:00", endsAt: "2026-10-20T10:00:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "ours", audienceClass: "class", relevanceReason: "Профіль учня"),
+            OrbitSchulmanagerCalendarEvent(uid: "routes05-event-2", title: "Батьківська зустріч", description: "Зустріч класу", location: "Кімната 5F", startsAt: "2026-10-22T17:30:00+02:00", endsAt: "2026-10-22T18:30:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "likely", audienceClass: "class", relevanceReason: "Класна подія")
+        ]
+        return Routes05SchoolFixture(items: [letter], events: events, tasks: [task], studentNames: ["Ліна"])
     }()
 
     static let family = Routes05FamilyFixture(

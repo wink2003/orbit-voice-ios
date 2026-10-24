@@ -186,6 +186,93 @@ struct Routes05SectionHeader: View {
     }
 }
 
+/// Compact chrome used by contextual ROUTES screens. The native navigation bar
+/// still owns back-swipe and dismissal; this view supplies the editorial route
+/// language below it without introducing another navigation stack or dock.
+struct Routes05ContextHeader: View {
+    let section: String
+    let eyebrow: String
+    let title: String
+    let detail: String?
+    let accent: Color
+
+    init(section: String, eyebrow: String, title: String, detail: String? = nil, accent: Color = Routes05Tokens.yellow) {
+        self.section = section
+        self.eyebrow = eyebrow
+        self.title = title
+        self.detail = detail
+        self.accent = accent
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Routes05Mast(section: section)
+            Routes05Chapter(eyebrow, title: title, detail: detail, accent: accent)
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+struct Routes05SourcePanel<Content: View>: View {
+    let tint: Color
+    let content: Content
+
+    init(tint: Color = Routes05Tokens.blue, @ViewBuilder content: () -> Content) {
+        self.tint = tint
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Routes05Tokens.surface)
+            .overlay(alignment: .leading) { Rectangle().fill(tint).frame(width: 5) }
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
+    }
+}
+
+struct Routes05RouteRow<Content: View>: View {
+    let index: String
+    let tint: Color
+    let content: Content
+    let action: (() -> Void)?
+
+    init(index: String, tint: Color, action: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
+        self.index = index
+        self.tint = tint
+        self.action = action
+        self.content = content()
+    }
+
+    var body: some View {
+        Group {
+            if let action {
+                Button(action: action) { row }.buttonStyle(.plain)
+            } else {
+                row
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var row: some View {
+        HStack(spacing: 10) {
+            Text(index).font(.system(.title3, design: .rounded).weight(.black))
+                .frame(width: 34, alignment: .leading)
+            Rectangle().fill(tint).frame(width: 4)
+            content
+            Spacer(minLength: 4)
+            Image(systemName: "arrow.up.right").font(.caption.weight(.black))
+        }
+        .padding(.horizontal, 6)
+        .frame(minHeight: 62)
+        .foregroundStyle(Routes05Tokens.ink)
+        .background(Routes05Tokens.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
+    }
+}
+
 struct Routes05FilledTile: View {
     let title: String
     let detail: String
@@ -276,6 +363,7 @@ struct Routes05ContextSurface: ViewModifier {
             .scrollContentBackground(.hidden)
             .background(Routes05Tokens.canvas)
             .tint(Routes05Tokens.blue)
+            .listStyle(.plain)
             .toolbarBackground(Routes05Tokens.canvas, for: .navigationBar)
     }
 }

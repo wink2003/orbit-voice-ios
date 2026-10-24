@@ -51,8 +51,23 @@ struct SchoolInboxView: View {
     @State private var loading = false
     @State private var notificationPermission = SchoolNotificationPermission.notDetermined
     @State private var notificationDiagnosticMessage: String?
+    #if DEBUG
+    private let fixture: Routes05SchoolFixture?
+    #endif
 
-    init(embeddedInNavigation: Bool = false, hubMode: Bool = false) { self.embeddedInNavigation = embeddedInNavigation; self.hubMode = hubMode }
+    #if DEBUG
+    init(embeddedInNavigation: Bool = false, hubMode: Bool = false, fixture: Routes05SchoolFixture? = nil) {
+        self.embeddedInNavigation = embeddedInNavigation
+        self.hubMode = hubMode
+        self.fixture = fixture
+        _items = State(initialValue: fixture?.items ?? [])
+    }
+    #else
+    init(embeddedInNavigation: Bool = false, hubMode: Bool = false) {
+        self.embeddedInNavigation = embeddedInNavigation
+        self.hubMode = hubMode
+    }
+    #endif
 
     var body: some View {
         Group {
@@ -63,6 +78,13 @@ struct SchoolInboxView: View {
     private var schoolList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                Routes05ContextHeader(
+                    section: "school",
+                    eyebrow: "SCHULMANAGER / READ ONLY",
+                    title: "Вхідні\nзі школи.",
+                    detail: "Оригінали, переклади й джерела — без запису до Schulmanager.",
+                    accent: Routes05Tokens.blue
+                )
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
@@ -85,7 +107,8 @@ struct SchoolInboxView: View {
                 }
                 .padding(.horizontal, 14)
                 .frame(minHeight: 44)
-                .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 14))
+                .background(Routes05Tokens.surface)
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                 Picker("Тип матеріалу", selection: $typeFilter) {
                     ForEach(SchoolInboxTypeFilter.allCases) { option in Text(option.title).tag(option) }
                 }
@@ -119,9 +142,9 @@ struct SchoolInboxView: View {
             .padding(.top, 8)
             .padding(.bottom, 24)
         }
-        .background(OrbitColors.canvas)
+        .background(Routes05Tokens.canvas)
         .safeAreaPadding(.bottom, 16)
-        .navigationTitle("Вхідні")
+        .navigationTitle("")
         .refreshable { await load() }
         .onAppear { Task { await load(); await refreshNotificationPermission() } }
         .alert("Школа недоступна", isPresented: .constant(error != nil)) { Button("Повторити") { error = nil; Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
@@ -205,8 +228,9 @@ struct SchoolInboxView: View {
             }
         }
         .padding(.vertical, 10).padding(.horizontal, 4)
-        .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 14))
-        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .background(Routes05Tokens.surface)
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.rule, lineWidth: 1))
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title). \(preview)")
         .accessibilityValue([item.unread ? "Непрочитано" : nil, taskCount(for: item).map { "\($0) відкритих справ" }, item.attachments.isEmpty ? nil : "\(item.attachments.count) вкладень"].compactMap { $0 }.joined(separator: ", "))
@@ -222,7 +246,20 @@ struct SchoolInboxView: View {
         guard taskResponse?.complete == true, taskResponse?.truncated != true else { return nil }
         return taskResponse?.tasks.filter { $0.sourceItemId == item.id && $0.status != "completed" }.count
     }
-    private func load() async { loading = true; defer { loading = false }; do { async let loadedItems = MainProductAPI.shared.schoolItems(filter: "all"); async let loadedTasks = MainProductAPI.shared.schoolTasks(coverage: "all"); items = try await loadedItems.items; taskResponse = try? await loadedTasks; error = nil } catch { self.error = "Не вдалося завантажити шкільні матеріали." } }
+    private func load() async {
+        #if DEBUG
+        if fixture != nil { return }
+        #endif
+        loading = true
+        defer { loading = false }
+        do {
+            async let loadedItems = MainProductAPI.shared.schoolItems(filter: "all")
+            async let loadedTasks = MainProductAPI.shared.schoolTasks(coverage: "all")
+            items = try await loadedItems.items
+            taskResponse = try? await loadedTasks
+            error = nil
+        } catch { self.error = "Не вдалося завантажити шкільні матеріали." }
+    }
     private func refreshNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.authorizationStatus() }
     private func requestNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.requestAuthorization() }
     private func scheduleDiagnosticNotification() async { notificationDiagnosticMessage = await SchoolNotificationCoordinator.shared.scheduleDiagnostic() ? "Тестове сповіщення з’явиться приблизно через 5 секунд." : "Не вдалося запланувати тестове сповіщення." }
@@ -284,14 +321,34 @@ struct SchoolCalendarView: View {
 }
 
 struct SchoolTasksView: View {
+#if DEBUG
+    private let fixture: Routes05SchoolFixture?
+#endif
     @State private var briefing: OrbitSchoolBriefingResponse?
     @State private var windowFrom = ""
     @State private var windowTo = ""
     @State private var error: String?
     @State private var loading = false
 
+    init() {
+#if DEBUG
+        self.fixture = nil
+#endif
+    }
+
+#if DEBUG
+    init(fixture: Routes05SchoolFixture) {
+        self.fixture = fixture
+        let item = OrbitSchoolBriefingItem(date: "2026-10-24", title: fixture.tasks.first?.title ?? "Підготовка до тесту", detail: fixture.tasks.first?.action ?? "Перевірити дату в джерелі", sourceRefs: [OrbitSchoolBriefingSource(id: fixture.items.first?.id ?? "routes05-letter", type: "letter")])
+        _briefing = State(initialValue: OrbitSchoolBriefingResponse(from: "2026-10-24", to: "2026-10-31", timeZone: "Europe/Berlin", dated: [item], attention: []))
+    }
+#endif
+
     var body: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "discovery", eyebrow: "BRIEFING / SOURCE AWARE", title: "Коротко.\nПо суті.", detail: "Огляд з посиланнями на фактичні шкільні джерела.", accent: Routes05Tokens.orange)
+            }
             if loading { ProgressView().frame(maxWidth: .infinity) }
             if let briefing {
                 Section { Text("\(localizedDate(briefing.from)) — \(localizedDate(briefing.to, subtractingDays: 1))").font(.subheadline).foregroundStyle(.secondary) }
@@ -304,8 +361,14 @@ struct SchoolTasksView: View {
                 }
             } else if !loading { ContentUnavailableView("Огляд недоступний", systemImage: "calendar.badge.exclamationmark") }
         }
-        .navigationTitle("Наступні 10 днів")
-        .task { await load() }
+        .navigationTitle("")
+        .task {
+#if DEBUG
+            if fixture == nil { await load() }
+#else
+            await load()
+#endif
+        }
         .refreshable { await load() }
         .alert("Шкільний огляд", isPresented: SchoolBrainRequestState.alertBinding(error: $error)) { Button("Повторити") { Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
     }
@@ -380,6 +443,13 @@ struct SchoolDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                Routes05ContextHeader(
+                    section: "school",
+                    eyebrow: "SOURCE ORIGINAL / DE",
+                    title: item.type == "letter" ? "Лист / джерело" : "Повідомлення / джерело",
+                    detail: "Оригінал, переклад і Orbit-інтерпретація залишаються окремими.",
+                    accent: Routes05Tokens.blue
+                )
                 if !displayTitle.isEmpty { Text(displayTitle).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
                 Text([item.sender.isEmpty ? nil : item.sender, item.sourceTimestamp.map { $0.formatted(date: .abbreviated, time: .omitted) }].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
@@ -407,7 +477,8 @@ struct SchoolDetailView: View {
                         }
                     }
                     .padding(.horizontal, 12)
-                    .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
+                    .background(Routes05Tokens.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                 } else {
                     detailHeader("Що потрібно")
                     Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
@@ -442,7 +513,8 @@ struct SchoolDetailView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in attachmentRow(file) }
                     }
-                    .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
+                    .background(Routes05Tokens.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                 }
                 detailHeader("Джерело")
                 VStack(alignment: .leading, spacing: 5) {
@@ -464,8 +536,8 @@ struct SchoolDetailView: View {
             }
             .padding(.horizontal, 16).padding(.bottom, 24)
         }
-        .background(OrbitColors.canvas)
-        .navigationTitle(item.type == "letter" ? "Лист" : "Повідомлення")
+        .background(Routes05Tokens.canvas)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaPadding(.bottom, 16)
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }

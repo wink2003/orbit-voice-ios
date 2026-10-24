@@ -153,6 +153,14 @@ final class SchoolBrainChatModel {
 
     init(service: SchoolBrainService) { self.service = service }
 
+#if DEBUG
+    init(service: SchoolBrainService, debugMessages: [OrbitSchoolBrainMessage]) {
+        self.service = service
+        self.messages = debugMessages
+        self.loadState = .loaded
+    }
+#endif
+
     var trimmedDraft: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
     var canSend: Bool { !trimmedDraft.isEmpty && !isSending }
     var isEmptyConversation: Bool { messages.isEmpty && pendingQuestion == nil }
