@@ -1084,7 +1084,7 @@ private struct SchoolCommandCenter: View {
             if let item = priorities.first {
                 Button { open(priority: item) } label: {
                     HStack(spacing: 0) {
-                        Text("!").font(.system(size: 38, weight: .black)).frame(width: 88, minHeight: 86).background(Routes05Tokens.yellow)
+                        Text("!").font(.system(size: 38, weight: .black)).frame(width: 88).frame(minHeight: 86).background(Routes05Tokens.yellow)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.title).font(.headline.weight(.black)).lineLimit(2)
                             Text(priorityDetail(item)).font(.caption).foregroundStyle(Routes05Tokens.secondary).lineLimit(2)
