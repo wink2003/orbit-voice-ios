@@ -344,7 +344,11 @@ private struct OrbitConversationView: View {
                             .id("chat-latest")
                     }
                     .padding(.vertical)
-                    .safeAreaPadding(.top, 8)
+                    // The inline navigation bar has a larger-than-standard
+                    // footprint on the native conversation route. Keep the
+                    // ROUTES masthead below it on first render; scrolling and
+                    // the opaque toolbar background preserve the same behavior.
+                    .safeAreaPadding(.top, 72)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
