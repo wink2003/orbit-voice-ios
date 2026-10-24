@@ -45,6 +45,19 @@ struct NovaShellView: View {
             case .orbit: OrbitChatsView(fixture: Routes05DebugFixtures.chats)
             case .school: SchoolHubView(fixture: Routes05DebugFixtures.school)
             case .family: MainOrbit3FamilyView(fixture: Routes05DebugFixtures.family)
+            case .conversation: OrbitChatsView(fixture: Routes05DebugFixtures.chats, debugConversation: true)
+            case .inbox: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "inbox")
+            case .letter: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "letter")
+            case .tasks: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "tasks")
+            case .timetable: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "timetable")
+            case .exams: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "exams")
+            case .brain: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "brain")
+            case .calendar: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "calendar")
+            case .search: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "search")
+            case .timeline: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "timeline")
+            case .briefing: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "briefing")
+            case .notes: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "notes")
+            case .history: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "history")
             }
         } else {
             productionDestination

@@ -17,11 +17,15 @@ struct OrbitChatsView: View {
     @State private var showingVoice = false
     @State private var isCreatingConversation = false
     @State private var selectedFilter = "Всі"
+    #if DEBUG
+    private let debugConversation: Bool
+    #endif
 
     #if DEBUG
-    init(contactPrompt: String? = nil, fixture: Routes05ChatFixture? = nil) {
+    init(contactPrompt: String? = nil, fixture: Routes05ChatFixture? = nil, debugConversation: Bool = false) {
         self.contactPrompt = contactPrompt
         self.fixture = fixture
+        self.debugConversation = debugConversation
         _profile = State(initialValue: fixture?.profile)
         _chats = State(initialValue: fixture?.chats ?? [])
         _isLoading = State(initialValue: fixture == nil)
@@ -93,7 +97,11 @@ struct OrbitChatsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
             .navigationDestination(item: $selectedChat) { chat in
+                #if DEBUG
+                OrbitConversationView(conversation: chat, initialDraft: contactPrompt, debugMessages: debugConversation ? Routes05DebugFixtures.conversationMessages : nil)
+                #else
                 OrbitConversationView(conversation: chat, initialDraft: contactPrompt)
+                #endif
             }
             .navigationDestination(isPresented: $showingSchoolBrain) {
                 SchoolBrainView()
@@ -243,10 +251,20 @@ private struct OrbitConversationView: View {
     @State private var showingVoice = false
     @State private var searchText = ""
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
+    #if DEBUG
+    private let debugMessages: [OrbitChatMessage]?
+    #endif
 
-    init(conversation: OrbitConversation, initialDraft: String? = nil) {
+    init(conversation: OrbitConversation, initialDraft: String? = nil
+         #if DEBUG
+         , debugMessages: [OrbitChatMessage]? = nil
+         #endif
+    ) {
         self.conversation = conversation
         self.initialDraft = initialDraft
+        #if DEBUG
+        self.debugMessages = debugMessages
+        #endif
         _draft = State(initialValue: initialDraft ?? "")
     }
 
@@ -498,6 +516,12 @@ private struct OrbitConversationView: View {
     }
 
     private func loadMessages() async {
+        #if DEBUG
+        if let debugMessages {
+            messages = debugMessages
+            return
+        }
+        #endif
         do { messages = try await OrbitChatAPI.shared.messages(in: conversation) }
         catch { self.error = error }
     }

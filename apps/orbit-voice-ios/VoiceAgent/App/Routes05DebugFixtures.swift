@@ -20,6 +20,7 @@ struct Routes05FamilyFixture {
 
 enum Routes05DebugScreen {
     case today, orbit, school, family
+    case conversation, inbox, letter, tasks, timetable, exams, brain, calendar, search, timeline, briefing, notes, history
 }
 
 enum Routes05DebugFixtures {
@@ -40,6 +41,11 @@ enum Routes05DebugFixtures {
             OrbitConversation(id: "routes05-family", kind: "family", title: "Родинні справи", subtitle: "Сімейна розмова · авторизована", lastMessage: "Перевіримо календар?", updatedAt: now.addingTimeInterval(-172_800))
         ]
     )
+
+    static let conversationMessages: [OrbitChatMessage] = [
+        OrbitChatMessage(id: "routes05-user-message", conversationId: "routes05-personal", senderKind: "person", senderPersonId: nil, content: "Допоможи підготувати день: школа, басейн і справи.", createdAt: now.addingTimeInterval(-900), clientMessageId: "routes05-client", actionConfirmation: nil),
+        OrbitChatMessage(id: "routes05-orbit-message", conversationId: "routes05-personal", senderKind: "orbit", senderPersonId: nil, content: "Ось ваш маршрут на завтра.\n\n08:00 — Школа\nПочаток занять\n\n13:40 — Плавання\nВзяти спортивну сумку\n\n19:00 — Підготовка\nПереглянути справи", createdAt: now.addingTimeInterval(-840), clientMessageId: nil, actionConfirmation: nil)
+    ]
 
     static let school: Routes05SchoolFixture = {
         let letter = OrbitSchoolItem(

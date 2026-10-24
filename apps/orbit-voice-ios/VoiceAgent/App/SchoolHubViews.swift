@@ -957,7 +957,7 @@ final class SchoolHubV2Store {
 }
 
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, v2(SchoolV2Section), letter(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, notes(String, String), v2(SchoolV2Section), letter(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -965,9 +965,30 @@ struct SchoolHubView: View {
 
     #if DEBUG
     private let fixture: Routes05SchoolFixture?
-    init(fixture: Routes05SchoolFixture? = nil) {
+    private let initialDebugRoute: String?
+    init(fixture: Routes05SchoolFixture? = nil, initialDebugRoute: String? = nil) {
         self.fixture = fixture
+        self.initialDebugRoute = initialDebugRoute
         _store = State(initialValue: SchoolHubStore(fixture: fixture))
+        _path = State(initialValue: Self.debugPath(initialDebugRoute))
+    }
+
+    private static func debugPath(_ value: String?) -> [Route] {
+        switch value {
+        case "inbox": return [.inbox]
+        case "letter": return [.letter("routes05-letter")]
+        case "tasks": return [.tasks]
+        case "timetable": return [.v2(.timetable)]
+        case "exams": return [.v2(.exams)]
+        case "brain": return [.brain]
+        case "calendar": return [.calendar]
+        case "search": return [.search]
+        case "timeline": return [.timeline]
+        case "briefing": return [.briefing]
+        case "notes": return [.notes("task", "routes05-task")]
+        case "history": return [.history]
+        default: return []
+        }
     }
     #endif
 
@@ -1001,7 +1022,12 @@ struct SchoolHubView: View {
                 // SchoolHubView owns the navigation stack for this route. The inbox
                 // must render its list directly so its letter links stay in the same
                 // Route path and SwiftUI never compares nested path element types.
-                case .inbox: SchoolInboxView(embeddedInNavigation: true, hubMode: true).routes05ContextSurface()
+                case .inbox:
+                    #if DEBUG
+                    SchoolInboxView(embeddedInNavigation: true, hubMode: true, fixture: fixture).routes05ContextSurface()
+                    #else
+                    SchoolInboxView(embeddedInNavigation: true, hubMode: true).routes05ContextSurface()
+                    #endif
                 case .tasks: SchoolTaskListView(store: store).routes05ContextSurface().navigationTitle("Справи").navigationBarTitleDisplayMode(.inline)
                 case .calendar: SchoolWeekCalendarView(store: store).routes05ContextSurface().navigationTitle("Дати").navigationBarTitleDisplayMode(.inline)
                 case .timeline: SchoolTimelineView(store: store).routes05ContextSurface()
@@ -1010,8 +1036,15 @@ struct SchoolHubView: View {
                 case .brain: SchoolBrainView().routes05ContextSurface()
                 case .teams: SchoolTeamsFutureView()
                 case .history: SchoolActionHistoryView(store: store).routes05ContextSurface()
+                case let .notes(entityType, entityId): SchoolNotesView(store: store, entityType: entityType, entityId: entityId).routes05ContextSurface()
                 case let .v2(section): SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface()
-                case let .letter(id): SchoolDetailLoaderView(itemID: id)
+                case let .letter(id):
+                    #if DEBUG
+                    if let item = fixture?.items.first(where: { $0.id == id }) { SchoolDetailView(item: item) }
+                    else { SchoolDetailLoaderView(itemID: id) }
+                    #else
+                    SchoolDetailLoaderView(itemID: id)
+                    #endif
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
                     else { ContentUnavailableView("Подія недоступна", systemImage: "calendar.badge.exclamationmark") }

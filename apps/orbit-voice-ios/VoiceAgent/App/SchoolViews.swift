@@ -51,8 +51,22 @@ struct SchoolInboxView: View {
     @State private var loading = false
     @State private var notificationPermission = SchoolNotificationPermission.notDetermined
     @State private var notificationDiagnosticMessage: String?
+    #if DEBUG
+    private let fixture: Routes05SchoolFixture?
+    #endif
 
-    init(embeddedInNavigation: Bool = false, hubMode: Bool = false) { self.embeddedInNavigation = embeddedInNavigation; self.hubMode = hubMode }
+    init(embeddedInNavigation: Bool = false, hubMode: Bool = false
+         #if DEBUG
+         , fixture: Routes05SchoolFixture? = nil
+         #endif
+    ) {
+        self.embeddedInNavigation = embeddedInNavigation
+        self.hubMode = hubMode
+        #if DEBUG
+        self.fixture = fixture
+        _items = State(initialValue: fixture?.items ?? [])
+        #endif
+    }
 
     var body: some View {
         Group {
@@ -231,7 +245,20 @@ struct SchoolInboxView: View {
         guard taskResponse?.complete == true, taskResponse?.truncated != true else { return nil }
         return taskResponse?.tasks.filter { $0.sourceItemId == item.id && $0.status != "completed" }.count
     }
-    private func load() async { loading = true; defer { loading = false }; do { async let loadedItems = MainProductAPI.shared.schoolItems(filter: "all"); async let loadedTasks = MainProductAPI.shared.schoolTasks(coverage: "all"); items = try await loadedItems.items; taskResponse = try? await loadedTasks; error = nil } catch { self.error = "Не вдалося завантажити шкільні матеріали." } }
+    private func load() async {
+        #if DEBUG
+        if fixture != nil { return }
+        #endif
+        loading = true
+        defer { loading = false }
+        do {
+            async let loadedItems = MainProductAPI.shared.schoolItems(filter: "all")
+            async let loadedTasks = MainProductAPI.shared.schoolTasks(coverage: "all")
+            items = try await loadedItems.items
+            taskResponse = try? await loadedTasks
+            error = nil
+        } catch { self.error = "Не вдалося завантажити шкільні матеріали." }
+    }
     private func refreshNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.authorizationStatus() }
     private func requestNotificationPermission() async { notificationPermission = await SchoolNotificationCoordinator.shared.requestAuthorization() }
     private func scheduleDiagnosticNotification() async { notificationDiagnosticMessage = await SchoolNotificationCoordinator.shared.scheduleDiagnostic() ? "Тестове сповіщення з’явиться приблизно через 5 секунд." : "Не вдалося запланувати тестове сповіщення." }
