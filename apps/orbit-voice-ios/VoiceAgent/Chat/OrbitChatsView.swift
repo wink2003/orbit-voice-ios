@@ -344,6 +344,7 @@ private struct OrbitConversationView: View {
                             .id("chat-latest")
                     }
                     .padding(.vertical)
+                    .safeAreaPadding(.top, 8)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
@@ -416,6 +417,8 @@ private struct OrbitConversationView: View {
         .background(Routes05Tokens.canvas.ignoresSafeArea())
         .navigationTitle(OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Routes05Tokens.canvas, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Пошук у завантажених")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
