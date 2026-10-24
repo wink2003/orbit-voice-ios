@@ -273,7 +273,7 @@ private struct OrbitConversationView: View {
             // The parent chat list hides its navigation bar. Reserve the
             // native conversation toolbar footprint before the fixed route
             // masthead so the two native layers never overlap.
-            .padding(.top, 96)
+            .padding(.top, 24)
 
             ScrollViewReader { proxy in
                 ScrollView {
