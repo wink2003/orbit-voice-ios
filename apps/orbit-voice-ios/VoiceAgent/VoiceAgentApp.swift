@@ -36,7 +36,17 @@ struct VoiceAgentApp: App {
     @ViewBuilder
     private var rootContent: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--orbit-nova-fixture") {
+        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--routes05-") }) {
+            Routes05DebugRoot()
+                .environmentObject(session)
+                .environmentObject(localMedia)
+                .environmentObject(audioOptions)
+                .environmentObject(authentication)
+                .environmentObject(appLock)
+                .environment(\.voiceEnabled, true)
+                .environment(\.videoEnabled, false)
+                .environment(\.textEnabled, false)
+        } else if ProcessInfo.processInfo.arguments.contains("--orbit-nova-fixture") {
             OrbitTodayView(open: { _ in }, displayName: "Олена", fixture: .demo)
         } else if ProcessInfo.processInfo.arguments.contains("--orbit-interpreter-lab") {
             InterpreterLabView()

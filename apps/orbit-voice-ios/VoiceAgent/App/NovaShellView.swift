@@ -4,6 +4,13 @@ import SwiftUI
 /// Existing destination views retain their stores and detail routes.
 struct NovaShellView: View {
     @Binding var selection: OrbitMainTab
+    #if DEBUG
+    private let debugFixture: Routes05DebugScreen?
+    init(selection: Binding<OrbitMainTab>, debugFixture: Routes05DebugScreen? = nil) {
+        _selection = selection
+        self.debugFixture = debugFixture
+    }
+    #endif
     @State private var dockTopY: CGFloat = .infinity
     @State private var dockHeight: CGFloat = 0
     @State private var dockVisible = true
@@ -31,17 +38,30 @@ struct NovaShellView: View {
 
     @ViewBuilder
     private var destination: some View {
+        #if DEBUG
+        if let debugFixture {
+            switch debugFixture {
+            case .today: OrbitTodayView(open: select, displayName: "Олена", fixture: Routes05DebugFixtures.today)
+            case .orbit: OrbitChatsView(fixture: Routes05DebugFixtures.chats)
+            case .school: SchoolHubView(fixture: Routes05DebugFixtures.school)
+            case .family: MainOrbit3FamilyView(fixture: Routes05DebugFixtures.family)
+            }
+        } else {
+            productionDestination
+        }
+        #else
+        productionDestination
+        #endif
+    }
+
+    @ViewBuilder
+    private var productionDestination: some View {
         switch selection {
-        case .home, .today:
-            OrbitTodayView(open: select, displayName: nil)
-        case .school:
-            SchoolHubView()
-        case .orbit, .chats:
-            OrbitChatsView()
-        case .family, .more:
-            MainOrbit3FamilyView()
-        case .calendar:
-            OrbitCalendarView()
+        case .home, .today: OrbitTodayView(open: select, displayName: nil)
+        case .school: SchoolHubView()
+        case .orbit, .chats: OrbitChatsView()
+        case .family, .more: MainOrbit3FamilyView()
+        case .calendar: OrbitCalendarView()
         }
     }
 
@@ -76,10 +96,10 @@ private struct NovaDock: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .foregroundStyle(selection == item ? NovaTodayTokens.indigo : .secondary)
+                    .foregroundStyle(selection == item ? Routes05Tokens.accentInk : Routes05Tokens.secondary)
                     .background {
                         if selection == item {
-                            Capsule(style: .continuous).fill(NovaTodayTokens.indigo.opacity(0.12))
+                            Rectangle().fill(Routes05Tokens.yellow)
                         }
                     }
                     .contentShape(Rectangle())
@@ -92,8 +112,8 @@ private struct NovaDock: View {
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 8)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(NovaTodayTokens.indigo.opacity(0.10)).frame(height: 1) }
+        .background(Routes05Tokens.canvas)
+        .overlay(alignment: .top) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
     }
 }
 

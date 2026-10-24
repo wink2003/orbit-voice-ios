@@ -66,6 +66,7 @@ struct FamilyHubView: View {
                 }
         }
         .listStyle(.insetGrouped)
+        .routes05ContextSurface()
         .navigationTitle("Сім’я")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
@@ -198,6 +199,7 @@ struct OrbitCalendarView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .routes05ContextSurface()
             .navigationTitle("Календар")
             .navigationBarTitleDisplayMode(.inline)
             .environment(\.locale, Locale(identifier: "uk_UA"))
@@ -520,6 +522,7 @@ struct OrbitToolsView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .routes05ContextSurface()
             .navigationTitle("Інструменти")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
@@ -593,6 +596,7 @@ struct OrbitContactsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .routes05ContextSurface()
         .navigationTitle("Контакти")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Знайти контакт")
@@ -877,6 +881,7 @@ struct MemoryCenterView: View {
                         }
                     }
                     .listStyle(.insetGrouped)
+                    .routes05ContextSurface()
                 }
             }
             .navigationTitle("Центр пам’яті")
@@ -985,6 +990,7 @@ private struct MemoryImportsView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .routes05ContextSurface()
             }
         }
         .navigationTitle("Імпорти")
@@ -1399,6 +1405,7 @@ struct OrbitSettingsView: View {
                 Section("Про Orbit") { Text("Main Orbit — сімейний AI-помічник. Orbit Mini залишається окремим клієнтом для голосу без рук.").font(.footnote).foregroundStyle(.secondary) }
             }
             .listStyle(.insetGrouped)
+            .routes05ContextSurface()
             .navigationTitle("Налаштування")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingAudio) { AudioOptionsSheet() }

@@ -13,7 +13,7 @@ private enum Orbit3Theme {
             : UIColor(red: 0.965, green: 0.969, blue: 0.984, alpha: 1)
     })
     static let surface = Color(uiColor: .secondarySystemGroupedBackground)
-    static let radius: CGFloat = 20
+    static let radius: CGFloat = 4
 }
 
 private struct Orbit3Card<Content: View>: View {
@@ -29,7 +29,7 @@ private struct Orbit3Card<Content: View>: View {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Orbit3Theme.radius, style: .continuous))
+            .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: Orbit3Theme.radius))
             .overlay(alignment: .leading) {
                 Capsule().fill(tint).frame(width: 3).padding(.vertical, 15)
             }
@@ -351,86 +351,165 @@ private struct Orbit3LoadingRows: View {
 }
 
 struct MainOrbit3FamilyView: View {
+    #if DEBUG
+    let fixture: Routes05FamilyFixture?
+    #endif
     @State private var profiles: [OrbitFamilyProfile] = []
     @State private var messages: [OrbitFamilyMessage] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var showingFamilyMore = false
+
+    #if DEBUG
+    init(fixture: Routes05FamilyFixture? = nil) {
+        self.fixture = fixture
+        _profiles = State(initialValue: fixture?.profiles ?? [])
+        _messages = State(initialValue: fixture?.messages ?? [])
+        _isLoading = State(initialValue: fixture == nil)
+    }
+    #endif
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("FAMILY · AUTHORIZED CONTEXT").font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(NovaTodayTokens.teal)
-                        Text("Разом, але приватно").font(.system(.largeTitle, design: .rounded).weight(.bold)).tracking(-0.6)
-                        Text("Профілі, спільний ритм і межі доступу — без змішування особистих даних.")
-                            .font(.subheadline).foregroundStyle(.secondary)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                    Routes05Mast(section: "family")
+                    routesHeader
+                    routesPeopleHero
+                    routesProfiles
+                    Routes05SectionHeader("Спільні маршрути", action: "Більше") { showingFamilyMore = true }
+                    routesLinks
+                    Text("ДОСТУП І ПРИВАТНІСТЬ")
+                        .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.4)
+                        .foregroundStyle(Routes05Tokens.darkSurfaceInk)
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .background(Routes05Tokens.darkSurface)
+                        .accessibilityIdentifier("routes05-family-privacy")
+                        Color.clear.frame(height: 1).id("routes05-bottom")
                     }
-                    Orbit3Card(tint: NovaTodayTokens.teal) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Orbit3SectionTitle(title: "Профілі родини", detail: "Доступ визначається сервером")
-                            if profiles.isEmpty && isLoading { Orbit3LoadingRows() }
-                            else if profiles.isEmpty { Text("Профілі ще не доступні.").foregroundStyle(.secondary) }
-                            else {
-                                ForEach(profiles) { profile in
-                                    HStack(spacing: 12) {
-                                        Text(initials(profile.displayName)).font(.headline).foregroundStyle(.white).frame(width: 40, height: 40).background(profile.isMinor ? Orbit3Theme.school : .purple, in: Circle())
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(profile.displayName).font(.headline)
-                                            Text(profile.isMinor ? "Дитина" : "Член родини").font(.caption).foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                    }
-                                    .accessibilityElement(children: .combine)
-                                }
-                            }
-                        }
-                    }
-                    NavigationLink { FamilyMessengerView() } label: {
-                        Orbit3Card(tint: Orbit3Theme.orbit) {
-                            Label("Родинний чат", systemImage: "bubble.left.and.bubble.right.fill")
-                                .font(.headline).foregroundStyle(.primary)
-                            Text(messages.isEmpty ? "Почніть спільну розмову" : "Відкрити останні повідомлення")
-                                .font(.subheadline).foregroundStyle(.secondary).padding(.top, 2)
-                        }
-                    }.buttonStyle(.plain)
-                    HStack(spacing: 10) {
-                        familyLink("Календар", "calendar", OrbitCalendarView())
-                        familyLink("Пам’ять", "brain.head.profile", MemoryCenterView())
-                    }
-                    HStack(spacing: 10) {
-                        familyLink("Контакти", "person.crop.circle.badge.plus", OrbitContactsView())
-                        familyLink("Налаштування", "gearshape", OrbitSettingsView())
-                    }
-                    NavigationLink { OrbitToolsView() } label: {
-                        Orbit3Card(tint: NovaTodayTokens.indigo) {
-                            Label("Інтеграції та межі дій", systemImage: "slider.horizontal.3")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            Text("Стан підключень і доступ до дій через Orbit з підтвердженням.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 2)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    Orbit3Card(tint: NovaTodayTokens.indigo) {
-                        Label("Приватність за замовчуванням", systemImage: "lock.shield.fill").font(.subheadline.weight(.semibold))
-                        Text("Особисті дані показуються лише в межах авторизованого профілю та сімейного доступу.")
-                            .font(.caption).foregroundStyle(.secondary).padding(.top, 3)
-                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
                 }
-                .padding(16)
+                .safeAreaPadding(.bottom, 96)
+                .onAppear {
+                    guard Routes05DebugCapture.scrollToBottom else { return }
+                    DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
+                }
             }
-            .background(NovaTodayTokens.canvas.ignoresSafeArea())
-            .navigationTitle("Сім’я")
-            .navigationBarTitleDisplayMode(.inline)
-            .task { await load() }
-            .refreshable { await load() }
+            .background(Routes05Tokens.canvas.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
+            .task {
+                #if DEBUG
+                if fixture == nil { await load() }
+                #else
+                await load()
+                #endif
+            }
+            .refreshable {
+                #if DEBUG
+                if fixture == nil { await load() }
+                #else
+                await load()
+                #endif
+            }
             .alert("Сімейні дані недоступні", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("Гаразд") { errorMessage = nil }
             } message: { Text(errorMessage ?? "Спробуйте оновити ще раз.") }
+            .sheet(isPresented: $showingFamilyMore) { NavigationStack { OrbitToolsView() } }
         }
+    }
+
+    private var routesHeader: some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("PRIVATE BY DESIGN / FAMILY")
+                    .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
+                    .foregroundStyle(Routes05Tokens.secondary)
+                Text("Свої.\nПоруч.")
+                    .font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineSpacing(-4)
+                Text("Спільний простір без змішування особистого.")
+                    .font(.footnote.weight(.medium)).foregroundStyle(Routes05Tokens.secondary)
+                    .lineLimit(2)
+                }
+            Image(systemName: "heart.fill")
+                .font(.title2.weight(.black)).foregroundStyle(Routes05Tokens.accentInk)
+                .frame(width: 59, height: 59).background(Routes05Tokens.lilac, in: Circle())
+                .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+        }
+        .padding(.horizontal, 16).padding(.top, 12)
+    }
+
+    private var routesPeopleHero: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 9) {
+                Text("OUR PEOPLE").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.4)
+                Text("Ми —\nна зв’язку.").font(.system(.title, design: .rounded).weight(.black)).tracking(-1.1).lineSpacing(-3)
+                Text("\(profiles.count) ПРОФІЛІВ").font(.caption2.weight(.black)).padding(.horizontal, 8).frame(minHeight: 28).background(Routes05Tokens.mint)
+            }
+            Spacer(minLength: 10)
+            ZStack {
+                Circle().stroke(Routes05Tokens.ink, lineWidth: 7).frame(width: 76, height: 76)
+                Circle().stroke(Routes05Tokens.ink, lineWidth: 4).frame(width: 42, height: 42)
+                Circle().fill(Routes05Tokens.yellow).frame(width: 27, height: 27)
+            }
+        }
+        .foregroundStyle(Routes05Tokens.accentInk)
+        .padding(16)
+        .frame(minHeight: 158)
+        .background(Routes05Tokens.mint)
+        .overlay(Rectangle().stroke(Routes05Tokens.ink, lineWidth: 1))
+        .padding(.horizontal, 16)
+    }
+
+    private var routesProfiles: some View {
+        Group {
+            if profiles.isEmpty && isLoading { ProgressView().frame(maxWidth: .infinity, minHeight: 60) }
+            else if profiles.isEmpty { Routes05StateRow(text: "Профілі ще не доступні.", tint: Routes05Tokens.lilac) }
+            else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(profiles) { profile in
+                            VStack(spacing: 4) {
+                                Text(initials(profile.displayName)).font(.headline.weight(.black)).foregroundStyle(Routes05Tokens.accentInk)
+                                    .frame(width: 56, height: 56).background(profile.isMinor ? Routes05Tokens.yellow : Routes05Tokens.lilac, in: Circle())
+                                    .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 1.5))
+                                Text(profile.displayName.split(separator: " ").first.map(String.init) ?? profile.displayName)
+                                    .font(.caption.weight(.bold)).lineLimit(1)
+                            }
+                            .frame(width: 70)
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+    }
+
+    private var routesLinks: some View {
+        VStack(spacing: 0) {
+            familyRoute("Родинний чат", messages.isEmpty ? "Нове від близьких" : "Відкрити останні повідомлення", "bubble.left.and.bubble.right.fill", Routes05Tokens.mint) { FamilyMessengerView() }
+            familyRoute("Календар", "Плани й сімейні події", "calendar", Routes05Tokens.lilac) { OrbitCalendarView() }
+            familyRoute("Контакти", "Дозволені для профілю", "person.2.fill", Routes05Tokens.yellow) { OrbitContactsView() }
+            familyRoute("Пам’ять", "Спільні факти й історія", "brain.head.profile", Routes05Tokens.orange) { MemoryCenterView() }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func familyRoute<Destination: View>(_ title: String, _ detail: String, _ icon: String, _ tint: Color, @ViewBuilder destination: @escaping () -> Destination) -> some View {
+        NavigationLink { destination() } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.caption.weight(.bold)).foregroundStyle(Routes05Tokens.accentInk)
+                    .frame(width: 36, height: 36).background(tint, in: Circle()).overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 1))
+                VStack(alignment: .leading, spacing: 2) { Text(title).font(.subheadline.weight(.bold)); Text(detail).font(.caption).foregroundStyle(Routes05Tokens.secondary) }
+                Spacer(minLength: 6); Image(systemName: "arrow.right").font(.caption.weight(.black))
+            }
+            .foregroundStyle(Routes05Tokens.ink).frame(minHeight: 62)
+            .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
+        }
+        .buttonStyle(.plain)
     }
 
     private func familyLink<Destination: View>(_ title: String, _ icon: String, _ destination: Destination) -> some View {

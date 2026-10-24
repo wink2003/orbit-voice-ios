@@ -24,7 +24,32 @@ final class SchoolHubStore {
     var calendarLinks: [String: String] = [:]
     private(set) var updatingTaskIDs: Set<String> = []
     private(set) var gate = SchoolHubLoadGate()
+    #if DEBUG
+    private let fixture: Routes05SchoolFixture?
+    #endif
     var scopeKey: String? { gate.scopeKey }
+
+    #if DEBUG
+    init(fixture: Routes05SchoolFixture? = nil) {
+        self.fixture = fixture
+        if let fixture {
+            items = fixture.items
+            events = fixture.events
+            canonicalTasks = fixture.tasks
+            studentNames = fixture.studentNames
+            itemsLoadedOnce = true
+            calendarLoadedOnce = true
+            tasksLoadedOnce = true
+            itemsPhase = .loaded
+            calendarPhase = .loaded
+            tasksPhase = .loaded
+            actionTasksPhase = .loaded
+            actionCapability = .unavailable
+            taskCoverage = "all"
+            gate.reset(to: "routes05-fixture")
+        }
+    }
+    #endif
 
     func reset(to key: String) {
         gate.reset(to: key)
@@ -102,6 +127,9 @@ final class SchoolHubStore {
     func calendarEvent(uid: String) -> OrbitSchulmanagerCalendarEvent? { events.first { $0.uid == uid } }
 
     func load() async {
+        #if DEBUG
+        if fixture != nil { return }
+        #endif
         guard let token = gate.token() else { return }
         itemsPhase = .loading
         calendarPhase = .loading
@@ -244,10 +272,19 @@ final class SchoolHubStore {
 
 // MARK: - School Hub v2
 
+fileprivate enum SchoolV2Section: Hashable { case overview, exams, timetable }
+
 private struct SchoolHubV2View: View {
     let studentLabel: String?
+    let initialSection: SchoolV2Section
     @State private var store = SchoolHubV2Store()
     @State private var tab = 0
+
+    init(studentLabel: String?, initialSection: SchoolV2Section = .overview) {
+        self.studentLabel = studentLabel
+        self.initialSection = initialSection
+        _tab = State(initialValue: initialSection == .exams ? 1 : initialSection == .timetable ? 2 : 0)
+    }
 
     var body: some View {
         Group {
@@ -907,11 +944,19 @@ final class SchoolHubV2Store {
 }
 
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, v2, letter(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, v2(SchoolV2Section), letter(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
     @EnvironmentObject private var authentication: OrbitAuthentication
+
+    #if DEBUG
+    private let fixture: Routes05SchoolFixture?
+    init(fixture: Routes05SchoolFixture? = nil) {
+        self.fixture = fixture
+        _store = State(initialValue: SchoolHubStore(fixture: fixture))
+    }
+    #endif
 
     private var scopeKey: String {
         SchoolHubLoadGate.scopeKey(personId: authentication.personId, impersonating: authentication.impersonating)
@@ -920,6 +965,15 @@ struct SchoolHubView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
+                #if DEBUG
+                if fixture != nil || store.scopeKey == scopeKey {
+                    SchoolCommandCenter(store: store, open: { path.append($0) })
+                } else {
+                    ProgressView("Завантаження школи…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(NovaTodayTokens.canvas)
+                }
+                #else
                 if store.scopeKey == scopeKey {
                     SchoolCommandCenter(store: store, open: { path.append($0) })
                 } else {
@@ -927,6 +981,7 @@ struct SchoolHubView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(NovaTodayTokens.canvas)
                 }
+                #endif
             }
             .navigationDestination(for: Route.self) { route in
                 switch route {
@@ -942,7 +997,7 @@ struct SchoolHubView: View {
                 case .brain: SchoolBrainView()
                 case .teams: SchoolTeamsFutureView()
                 case .history: SchoolActionHistoryView(store: store)
-                case .v2: SchoolHubV2View(studentLabel: store.studentNames.first)
+                case let .v2(section): SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section)
                 case let .letter(id): SchoolDetailLoaderView(itemID: id)
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
@@ -951,6 +1006,9 @@ struct SchoolHubView: View {
             }
         }
         .task(id: scopeKey) {
+            #if DEBUG
+            if fixture != nil { return }
+            #endif
             if store.scopeKey != scopeKey { store.reset(to: scopeKey) }
             await store.load()
         }
@@ -980,43 +1038,114 @@ private struct SchoolCommandCenter: View {
     private var hasOverduePriority: Bool { priorities.contains { $0.detail.hasPrefix("Прострочено") } }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
-                header
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                Routes05Mast(section: "school") { open(.search) }
+                routesHeader
                 if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed { availabilityNotice }
-                prioritySection
-                quickAccessSection
-                schoolHubV2Section
-                messagesSection
-                eventsSection
-                assistantEntry
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 120)
-        }
-        .background(NovaTodayTokens.canvas.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button { open(.search) } label: { Label("Знайти у школі", systemImage: "magnifyingglass") }
-                    Button { open(.timeline) } label: { Label("Хронологія", systemImage: "list.bullet.indent") }
-                    Button { open(.briefing) } label: { Label("Огляд від Orbit", systemImage: "sparkles") }
-                    Button { open(.brain) } label: { Label("Запитати Orbit", systemImage: "bubble.left.and.text.bubble.right") }
-                    Button { open(.teams) } label: { Label("Джерела школи", systemImage: "graduationcap") }
-                    if store.actionCapability.canMutate {
-                        Button { open(.history) } label: { Label("Історія змін", systemImage: "clock.arrow.circlepath") }
+                routesGrid
+                routesAttention
+                routesUpcoming
+                        routesAsk
                     }
-                } label: { Image(systemName: "ellipsis.circle") }
-                    .accessibilityLabel("Інструменти школи")
-            }
+                    .padding(.bottom, 120)
+                }
+                .safeAreaPadding(.bottom, 96)
+                .onAppear {
+                    guard Routes05DebugCapture.scrollToBottom else { return }
+                    DispatchQueue.main.async {
+                        proxy.scrollTo("routes05-school-brain", anchor: .center)
+                    }
+                }
         }
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
         .refreshable { await store.load() }
     }
 
+    private var routesHeader: some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("SOURCE / SCHULMANAGER · READ ONLY")
+                    .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
+                    .foregroundStyle(Routes05Tokens.secondary)
+                Text("Школа.\nНа зв’язку.")
+                    .font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineSpacing(-4)
+                Text("Профіль учня · події, листи й підготовка.")
+                    .font(.footnote.weight(.medium)).foregroundStyle(Routes05Tokens.secondary)
+                    .lineLimit(2)
+                if !store.studentNames.isEmpty {
+                    Text(store.studentNames.joined(separator: " · ")).font(.subheadline.weight(.bold))
+                }
+            }
+            Text("↗").font(.system(size: 29, weight: .black)).foregroundStyle(Routes05Tokens.accentInk)
+                .frame(width: 59, height: 59).background(Routes05Tokens.mint, in: Circle())
+                .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+        }
+        .padding(.horizontal, 16).padding(.top, 12)
+    }
+
+    private var routesGrid: some View {
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)], spacing: 9) {
+            Routes05FilledTile(title: "Вхідні", detail: unread == 0 ? "Усе прочитано" : "\(unread) нові", icon: "arrow.down.left", tint: Routes05Tokens.blue) { open(.inbox) }
+            Routes05FilledTile(title: "Справи", detail: tasksQuickDetail, icon: "square", tint: Routes05Tokens.orange) { open(.tasks) }
+            Routes05FilledTile(title: "Розклад", detail: "Відкрити огляд", icon: "list.bullet.rectangle", tint: Routes05Tokens.mint) { open(.v2(.timetable)) }
+            Routes05FilledTile(title: "Іспити", detail: "Відкрити огляд", icon: "circle", tint: Routes05Tokens.lilac) { open(.v2(.exams)) }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var routesAttention: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Routes05SectionHeader("Потребує уваги", action: "Усі справи") { open(.tasks) }
+            if let item = priorities.first {
+                Button { open(priority: item) } label: {
+                    HStack(spacing: 0) {
+                        Text("!").font(.system(size: 38, weight: .black)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 88).frame(minHeight: 86).background(Routes05Tokens.yellow)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title).font(.headline.weight(.black)).lineLimit(2)
+                            Text(priorityDetail(item)).font(.caption).foregroundStyle(Routes05Tokens.secondary).lineLimit(2)
+                            Text(item.detail.hasPrefix("Прострочено") ? "ДЛЯ РОДИНИ" : "УВАГА")
+                                .font(.caption2.weight(.black)).padding(.horizontal, 8).padding(.vertical, 4).background(Routes05Tokens.orange)
+                        }.padding(10)
+                        Spacer(minLength: 0)
+                    }
+                    .background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
+                }.buttonStyle(.plain)
+            } else { Routes05StateRow(text: "Немає термінових справ або нових важливих повідомлень.", tint: Routes05Tokens.yellow) }
+        }.padding(.horizontal, 16)
+    }
+
+    private var routesUpcoming: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Routes05SectionHeader("Найближче", action: "Всі дати") { open(.calendar) }
+            if upcomingEvents.isEmpty { Routes05StateRow(text: "Найближчих шкільних подій немає.", tint: Routes05Tokens.mint) }
+            else {
+                ForEach(Array(upcomingEvents.prefix(3).enumerated()), id: \.element.uid) { index, event in
+                    Routes05IndexedRow(index: eventDay(event), tint: index.isMultiple(of: 2) ? Routes05Tokens.orange : Routes05Tokens.mint) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(event.title).font(.subheadline.weight(.bold)).lineLimit(2)
+                            Text(eventSummary(event)).font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                        }
+                    }
+                }
+            }
+        }.padding(.horizontal, 16)
+    }
+
+    private var routesAsk: some View {
+        Button { open(.brain) } label: {
+            HStack { Text("Запитати про школу").font(.headline.weight(.black)); Spacer(); Text("Пошук і хронологія →").font(.caption.weight(.bold)).foregroundStyle(Routes05Tokens.blue) }
+                .foregroundStyle(Routes05Tokens.ink).frame(minHeight: 52).padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+        .id("routes05-school-brain")
+        .accessibilityIdentifier("routes05-school-brain")
+    }
+
     private var schoolHubV2Section: some View {
-        Button { open(.v2) } label: {
+        Button { open(.v2(.overview)) } label: {
             HStack(spacing: 12) {
                 Image(systemName: "graduationcap.fill").font(.title3).foregroundStyle(NovaTodayTokens.teal)
                 VStack(alignment: .leading, spacing: 3) {
@@ -1033,7 +1162,7 @@ private struct SchoolCommandCenter: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Школа").font(.system(.largeTitle, design: .rounded).weight(.bold))
+            Routes05Chapter("SCHOOL / SOURCE", title: "Школа.", detail: "Schulmanager · лише читання", accent: Routes05Tokens.mint)
             if !store.studentNames.isEmpty {
                 Text(store.studentNames.count == 1 ? store.studentNames[0] : store.studentNames.joined(separator: " · "))
                     .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
