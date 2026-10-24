@@ -372,7 +372,7 @@ struct MainOrbit3FamilyView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     Routes05Mast(section: "family")
                     routesHeader
                     routesPeopleHero
@@ -386,6 +386,7 @@ struct MainOrbit3FamilyView: View {
                         .padding(.horizontal, 14)
                         .background(Routes05Tokens.ink)
                 }
+                .padding(.top, 8)
                 .padding(.bottom, 24)
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
@@ -412,7 +413,7 @@ struct MainOrbit3FamilyView: View {
     }
 
     private var routesHeader: some View {
-        HStack(alignment: .top, spacing: 12) {
+        ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("PRIVATE BY DESIGN / FAMILY")
                     .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
@@ -420,9 +421,9 @@ struct MainOrbit3FamilyView: View {
                 Text("Свої.\nПоруч.")
                     .font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineSpacing(-4)
                 Text("Спільний простір без змішування особистого.")
-                    .font(.subheadline.weight(.medium)).foregroundStyle(Routes05Tokens.secondary)
-            }
-            Spacer(minLength: 4)
+                    .font(.footnote.weight(.medium)).foregroundStyle(Routes05Tokens.secondary)
+                    .lineLimit(2)
+                }
             Image(systemName: "heart.fill")
                 .font(.title2.weight(.black)).foregroundStyle(Routes05Tokens.ink)
                 .frame(width: 59, height: 59).background(Routes05Tokens.lilac, in: Circle())

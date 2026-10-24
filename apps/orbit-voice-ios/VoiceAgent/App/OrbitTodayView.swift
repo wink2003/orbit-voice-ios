@@ -23,7 +23,7 @@ struct OrbitTodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     Routes05Mast(section: "core") { open(.orbit) }
                     routesHeader
                     routesNextUp
@@ -43,7 +43,7 @@ struct OrbitTodayView: View {
     }
 
     private var routesHeader: some View {
-        HStack(alignment: .top, spacing: 12) {
+        ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(today.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased())
                     .font(.system(size: 11, weight: .black, design: .monospaced))
@@ -54,10 +54,10 @@ struct OrbitTodayView: View {
                     .tracking(-1.8)
                     .lineSpacing(-4)
                 Text("Один маршрут для всього, що має значення.")
-                    .font(.subheadline.weight(.medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(Routes05Tokens.secondary)
+                    .lineLimit(2)
             }
-            Spacer(minLength: 4)
             Text("↗")
                 .font(.system(size: 29, weight: .black))
                 .foregroundStyle(Routes05Tokens.ink)

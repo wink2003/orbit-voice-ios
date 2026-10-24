@@ -47,7 +47,7 @@ struct OrbitChatsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     Routes05Mast(section: "core") { showingVoice = true }
                     Routes05Chapter("ORBIT / 02", title: "Orbit / розмови", detail: "Ваші розмови, збережені в Orbit.", accent: Routes05Tokens.yellow)
                     coreAgentHero
@@ -76,6 +76,7 @@ struct OrbitChatsView: View {
                     .buttonStyle(.plain)
                     .padding(.top, 2)
                 }
+                .padding(.top, 8)
                 .padding(.bottom, 24)
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())

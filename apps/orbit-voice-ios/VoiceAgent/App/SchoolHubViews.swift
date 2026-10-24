@@ -1030,7 +1030,7 @@ private struct SchoolCommandCenter: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 Routes05Mast(section: "school") { open(.search) }
                 routesHeader
                 if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed { availabilityNotice }
@@ -1047,7 +1047,7 @@ private struct SchoolCommandCenter: View {
     }
 
     private var routesHeader: some View {
-        HStack(alignment: .top, spacing: 12) {
+        ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("SOURCE / SCHULMANAGER · READ ONLY")
                     .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
@@ -1055,12 +1055,12 @@ private struct SchoolCommandCenter: View {
                 Text("Школа.\nНа зв’язку.")
                     .font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineSpacing(-4)
                 Text("Профіль учня · події, листи й підготовка.")
-                    .font(.subheadline.weight(.medium)).foregroundStyle(Routes05Tokens.secondary)
+                    .font(.footnote.weight(.medium)).foregroundStyle(Routes05Tokens.secondary)
+                    .lineLimit(2)
                 if !store.studentNames.isEmpty {
                     Text(store.studentNames.joined(separator: " · ")).font(.subheadline.weight(.bold))
                 }
             }
-            Spacer(minLength: 4)
             Text("↗").font(.system(size: 29, weight: .black)).foregroundStyle(Routes05Tokens.ink)
                 .frame(width: 59, height: 59).background(Routes05Tokens.mint, in: Circle())
                 .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
