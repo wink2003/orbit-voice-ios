@@ -47,6 +47,16 @@ enum Routes05DebugFixtures {
         OrbitChatMessage(id: "routes05-orbit-message", conversationId: "routes05-personal", senderKind: "orbit", senderPersonId: nil, content: "Ось ваш маршрут на завтра.\n\n08:00 — Школа\nПочаток занять\n\n13:40 — Плавання\nВзяти спортивну сумку\n\n19:00 — Підготовка\nПереглянути справи", createdAt: now.addingTimeInterval(-840), clientMessageId: nil, actionConfirmation: nil)
     ]
 
+    static let schoolBrainMessages: [OrbitSchoolBrainMessage] = [
+        OrbitSchoolBrainMessage(
+            id: "routes05-brain-answer",
+            role: "assistant",
+            content: "Цього тижня важливо підготувати матеріали до Projektwoche. Перевірте дату в оригіналі листа та підтвердіть сімейні дії окремо.",
+            sourceRefs: [["id": "routes05-letter", "type": "letter"]],
+            createdAt: now
+        )
+    ]
+
     static let school: Routes05SchoolFixture = {
         let letter = OrbitSchoolItem(
             id: "routes05-letter", type: "letter", source: "schulmanager", externalId: "routes05-letter",

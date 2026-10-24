@@ -277,14 +277,30 @@ fileprivate enum SchoolV2Section: Hashable { case overview, exams, timetable }
 private struct SchoolHubV2View: View {
     let studentLabel: String?
     let initialSection: SchoolV2Section
+#if DEBUG
+    private let debugFixture: Routes05SchoolFixture?
+#endif
     @State private var store = SchoolHubV2Store()
     @State private var tab = 0
 
     init(studentLabel: String?, initialSection: SchoolV2Section = .overview) {
         self.studentLabel = studentLabel
         self.initialSection = initialSection
+#if DEBUG
+        self.debugFixture = nil
+#endif
         _tab = State(initialValue: initialSection == .exams ? 1 : initialSection == .timetable ? 2 : 0)
     }
+
+#if DEBUG
+    init(studentLabel: String?, initialSection: SchoolV2Section = .overview, fixture: Routes05SchoolFixture) {
+        self.studentLabel = studentLabel
+        self.initialSection = initialSection
+        self.debugFixture = fixture
+        _store = State(initialValue: SchoolHubV2Store(fixture: fixture))
+        _tab = State(initialValue: initialSection == .exams ? 1 : initialSection == .timetable ? 2 : 0)
+    }
+#endif
 
     var body: some View {
         Group {
@@ -302,7 +318,13 @@ private struct SchoolHubV2View: View {
         }
         .navigationTitle("Школа v2")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: store.weekStart) { await store.load() }
+        .task(id: store.weekStart) {
+#if DEBUG
+            if debugFixture == nil { await store.load() }
+#else
+            await store.load()
+#endif
+        }
         .refreshable { await store.load() }
     }
 
@@ -440,9 +462,22 @@ private struct SchoolHubV2View: View {
 private struct SchoolV2StateView: View {
     let title: String; let message: String; let icon: String; let retry: (() -> Void)?
     var body: some View {
-        ContentUnavailableView { Label(title, systemImage: icon) } description: { Text(message) } actions: {
-            if let retry { Button("Повторити", action: retry).buttonStyle(.bordered) }
+        ScrollView {
+            VStack(spacing: 16) {
+                Routes05ContextHeader(
+                    section: "school",
+                    eyebrow: "SCHOOL / COVERAGE",
+                    title: "Дані школи.\nПід контролем.",
+                    detail: "Стан джерела відображається чесно; зовнішні записи залишаються лише для читання.",
+                    accent: Routes05Tokens.mint
+                )
+                ContentUnavailableView { Label(title, systemImage: icon) } description: { Text(message) } actions: {
+                    if let retry { Button("Повторити", action: retry).buttonStyle(.bordered) }
+                }
+                .padding(.vertical, 32)
+            }
         }
+        .background(Routes05Tokens.canvas)
     }
 }
 
@@ -913,6 +948,26 @@ final class SchoolHubV2Store {
     var errorText: String?
     var weekEnd: String { SchoolHubLogic.addDays(7, to: weekStart) ?? weekStart }
 
+    init() {}
+
+#if DEBUG
+    init(fixture: Routes05SchoolFixture) {
+        let observed = Date(timeIntervalSince1970: 1_729_555_200)
+        let freshness = OrbitSchoolHubV2Freshness(state: "READY_WITH_DATA", sourceStates: ["schulmanager": "READY"], observedAt: observed, source: "schulmanager", fingerprint: "routes05")
+        let coverage = OrbitSchoolHubV2Coverage(state: "READY_WITH_DATA", rowCount: 2, sourceStatus: "READY", sourceFingerprint: "routes05", successfulSyncAt: observed, observedAt: observed, errorCode: nil, startDayKey: "2026-10-19", endDayKey: "2026-10-25")
+        let exam = OrbitSchoolHubV2Exam(id: "routes05-exam", subject: "Deutsch", dayKey: "2026-10-24", lessonStart: 3, lessonEnd: 4, startsAt: "2026-10-24T10:00:00+02:00", room: "5F", teacher: "M. Bauer", group: nil, groupName: nil, startClassHourNumber: 3, typeName: "Klassenarbeit", typeColor: "#C9B8FF", typeVisibleForStudents: true, comment: "Projektwoche", status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
+        let lessons = fixture.items.enumerated().map { index, _ in
+            OrbitSchoolHubV2TimetableEntry(id: "routes05-lesson-\(index)", dayKey: "2026-10-24", localDate: "2026-10-24", lessonIndex: index + 1, subject: index == 0 ? "Deutsch" : "Mathematik", teacher: "M. Bauer", room: "5F", group: nil, groupName: nil, startsAt: "2026-10-24T08:00:00+02:00", endsAt: "2026-10-24T08:45:00+02:00", startsAtLocal: index == 0 ? "08:00" : "09:00", endsAtLocal: index == 0 ? "08:45" : "09:45", classHourNumber: index + 1, isCancelled: false, originalLessonCount: 1, teachers: [OrbitSchoolHubV2Teacher(abbreviation: "MB")], groups: [OrbitSchoolHubV2Group(name: "5F")], status: "scheduled", kind: "lesson", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
+        }
+        overview = OrbitSchoolHubV2Overview(state: "READY", freshness: freshness, sourceStates: ["schulmanager": "READY"], profileTitle: fixture.studentNames.first, todayDayKey: "2026-10-24", upcomingExams: [exam], projects: [], coverage: ["timetable": coverage, "exams": coverage])
+        exams = [exam]
+        timetable = lessons
+        self.freshness = freshness
+        coverageState = "READY_WITH_DATA"
+        phase = .ready
+    }
+#endif
+
     func load() async {
         phase = .loading; errorText = nil
         do {
@@ -1032,12 +1087,23 @@ struct SchoolHubView: View {
                 case .calendar: SchoolWeekCalendarView(store: store).routes05ContextSurface().navigationTitle("Дати").navigationBarTitleDisplayMode(.inline)
                 case .timeline: SchoolTimelineView(store: store).routes05ContextSurface()
                 case .search: SchoolUnifiedSearchView(store: store).routes05ContextSurface()
+#if DEBUG
+                case .briefing: SchoolTasksView(fixture: fixture ?? Routes05DebugFixtures.school).routes05ContextSurface()
+                case .brain: SchoolBrainView(fixture: fixture ?? Routes05DebugFixtures.school).routes05ContextSurface()
+#else
                 case .briefing: SchoolTasksView().routes05ContextSurface()
                 case .brain: SchoolBrainView().routes05ContextSurface()
+#endif
                 case .teams: SchoolTeamsFutureView()
                 case .history: SchoolActionHistoryView(store: store).routes05ContextSurface()
                 case let .notes(entityType, entityId): SchoolNotesView(store: store, entityType: entityType, entityId: entityId).routes05ContextSurface()
-                case let .v2(section): SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface()
+                case let .v2(section):
+#if DEBUG
+                    if let fixture { SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section, fixture: fixture).routes05ContextSurface() }
+                    else { SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface() }
+#else
+                    SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface()
+#endif
                 case let .letter(id):
                     #if DEBUG
                     if let item = fixture?.items.first(where: { $0.id == id }) { SchoolDetailView(item: item) }

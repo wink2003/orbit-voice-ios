@@ -6,6 +6,22 @@ struct SchoolBrainView: View {
     @Environment(\.novaDockTopY) private var dockTopY
     @State private var contentMaxY: CGFloat = 0
     @FocusState private var composerFocused: Bool
+#if DEBUG
+    private let debugFixture: Routes05SchoolFixture?
+#endif
+
+    init() {
+#if DEBUG
+        self.debugFixture = nil
+#endif
+    }
+
+#if DEBUG
+    init(fixture: Routes05SchoolFixture) {
+        self.debugFixture = fixture
+        _model = State(initialValue: SchoolBrainChatModel(service: SchoolBrainLiveService(), debugMessages: Routes05DebugFixtures.schoolBrainMessages))
+    }
+#endif
 
     var body: some View {
         @Bindable var model = model
@@ -29,7 +45,13 @@ struct SchoolBrainView: View {
         .background(Routes05Tokens.canvas.ignoresSafeArea())
         .navigationTitle("Запитати про школу")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await model.load() }
+        .task {
+#if DEBUG
+            if debugFixture == nil { await model.load() }
+#else
+            await model.load()
+#endif
+        }
     }
 
     @ViewBuilder private var transcript: some View {

@@ -321,11 +321,28 @@ struct SchoolCalendarView: View {
 }
 
 struct SchoolTasksView: View {
+#if DEBUG
+    private let fixture: Routes05SchoolFixture?
+#endif
     @State private var briefing: OrbitSchoolBriefingResponse?
     @State private var windowFrom = ""
     @State private var windowTo = ""
     @State private var error: String?
     @State private var loading = false
+
+    init() {
+#if DEBUG
+        self.fixture = nil
+#endif
+    }
+
+#if DEBUG
+    init(fixture: Routes05SchoolFixture) {
+        self.fixture = fixture
+        let item = OrbitSchoolBriefingItem(date: "2026-10-24", title: fixture.tasks.first?.title ?? "Підготовка до тесту", detail: fixture.tasks.first?.action ?? "Перевірити дату в джерелі", sourceRefs: [OrbitSchoolBriefingSource(id: fixture.items.first?.id ?? "routes05-letter", type: "letter")])
+        _briefing = State(initialValue: OrbitSchoolBriefingResponse(from: "2026-10-24", to: "2026-10-31", timeZone: "Europe/Berlin", dated: [item], attention: []))
+    }
+#endif
 
     var body: some View {
         List {
@@ -345,7 +362,13 @@ struct SchoolTasksView: View {
             } else if !loading { ContentUnavailableView("Огляд недоступний", systemImage: "calendar.badge.exclamationmark") }
         }
         .navigationTitle("Наступні 10 днів")
-        .task { await load() }
+        .task {
+#if DEBUG
+            if fixture == nil { await load() }
+#else
+            await load()
+#endif
+        }
         .refreshable { await load() }
         .alert("Шкільний огляд", isPresented: SchoolBrainRequestState.alertBinding(error: $error)) { Button("Повторити") { Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
     }

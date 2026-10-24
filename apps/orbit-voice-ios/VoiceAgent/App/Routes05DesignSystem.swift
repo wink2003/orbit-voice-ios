@@ -363,6 +363,7 @@ struct Routes05ContextSurface: ViewModifier {
             .scrollContentBackground(.hidden)
             .background(Routes05Tokens.canvas)
             .tint(Routes05Tokens.blue)
+            .listStyle(.plain)
             .toolbarBackground(Routes05Tokens.canvas, for: .navigationBar)
     }
 }

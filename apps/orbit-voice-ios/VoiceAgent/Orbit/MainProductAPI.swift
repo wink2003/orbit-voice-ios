@@ -228,6 +228,19 @@ struct OrbitSchoolHubV2Timetable: Decodable, Hashable {
     let coverage: OrbitSchoolHubV2Coverage?
 }
 struct OrbitSchoolHubV2TimetableResponse: Decodable { let timetable: OrbitSchoolHubV2Timetable }
+#if DEBUG
+extension OrbitSchoolHubV2Exam {
+    init(id: String, subject: String, dayKey: String, lessonStart: Int?, lessonEnd: Int?, startsAt: String?, room: String?, teacher: String?, group: String?, groupName: String?, startClassHourNumber: Int?, typeName: String?, typeColor: String?, typeVisibleForStudents: Bool?, comment: String?, status: String?, source: String?, sourceFingerprint: String?, observedAt: Date?) {
+        self.id = id; self.subject = subject; self.dayKey = dayKey; self.lessonStart = lessonStart; self.lessonEnd = lessonEnd; self.startsAt = startsAt; self.room = room; self.teacher = teacher; self.group = group; self.groupName = groupName; self.startClassHourNumber = startClassHourNumber; self.typeName = typeName; self.typeColor = typeColor; self.typeVisibleForStudents = typeVisibleForStudents; self.comment = comment; self.status = status; self.source = source; self.sourceFingerprint = sourceFingerprint; self.observedAt = observedAt
+    }
+}
+
+extension OrbitSchoolHubV2TimetableEntry {
+    init(id: String, dayKey: String, localDate: String, lessonIndex: Int, subject: String, teacher: String?, room: String?, group: String?, groupName: String?, startsAt: String?, endsAt: String?, startsAtLocal: String?, endsAtLocal: String?, classHourNumber: Int?, isCancelled: Bool, originalLessonCount: Int, teachers: [OrbitSchoolHubV2Teacher], groups: [OrbitSchoolHubV2Group], status: String?, kind: String?, source: String?, sourceFingerprint: String?, observedAt: Date?) {
+        self.id = id; self.dayKey = dayKey; self.localDate = localDate; self.lessonIndex = lessonIndex; self.subject = subject; self.teacher = teacher; self.room = room; self.group = group; self.groupName = groupName; self.startsAt = startsAt; self.endsAt = endsAt; self.startsAtLocal = startsAtLocal; self.endsAtLocal = endsAtLocal; self.classHourNumber = classHourNumber; self.isCancelled = isCancelled; self.originalLessonCount = originalLessonCount; self.teachers = teachers; self.groups = groups; self.status = status; self.kind = kind; self.source = source; self.sourceFingerprint = sourceFingerprint; self.observedAt = observedAt
+    }
+}
+#endif
 struct OrbitSchoolActionTask: Codable, Identifiable, Hashable {
     let id: String
     let kind: String
