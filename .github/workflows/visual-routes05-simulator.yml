@@ -96,6 +96,15 @@ jobs:
               sleep 3
               perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-${screen}-${appearance}.png"
               test -s "$out/routes05-${screen}-${appearance}.png"
+
+              printf 'Capturing bottom reachability for %s / %s\n' "$screen" "$appearance"
+              xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+              bottom_args="--routes05-$screen --routes05-bottom"
+              if [ "$appearance" = dark ]; then bottom_args="$bottom_args --routes05-dark"; fi
+              perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $bottom_args
+              sleep 3
+              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-${screen}-${appearance}-bottom.png"
+              test -s "$out/routes05-${screen}-${appearance}-bottom.png"
             done
           done
 

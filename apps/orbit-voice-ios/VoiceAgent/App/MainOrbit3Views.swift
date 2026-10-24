@@ -371,8 +371,9 @@ struct MainOrbit3FamilyView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                     Routes05Mast(section: "family")
                     routesHeader
                     routesPeopleHero
@@ -381,13 +382,19 @@ struct MainOrbit3FamilyView: View {
                     routesLinks
                     Text("ДОСТУП І ПРИВАТНІСТЬ")
                         .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.4)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Routes05Tokens.darkSurfaceInk)
                         .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                         .padding(.horizontal, 14)
-                        .background(Routes05Tokens.ink)
+                        .background(Routes05Tokens.darkSurface)
+                        Color.clear.frame(height: 1).id("routes05-bottom")
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
                 }
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                .onAppear {
+                    guard Routes05DebugCapture.scrollToBottom else { return }
+                    DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
+                }
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)

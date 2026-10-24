@@ -272,10 +272,19 @@ final class SchoolHubStore {
 
 // MARK: - School Hub v2
 
+fileprivate enum SchoolV2Section: Hashable { case overview, exams, timetable }
+
 private struct SchoolHubV2View: View {
     let studentLabel: String?
+    let initialSection: SchoolV2Section
     @State private var store = SchoolHubV2Store()
     @State private var tab = 0
+
+    init(studentLabel: String?, initialSection: SchoolV2Section = .overview) {
+        self.studentLabel = studentLabel
+        self.initialSection = initialSection
+        _tab = State(initialValue: initialSection == .exams ? 1 : initialSection == .timetable ? 2 : 0)
+    }
 
     var body: some View {
         Group {
@@ -935,7 +944,7 @@ final class SchoolHubV2Store {
 }
 
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, v2, letter(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, v2(SchoolV2Section), letter(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -988,7 +997,7 @@ struct SchoolHubView: View {
                 case .brain: SchoolBrainView()
                 case .teams: SchoolTeamsFutureView()
                 case .history: SchoolActionHistoryView(store: store)
-                case .v2: SchoolHubV2View(studentLabel: store.studentNames.first)
+                case let .v2(section): SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section)
                 case let .letter(id): SchoolDetailLoaderView(itemID: id)
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
@@ -1029,8 +1038,9 @@ private struct SchoolCommandCenter: View {
     private var hasOverduePriority: Bool { priorities.contains { $0.detail.hasPrefix("Прострочено") } }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 16) {
                 Routes05Mast(section: "school") { open(.search) }
                 routesHeader
                 if store.itemsPhase == .failed || store.calendarPhase == .failed || store.tasksPhase == .failed { availabilityNotice }
@@ -1038,8 +1048,14 @@ private struct SchoolCommandCenter: View {
                 routesAttention
                 routesUpcoming
                 routesAsk
-            }
-            .padding(.bottom, 120)
+                        Color.clear.frame(height: 1).id("routes05-bottom")
+                    }
+                    .padding(.bottom, 120)
+                }
+                .onAppear {
+                    guard Routes05DebugCapture.scrollToBottom else { return }
+                    DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
+                }
         }
         .background(Routes05Tokens.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -1072,8 +1088,8 @@ private struct SchoolCommandCenter: View {
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)], spacing: 9) {
             Routes05FilledTile(title: "Вхідні", detail: unread == 0 ? "Усе прочитано" : "\(unread) нові", icon: "arrow.down.left", tint: Routes05Tokens.blue) { open(.inbox) }
             Routes05FilledTile(title: "Справи", detail: tasksQuickDetail, icon: "square", tint: Routes05Tokens.orange) { open(.tasks) }
-            Routes05FilledTile(title: "Розклад", detail: "Відкрити огляд", icon: "list.bullet.rectangle", tint: Routes05Tokens.mint) { open(.v2) }
-            Routes05FilledTile(title: "Іспити", detail: "Відкрити огляд", icon: "circle", tint: Routes05Tokens.lilac) { open(.v2) }
+            Routes05FilledTile(title: "Розклад", detail: "Відкрити огляд", icon: "list.bullet.rectangle", tint: Routes05Tokens.mint) { open(.v2(.timetable)) }
+            Routes05FilledTile(title: "Іспити", detail: "Відкрити огляд", icon: "circle", tint: Routes05Tokens.lilac) { open(.v2(.exams)) }
         }
         .padding(.horizontal, 16)
     }
@@ -1124,7 +1140,7 @@ private struct SchoolCommandCenter: View {
     }
 
     private var schoolHubV2Section: some View {
-        Button { open(.v2) } label: {
+        Button { open(.v2(.overview)) } label: {
             HStack(spacing: 12) {
                 Image(systemName: "graduationcap.fill").font(.title3).foregroundStyle(NovaTodayTokens.teal)
                 VStack(alignment: .leading, spacing: 3) {

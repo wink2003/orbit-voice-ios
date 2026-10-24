@@ -96,7 +96,7 @@ private struct NovaDock: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .foregroundStyle(selection == item ? Routes05Tokens.ink : Routes05Tokens.secondary)
+                    .foregroundStyle(selection == item ? Routes05Tokens.accentInk : Routes05Tokens.secondary)
                     .background {
                         if selection == item {
                             Rectangle().fill(Routes05Tokens.yellow)

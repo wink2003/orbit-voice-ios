@@ -22,18 +22,25 @@ struct OrbitTodayView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 16) {
                     Routes05Mast(section: "core") { open(.orbit) }
                     routesHeader
                     routesNextUp
                     routesSchedule
                     routesTasks
                     routesMessages
-                    freshness
+                        freshness
+                        Color.clear.frame(height: 1).id("routes05-bottom")
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
                 }
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                .onAppear {
+                    guard Routes05DebugCapture.scrollToBottom else { return }
+                    DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
+                }
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
@@ -84,7 +91,7 @@ struct OrbitTodayView: View {
                     .foregroundStyle(Routes05Tokens.ink.opacity(0.78))
                 Button("ПЕРЕГЛЯНУТИ →") { open(.school) }
                     .font(.caption.weight(.black))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Routes05Tokens.accentInk)
                     .padding(.horizontal, 10)
                     .frame(minHeight: 36)
                     .background(Routes05Tokens.blue)
@@ -106,10 +113,10 @@ struct OrbitTodayView: View {
                 if visible.isEmpty { Routes05StateRow(text: "Подій на сьогодні немає.", tint: Routes05Tokens.blue) }
                 else {
                     ForEach(Array(visible.prefix(4))) { event in
-                        Routes05IndexedRow(index: event.startsAt.formatted(.dateTime.hour().minute()), tint: Routes05Tokens.blue) {
+                        Routes05IndexedRow(index: Routes05DisplayFormat.compactTime(event.startsAt), tint: Routes05Tokens.blue) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(event.title).font(.subheadline.weight(.bold)).lineLimit(2)
-                                Text(event.allDay ? "Весь день" : event.startsAt.formatted(date: .omitted, time: .shortened))
+                                Text(event.allDay ? "Весь день" : Routes05DisplayFormat.compactTime(event.startsAt))
                                     .font(.caption).foregroundStyle(Routes05Tokens.secondary)
                             }
                         }

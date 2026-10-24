@@ -46,8 +46,9 @@ struct OrbitChatsView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                     Routes05Mast(section: "core") { showingVoice = true }
                     Routes05Chapter("ORBIT / 02", title: "Orbit / розмови", detail: "Ваші розмови, збережені в Orbit.", accent: Routes05Tokens.yellow)
                     coreAgentHero
@@ -68,16 +69,22 @@ struct OrbitChatsView: View {
                             Spacer()
                             Image(systemName: "arrow.right").font(.caption.weight(.black))
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Routes05Tokens.darkSurfaceInk)
                         .padding(.horizontal, 12)
                         .frame(minHeight: 44)
-                        .background(Routes05Tokens.ink)
+                        .background(Routes05Tokens.darkSurface)
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, 2)
+                        .padding(.top, 2)
+                    Color.clear.frame(height: 1).id("routes05-bottom")
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
                 }
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                .onAppear {
+                    guard Routes05DebugCapture.scrollToBottom else { return }
+                    DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
+                }
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
@@ -140,7 +147,7 @@ struct OrbitChatsView: View {
                     .font(.caption.weight(.black)).foregroundStyle(Routes05Tokens.ink)
                     .padding(.horizontal, 8).frame(minHeight: 34).background(Routes05Tokens.mint)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(Routes05Tokens.darkSurfaceInk)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(18)
             ZStack {
@@ -151,7 +158,7 @@ struct OrbitChatsView: View {
             .background(Routes05Tokens.mint)
         }
         .frame(minHeight: 162)
-        .background(Routes05Tokens.ink)
+        .background(Routes05Tokens.darkSurface)
         .overlay(Rectangle().stroke(Routes05Tokens.ink, lineWidth: 1))
         .padding(.horizontal, 16)
     }
@@ -161,9 +168,9 @@ struct OrbitChatsView: View {
             ForEach(["Всі", "Особисті", "Сімейні"], id: \.self) { value in
                 Button(value) { selectedFilter = value }
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(selectedFilter == value ? .white : Routes05Tokens.ink)
+                    .foregroundStyle(selectedFilter == value ? Routes05Tokens.darkSurfaceInk : Routes05Tokens.ink)
                     .padding(.horizontal, 13).frame(minHeight: 36)
-                    .background(selectedFilter == value ? Routes05Tokens.ink : Routes05Tokens.surface, in: Capsule())
+                    .background(selectedFilter == value ? Routes05Tokens.darkSurface : Routes05Tokens.surface, in: Capsule())
                     .overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: 1))
             }
         }

@@ -35,7 +35,13 @@ enum Routes05Tokens {
         UIColor(hex: traits.userInterfaceStyle == .dark ? "BFA9F2" : "C9B8FF")
     })
 
-    static func foreground(on accent: Color) -> Color { ink }
+    /// Fixed contrast colors for authored ROUTES surfaces. Dynamic `ink` is
+    /// intentionally not used here because it becomes near-white in dark mode.
+    static let accentInk = Color(uiColor: UIColor(hex: "161D1B"))
+    static let darkSurface = Color(uiColor: UIColor(hex: "161D1B"))
+    static let darkSurfaceInk = Color(uiColor: UIColor(hex: "F5F5E9"))
+
+    static func foreground(on accent: Color) -> Color { accentInk }
 }
 private extension UIColor {
     convenience init(hex: String) {
@@ -118,6 +124,7 @@ struct Routes05Hero<Content: View>: View {
             .background(accent).clipShape(RoundedRectangle(cornerRadius: 4))
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.5))
             .shadow(color: Routes05Tokens.ink, radius: 0, x: 4, y: 4)
+            .foregroundStyle(Routes05Tokens.accentInk)
             .padding(.horizontal, 16)
     }
 }
@@ -198,7 +205,7 @@ struct Routes05FilledTile: View {
                 Text(title).font(.headline.weight(.black)).lineLimit(2)
                 Text(detail).font(.caption.weight(.medium)).lineLimit(2)
             }
-            .foregroundStyle(Routes05Tokens.ink)
+            .foregroundStyle(Routes05Tokens.accentInk)
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
             .background(tint)
@@ -274,5 +281,25 @@ struct Routes05ContextSurface: ViewModifier {
 extension View {
     func routes05ContextSurface() -> some View {
         modifier(Routes05ContextSurface())
+    }
+}
+
+#if DEBUG
+enum Routes05DebugCapture {
+    static let scrollToBottom = ProcessInfo.processInfo.arguments.contains("--routes05-bottom")
+}
+#else
+enum Routes05DebugCapture {
+    static let scrollToBottom = false
+}
+#endif
+
+enum Routes05DisplayFormat {
+    static func compactTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "uk_UA")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 }
