@@ -347,6 +347,13 @@ private struct OrbitConversationView: View {
                     .safeAreaPadding(.top, 8)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                // The native navigation bar is rendered above this scroll
+                // viewport on the conversation route. Reserve its footprint
+                // for every scroll position, including scroll-to-latest, so
+                // the ROUTES masthead cannot slide underneath toolbar items.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: 96)
+                }
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     max(0, geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height)
                 } action: { _, distanceFromLatest in
