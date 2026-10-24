@@ -263,16 +263,21 @@ private struct OrbitConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Routes05ContextHeader(
+                section: "core",
+                eyebrow: "CORE AGENT / CONVERSATION",
+                title: OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title),
+                detail: "Контекст, джерела й підтвердження — в одному маршруті.",
+                accent: Routes05Tokens.blue
+            )
+            // The parent chat list hides its navigation bar. Reserve the
+            // native conversation toolbar footprint before the fixed route
+            // masthead so the two native layers never overlap.
+            .padding(.top, 96)
+
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                        Routes05ContextHeader(
-                            section: "core",
-                            eyebrow: "CORE AGENT / CONVERSATION",
-                            title: OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title),
-                            detail: "Контекст, джерела й підтвердження — в одному маршруті.",
-                            accent: Routes05Tokens.blue
-                        )
                         if messages.isEmpty && !isSending {
                             VStack(alignment: .leading, spacing: 14) {
                                 Label("Чим допомогти?", systemImage: "sparkles")
@@ -370,10 +375,6 @@ private struct OrbitConversationView: View {
                     scrollToLatest(using: proxy, animated: false)
                 }
             }
-            // Reserve the inline native navigation-bar footprint on the
-            // viewport, rather than in transcript content. This keeps
-            // scroll-to-latest from cancelling the masthead clearance.
-            .padding(.top, 96)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Divider()
