@@ -251,20 +251,12 @@ private struct OrbitConversationView: View {
     @State private var showingVoice = false
     @State private var searchText = ""
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
-    #if DEBUG
     private let debugMessages: [OrbitChatMessage]?
-    #endif
 
-    init(conversation: OrbitConversation, initialDraft: String? = nil
-         #if DEBUG
-         , debugMessages: [OrbitChatMessage]? = nil
-         #endif
-    ) {
+    init(conversation: OrbitConversation, initialDraft: String? = nil, debugMessages: [OrbitChatMessage]? = nil) {
         self.conversation = conversation
         self.initialDraft = initialDraft
-        #if DEBUG
         self.debugMessages = debugMessages
-        #endif
         _draft = State(initialValue: initialDraft ?? "")
     }
 

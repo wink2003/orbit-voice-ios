@@ -55,18 +55,19 @@ struct SchoolInboxView: View {
     private let fixture: Routes05SchoolFixture?
     #endif
 
-    init(embeddedInNavigation: Bool = false, hubMode: Bool = false
-         #if DEBUG
-         , fixture: Routes05SchoolFixture? = nil
-         #endif
-    ) {
+    #if DEBUG
+    init(embeddedInNavigation: Bool = false, hubMode: Bool = false, fixture: Routes05SchoolFixture? = nil) {
         self.embeddedInNavigation = embeddedInNavigation
         self.hubMode = hubMode
-        #if DEBUG
         self.fixture = fixture
         _items = State(initialValue: fixture?.items ?? [])
-        #endif
     }
+    #else
+    init(embeddedInNavigation: Bool = false, hubMode: Bool = false) {
+        self.embeddedInNavigation = embeddedInNavigation
+        self.hubMode = hubMode
+    }
+    #endif
 
     var body: some View {
         Group {
