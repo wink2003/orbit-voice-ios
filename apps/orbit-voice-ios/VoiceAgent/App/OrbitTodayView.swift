@@ -131,13 +131,13 @@ struct OrbitTodayView: View {
                 HStack(spacing: 0) {
                     Text(String(format: "%02d", count))
                         .font(.system(size: 42, weight: .black, design: .rounded))
-                        .frame(width: 88, maxHeight: .infinity)
+                        .frame(width: 88).frame(maxHeight: .infinity)
                         .foregroundStyle(Routes05Tokens.ink)
                         .background(Routes05Tokens.orange)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(count == 0 ? "На сьогодні" : "Відкриті справи").font(.headline.weight(.black))
                         Text(count == 0 ? "Усе під контролем" : "Потребують уваги").font(.caption).foregroundStyle(Routes05Tokens.secondary)
-                        Text(count == 0 ? "0 / завершено" : "(count) / у роботі")
+                        Text(count == 0 ? "0 / завершено" : "\(count) / у роботі")
                             .font(.caption.weight(.bold)).padding(.horizontal, 8).padding(.vertical, 4)
                             .background(Routes05Tokens.mint, in: RoundedRectangle(cornerRadius: 2))
                     }
