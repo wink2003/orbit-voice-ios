@@ -308,6 +308,13 @@ private struct SchoolHubV2View: View {
 
     private var content: some View {
         VStack(spacing: 0) {
+            Routes05ContextHeader(
+                section: "school",
+                eyebrow: initialSection == .exams ? "SCHOOL / UPCOMING" : "WEEK / TIMETABLE",
+                title: initialSection == .exams ? "Контрольні.\nСпокійно." : "Розклад\n5F.",
+                detail: "Підтверджуйте інформацію джерелом; стан покриття відображається нижче.",
+                accent: initialSection == .exams ? Routes05Tokens.lilac : Routes05Tokens.mint
+            )
             weekToolbar
             Picker("Розділ", selection: $tab) {
                 Text("Огляд").tag(0)
@@ -332,7 +339,7 @@ private struct SchoolHubV2View: View {
             default: overviewView
             }
         }
-        .background(NovaTodayTokens.canvas.ignoresSafeArea())
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
     }
 
     private var weekToolbar: some View {
@@ -351,6 +358,9 @@ private struct SchoolHubV2View: View {
 
     private var overviewView: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "school", eyebrow: "SCHOOL / OVERVIEW", title: "Школа.\nНа зв’язку.", detail: "Підтверджені дані тижня для активного учнівського профілю.", accent: Routes05Tokens.mint)
+            }
             Section {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Шкільний простір").font(.title3.weight(.semibold))
@@ -473,6 +483,9 @@ private struct SchoolActionHistoryView: View {
 
     private var historyList: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "discovery", eyebrow: "AUDIT / FAMILY ACTIONS", title: "Що\nзмінилось?", detail: "Історія лише Orbit-власних дій і підтверджених сервером результатів.", accent: Routes05Tokens.mint)
+            }
             if phase == .failed {
                 SchoolNotice(text: "Історія змін тимчасово недоступна. Спробуйте ще раз.", systemImage: "exclamationmark.triangle")
                 Button("Повторити") { load() }.frame(minHeight: OrbitSpacing.minTarget)
@@ -988,16 +1001,16 @@ struct SchoolHubView: View {
                 // SchoolHubView owns the navigation stack for this route. The inbox
                 // must render its list directly so its letter links stay in the same
                 // Route path and SwiftUI never compares nested path element types.
-                case .inbox: SchoolInboxView(embeddedInNavigation: true, hubMode: true)
-                case .tasks: SchoolTaskListView(store: store).navigationTitle("Справи").navigationBarTitleDisplayMode(.inline)
-                case .calendar: SchoolWeekCalendarView(store: store).navigationTitle("Дати").navigationBarTitleDisplayMode(.inline)
-                case .timeline: SchoolTimelineView(store: store)
-                case .search: SchoolUnifiedSearchView(store: store)
-                case .briefing: SchoolTasksView()
-                case .brain: SchoolBrainView()
+                case .inbox: SchoolInboxView(embeddedInNavigation: true, hubMode: true).routes05ContextSurface()
+                case .tasks: SchoolTaskListView(store: store).routes05ContextSurface().navigationTitle("Справи").navigationBarTitleDisplayMode(.inline)
+                case .calendar: SchoolWeekCalendarView(store: store).routes05ContextSurface().navigationTitle("Дати").navigationBarTitleDisplayMode(.inline)
+                case .timeline: SchoolTimelineView(store: store).routes05ContextSurface()
+                case .search: SchoolUnifiedSearchView(store: store).routes05ContextSurface()
+                case .briefing: SchoolTasksView().routes05ContextSurface()
+                case .brain: SchoolBrainView().routes05ContextSurface()
                 case .teams: SchoolTeamsFutureView()
-                case .history: SchoolActionHistoryView(store: store)
-                case let .v2(section): SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section)
+                case .history: SchoolActionHistoryView(store: store).routes05ContextSurface()
+                case let .v2(section): SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface()
                 case let .letter(id): SchoolDetailLoaderView(itemID: id)
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
@@ -1065,11 +1078,13 @@ private struct SchoolCommandCenter: View {
     }
 
     private var routesHeader: some View {
-        ZStack(alignment: .topTrailing) {
+        HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("SOURCE / SCHULMANAGER · READ ONLY")
                     .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
                     .foregroundStyle(Routes05Tokens.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(2)
                 Text("Школа.\nНа зв’язку.")
                     .font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineSpacing(-4)
                 Text("Профіль учня · події, листи й підготовка.")
@@ -1079,9 +1094,11 @@ private struct SchoolCommandCenter: View {
                     Text(store.studentNames.joined(separator: " · ")).font(.subheadline.weight(.bold))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Text("↗").font(.system(size: 29, weight: .black)).foregroundStyle(Routes05Tokens.accentInk)
                 .frame(width: 59, height: 59).background(Routes05Tokens.mint, in: Circle())
                 .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+                .layoutPriority(1)
         }
         .padding(.horizontal, 16).padding(.top, 12)
     }
@@ -1830,6 +1847,9 @@ private struct SchoolTaskDetailView: View {
     var body: some View {
         List {
             Section {
+                Routes05ContextHeader(section: "school", eyebrow: "TASK / DETAIL", title: "Справу\nпо черзі.", detail: "Стан Orbit-справи та її джерело залишаються окремими.", accent: Routes05Tokens.orange)
+            }
+            Section {
                 Text(task.title)
                     .font(.title3.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1977,6 +1997,9 @@ private struct SchoolChecklistView: View {
     private var checklistList: some View {
         List {
             Section {
+                Routes05ContextHeader(section: "school", eyebrow: "ACTION CENTER / FAMILY", title: "Справи.\nПо черзі.", detail: "Стан Orbit-справ і джерел школи залишається розділеним.", accent: Routes05Tokens.orange)
+            }
+            Section {
                 TextField("Нова підготовка", text: $newTitle)
                 Button("Створити чекліст") { createChecklist() }.disabled(newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } header: { Text("Сімейна підготовка") } footer: { Text("Пункти чекліста належать родині Orbit і не змінюють шкільне джерело.") }
@@ -2061,6 +2084,9 @@ private struct SchoolNotesView: View {
 
     private var notesList: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "discovery", eyebrow: "PRIVATE / NOTES", title: "Місце\nдля думок.", detail: "Приватні нотатки поточного Orbit-профілю, окремо від тексту школи.", accent: Routes05Tokens.lilac)
+            }
             Section {
                 TextField("Нова нотатка", text: $draft, axis: .vertical).lineLimit(2...5)
                 Button { create() } label: { HStack { Text("Зберегти нотатку"); if saving { Spacer(); ProgressView() } } }
@@ -2310,6 +2336,9 @@ private struct SchoolTaskListView: View {
         let sections = SchoolHubLogic.taskSections(searched, filter: filter, today: today, sourceDates: store.sourceDates, now: Date())
         List {
             Section {
+                Routes05ContextHeader(section: "school", eyebrow: "ACTION CENTER / FAMILY", title: "Справи.\nПо черзі.", detail: "Стан Orbit-справ і джерел школи залишається розділеним.", accent: Routes05Tokens.orange)
+            }
+            Section {
                 Picker("Показати", selection: $filter) {
                     ForEach(SchoolTaskFilter.allCases) { item in
                         Text("\(item.title) \(count(for: item, counts))").tag(item)
@@ -2422,6 +2451,9 @@ private struct SchoolWeekCalendarView: View {
             return key > selected
         }.sorted { ($0.startsAt ?? "") < ($1.startsAt ?? "") }.prefix(3)
         List {
+            Section {
+                Routes05ContextHeader(section: "school", eyebrow: "SOURCE / SCHOOL CALENDAR", title: "Щодалі\nу школі?", detail: "Події джерела; додавання до сімейного календаря — лише через підтвердження.", accent: Routes05Tokens.yellow)
+            }
             Section {
                 weekHeader(week: week)
                 weekStrip(week: week, events: filtered)
@@ -2590,6 +2622,9 @@ private struct SchoolTimelineView: View {
     var body: some View {
         List {
             Section {
+                Routes05ContextHeader(section: "discovery", eyebrow: "SCHOOL / TIMELINE", title: "Усе\nпо порядку.", accent: Routes05Tokens.yellow)
+            }
+            Section {
                 SchoolNotice(text: "Хронологія об’єднує лише завантажені записи. Кожен рядок зберігає посилання на своє джерело.", systemImage: "link")
             }
             Picker("Період", selection: $horizon) {
@@ -2676,6 +2711,9 @@ private struct SchoolUnifiedSearchView: View {
 
     var body: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "school", eyebrow: "SEARCH / VERIFIED SOURCES", title: "Знайти.\nШвидко.", detail: "Пошук лише серед авторизованих завантажених джерел.", accent: Routes05Tokens.lilac)
+            }
             Section { SchoolNotice(text: SchoolHubLogic.searchScopeNote + ". Пошук не заявляє повну історію, якщо сервер не повернув її в завантаженому вікні.", systemImage: "magnifyingglass") }
             Picker("Тип", selection: $kind) { ForEach(SearchKind.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

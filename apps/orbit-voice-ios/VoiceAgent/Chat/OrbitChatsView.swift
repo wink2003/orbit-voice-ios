@@ -53,6 +53,7 @@ struct OrbitChatsView: View {
                     Routes05Chapter("ORBIT / 02", title: "Orbit / розмови", detail: "Ваші розмови, збережені в Orbit.", accent: Routes05Tokens.yellow)
                     coreAgentHero
                     Routes05SectionHeader("Розмови", action: "Створити") { createConversation() }
+                        .padding(.horizontal, 16)
                     filterChips
                     if isLoading { ProgressView("Завантажую чати…").frame(maxWidth: .infinity, minHeight: 80) }
                     else if filteredChats.isEmpty { Routes05StateRow(text: "Для цього фільтра розмов немає.", tint: Routes05Tokens.blue) }
@@ -254,6 +255,13 @@ private struct OrbitConversationView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 2) {
+                        Routes05ContextHeader(
+                            section: "core",
+                            eyebrow: "CORE AGENT / CONVERSATION",
+                            title: OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title),
+                            detail: "Контекст, джерела й підтвердження — в одному маршруті.",
+                            accent: Routes05Tokens.blue
+                        )
                         if messages.isEmpty && !isSending {
                             VStack(alignment: .leading, spacing: 14) {
                                 Label("Чим допомогти?", systemImage: "sparkles")
@@ -269,7 +277,8 @@ private struct OrbitConversationView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(20)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .background(Routes05Tokens.surface)
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                             .padding(.horizontal)
                             .padding(.top, 24)
                         }
@@ -372,7 +381,7 @@ private struct OrbitConversationView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(.bar)
+            .background(Routes05Tokens.canvas)
         }
         .overlay(alignment: .bottomTrailing) {
             if showLatestButton {
@@ -393,6 +402,7 @@ private struct OrbitConversationView: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
         .navigationTitle(OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Пошук у завантажених")
@@ -606,7 +616,7 @@ private struct MessageBubble: View {
             VStack(alignment: message.senderKind == "person" ? .trailing : .leading, spacing: 4) {
                 SelectableMarkdownText(
                     content: message.content,
-                    foregroundColor: message.senderKind == "person" ? .white : .label
+                    foregroundColor: message.senderKind == "person" ? .black : .label
                 )
                     .equatable()
                     .contextMenu {
@@ -633,8 +643,13 @@ private struct MessageBubble: View {
             }
             .padding(.horizontal, 13)
             .padding(.vertical, compactMessages ? 7 : 10)
-                .background(message.senderKind == "person" ? OrbitColors.bubbleOwn : OrbitColors.bubbleOther)
-                .clipShape(RoundedRectangle(cornerRadius: OrbitRadius.bubble))
+                .background(message.senderKind == "person" ? Routes05Tokens.lilac : Routes05Tokens.surface)
+                .overlay(alignment: .leading) {
+                    if message.senderKind == "orbit" {
+                        Rectangle().fill(Routes05Tokens.blue).frame(width: 4)
+                    }
+                }
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
             if message.senderKind == "orbit" { Spacer(minLength: 52) }
         }
         .padding(.horizontal)
@@ -686,7 +701,8 @@ private struct ActionConfirmationCard: View {
             .disabled(isActionInFlight || confirmAction == nil || cancelAction == nil)
         }
         .padding(10)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Routes05Tokens.surface)
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Підтвердження надсилання повідомлення для \(confirmation.recipient)")
     }

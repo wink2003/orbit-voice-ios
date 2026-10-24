@@ -21,12 +21,12 @@ struct SchoolBrainView: View {
                     SchoolBrainStarterRow { model.applyStarter($0); composerFocused = true }
                     SchoolBrainComposer(text: $model.draft, isSending: model.isSending, canSend: model.canSend, focused: $composerFocused) { Task { await model.send() } }
                 }
-                .background(NovaTodayTokens.canvas)
+                .background(Routes05Tokens.canvas)
             }
             .padding(.bottom, SchoolBrainLayout.dockOverlap(contentMaxY: contentMaxY, dockTopY: dockTopY))
         }
         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { contentMaxY = $0 }
-        .background(NovaTodayTokens.canvas.ignoresSafeArea())
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
         .navigationTitle("Запитати про школу")
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
@@ -34,9 +34,16 @@ struct SchoolBrainView: View {
 
     @ViewBuilder private var transcript: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 14) {
-                    switch model.loadState {
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        Routes05ContextHeader(
+                            section: "school",
+                            eyebrow: "SCHOOL / ASK ORBIT",
+                            title: "Поясню.\nЗнайду.",
+                            detail: "Відповіді з посиланнями на авторизовані повідомлення й події.",
+                            accent: Routes05Tokens.mint
+                        )
+                        switch model.loadState {
                     case .loading where model.messages.isEmpty:
                         ProgressView("Завантаження розмови…").frame(maxWidth: .infinity).padding(.top, 40)
                     case let .failed(failure) where model.messages.isEmpty:
@@ -95,7 +102,11 @@ private struct SchoolBrainBubble: View {
             .frame(maxWidth: 560, alignment: .leading)
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(isUser ? NovaTodayTokens.indigo : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(isUser ? Routes05Tokens.lilac : Routes05Tokens.surface)
+            .overlay(alignment: .leading) {
+                if !isUser { Rectangle().fill(Routes05Tokens.blue).frame(width: 4) }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
             .contextMenu { Button("Копіювати", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.content } }
             if !isUser { Spacer(minLength: 44) }
         }
@@ -197,7 +208,8 @@ private struct SchoolBrainWaitingBubble: View {
         HStack {
             HStack(spacing: 8) { ProgressView(); Text("Orbit готує відповідь…").font(.subheadline).foregroundStyle(.secondary) }
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(Routes05Tokens.surface)
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.rule, lineWidth: 1))
             Spacer(minLength: 44)
         }
         .accessibilityElement(children: .combine)
@@ -259,8 +271,8 @@ private struct SchoolBrainStarterRow: View {
                     Button { choose(value) } label: {
                         Text(value).font(.subheadline.weight(.medium)).lineLimit(1)
                             .padding(.horizontal, 14).frame(minHeight: 44)
-                            .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
-                            .overlay(Capsule().strokeBorder(NovaTodayTokens.indigo.opacity(0.45), lineWidth: 1))
+                            .background(Routes05Tokens.surface)
+                            .overlay(Capsule().strokeBorder(Routes05Tokens.rule, lineWidth: 1))
                             .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
@@ -285,7 +297,8 @@ private struct SchoolBrainComposer: View {
                 .lineLimit(1...5)
                 .focused(focused)
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(Routes05Tokens.surface)
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                 .accessibilityLabel("Запитання про школу")
             Button(action: send) {
                 Group {
@@ -294,7 +307,7 @@ private struct SchoolBrainComposer: View {
                 .frame(width: 44, height: 44)
             }
             .disabled(!canSend)
-            .tint(NovaTodayTokens.indigo)
+            .tint(Routes05Tokens.yellow)
             .accessibilityLabel(isSending ? "Надсилання" : "Надіслати")
         }
         .padding(.horizontal, 12)

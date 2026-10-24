@@ -63,6 +63,13 @@ struct SchoolInboxView: View {
     private var schoolList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                Routes05ContextHeader(
+                    section: "school",
+                    eyebrow: "SCHULMANAGER / READ ONLY",
+                    title: "Вхідні\nзі школи.",
+                    detail: "Оригінали, переклади й джерела — без запису до Schulmanager.",
+                    accent: Routes05Tokens.blue
+                )
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
@@ -85,7 +92,8 @@ struct SchoolInboxView: View {
                 }
                 .padding(.horizontal, 14)
                 .frame(minHeight: 44)
-                .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 14))
+                .background(Routes05Tokens.surface)
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                 Picker("Тип матеріалу", selection: $typeFilter) {
                     ForEach(SchoolInboxTypeFilter.allCases) { option in Text(option.title).tag(option) }
                 }
@@ -119,7 +127,7 @@ struct SchoolInboxView: View {
             .padding(.top, 8)
             .padding(.bottom, 24)
         }
-        .background(OrbitColors.canvas)
+        .background(Routes05Tokens.canvas)
         .safeAreaPadding(.bottom, 16)
         .navigationTitle("Вхідні")
         .refreshable { await load() }
@@ -205,8 +213,9 @@ struct SchoolInboxView: View {
             }
         }
         .padding(.vertical, 10).padding(.horizontal, 4)
-        .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 14))
-        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .background(Routes05Tokens.surface)
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.rule, lineWidth: 1))
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title). \(preview)")
         .accessibilityValue([item.unread ? "Непрочитано" : nil, taskCount(for: item).map { "\($0) відкритих справ" }, item.attachments.isEmpty ? nil : "\(item.attachments.count) вкладень"].compactMap { $0 }.joined(separator: ", "))
@@ -292,6 +301,9 @@ struct SchoolTasksView: View {
 
     var body: some View {
         List {
+            Section {
+                Routes05ContextHeader(section: "discovery", eyebrow: "BRIEFING / SOURCE AWARE", title: "Коротко.\nПо суті.", detail: "Огляд з посиланнями на фактичні шкільні джерела.", accent: Routes05Tokens.orange)
+            }
             if loading { ProgressView().frame(maxWidth: .infinity) }
             if let briefing {
                 Section { Text("\(localizedDate(briefing.from)) — \(localizedDate(briefing.to, subtractingDays: 1))").font(.subheadline).foregroundStyle(.secondary) }
@@ -380,6 +392,13 @@ struct SchoolDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                Routes05ContextHeader(
+                    section: "school",
+                    eyebrow: "SOURCE ORIGINAL / DE",
+                    title: item.type == "letter" ? "Лист / джерело" : "Повідомлення / джерело",
+                    detail: "Оригінал, переклад і Orbit-інтерпретація залишаються окремими.",
+                    accent: Routes05Tokens.blue
+                )
                 if !displayTitle.isEmpty { Text(displayTitle).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
                 Text([item.sender.isEmpty ? nil : item.sender, item.sourceTimestamp.map { $0.formatted(date: .abbreviated, time: .omitted) }].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
@@ -407,7 +426,8 @@ struct SchoolDetailView: View {
                         }
                     }
                     .padding(.horizontal, 12)
-                    .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
+                    .background(Routes05Tokens.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                 } else {
                     detailHeader("Що потрібно")
                     Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
@@ -442,7 +462,8 @@ struct SchoolDetailView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in attachmentRow(file) }
                     }
-                    .background(OrbitColors.card, in: RoundedRectangle(cornerRadius: 12))
+                    .background(Routes05Tokens.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                 }
                 detailHeader("Джерело")
                 VStack(alignment: .leading, spacing: 5) {
@@ -464,7 +485,7 @@ struct SchoolDetailView: View {
             }
             .padding(.horizontal, 16).padding(.bottom, 24)
         }
-        .background(OrbitColors.canvas)
+        .background(Routes05Tokens.canvas)
         .navigationTitle(item.type == "letter" ? "Лист" : "Повідомлення")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaPadding(.bottom, 16)
