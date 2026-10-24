@@ -87,8 +87,12 @@ struct SchoolBrainView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.load() }
-            .defaultScrollAnchor(.bottom)
-            .onChange(of: model.messages.count) { _, _ in scrollToBottom(proxy) }
+            .defaultScrollAnchor(.top)
+            .onChange(of: model.messages.count) { oldCount, newCount in
+                // Keep the initial transcript at the top. New replies still move
+                // the reader to the latest content after the conversation exists.
+                if newCount > oldCount { scrollToBottom(proxy) }
+            }
             .onChange(of: model.pendingQuestion) { _, _ in scrollToBottom(proxy) }
             .onChange(of: composerFocused) { _, focused in if focused { scrollToBottom(proxy) } }
         }

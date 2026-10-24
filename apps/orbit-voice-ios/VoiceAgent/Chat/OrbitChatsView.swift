@@ -28,6 +28,7 @@ struct OrbitChatsView: View {
         self.debugConversation = debugConversation
         _profile = State(initialValue: fixture?.profile)
         _chats = State(initialValue: fixture?.chats ?? [])
+        _selectedChat = State(initialValue: debugConversation ? fixture?.chats.first : nil)
         _isLoading = State(initialValue: fixture == nil)
     }
     #endif

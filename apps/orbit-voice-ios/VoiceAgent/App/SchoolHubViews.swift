@@ -415,37 +415,50 @@ private struct SchoolHubV2View: View {
     }
 
     private var timetableView: some View {
-        let grouped = Dictionary(grouping: store.timetable.sorted { lhs, rhs in
-            if lhs.dayKey != rhs.dayKey { return lhs.dayKey < rhs.dayKey }
-            if lhs.lessonIndex != rhs.lessonIndex { return lhs.lessonIndex < rhs.lessonIndex }
-            return lhs.id < rhs.id
-        }, by: \.dayKey)
-        return List {
-            if store.timetable.isEmpty {
-                let unsynced = store.coverageState == "NOT_SYNCED"
-                let unavailable = ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState)
-                let title = unsynced ? "Дані за цей тиждень ще не завантажені" : unavailable ? "Дані тимчасово недоступні" : store.coverageState == "STALE" ? "Дані можуть бути застарілими" : "На цей тиждень уроків немає"
-                let message = unsynced ? "Для вибраного тижня ще немає підтвердженої синхронізації." : unavailable ? "Стан синхронізації не підтверджено для цього тижня." : "За вибраний період уроків не знайдено."
-                ContentUnavailableView(title, systemImage: "calendar.badge.exclamationmark", description: Text(message))
-            }
-            else {
-                ForEach(grouped.keys.sorted(), id: \.self) { day in
-                    Section(SchoolHubFormat.long(day)) {
-                        ForEach(grouped[day] ?? []) { entry in
-                            HStack(alignment: .top, spacing: 12) {
-                                Text("\(entry.lessonIndex)").font(.headline.monospacedDigit()).frame(width: 24)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(entry.subject).font(.subheadline.weight(.semibold))
-                                    let details = [entry.startsAtLocal ?? entry.startsAt, entry.room, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }
-                                    if !details.isEmpty { Text(details.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
-                                    if entry.isCancelled { Label("Скасовано", systemImage: "xmark.circle").font(.caption.weight(.semibold)).foregroundStyle(.red) }
-                                }
-                            }.padding(.vertical, 4).accessibilityElement(children: .combine)
+        if store.timetable.isEmpty {
+            let unsynced = store.coverageState == "NOT_SYNCED"
+            let unavailable = ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState)
+            let title = unsynced ? "Дані за цей тиждень ще не завантажені" : unavailable ? "Дані тимчасово недоступні" : store.coverageState == "STALE" ? "Дані можуть бути застарілими" : "На цей тиждень уроків немає"
+            let message = unsynced ? "Для вибраного тижня ще немає підтвердженої синхронізації." : unavailable ? "Стан синхронізації не підтверджено для цього тижня." : "За вибраний період уроків не знайдено."
+            return AnyView(ContentUnavailableView(title, systemImage: "calendar.badge.exclamationmark", description: Text(message)))
+        }
+
+        let days = Array(Set(store.timetable.map(\.dayKey))).sorted()
+        let lessonIndexes = Array(Set(store.timetable.map(\.lessonIndex))).sorted()
+        return AnyView(ScrollView([.horizontal, .vertical]) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("УРОК").font(.caption2.weight(.black).monospaced()).frame(width: 56, alignment: .leading)
+                    ForEach(days, id: \.self) { day in
+                        Text(SchoolHubFormat.shortDay(day).uppercased())
+                            .font(.caption2.weight(.black).monospaced())
+                            .frame(width: 148, alignment: .leading)
+                    }
+                }
+                .padding(.horizontal, 16)
+                ForEach(lessonIndexes, id: \.self) { lessonIndex in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(String(format: "%02d", lessonIndex))
+                            .font(.headline.monospacedDigit())
+                            .frame(width: 56, height: 92, alignment: .topLeading)
+                        ForEach(days, id: \.self) { day in
+                            if let entry = store.timetable.first(where: { $0.dayKey == day && $0.lessonIndex == lessonIndex }) {
+                                Routes05TimetableCell(entry: entry, lessonIndex: lessonIndex)
+                            } else {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(Routes05Tokens.ink.opacity(0.18), lineWidth: 1)
+                                    .frame(width: 148, height: 92)
+                                    .overlay(Text("—").foregroundStyle(.secondary))
+                            }
                         }
                     }
                 }
             }
-        }.listStyle(.insetGrouped)
+            .padding(.vertical, 12)
+            .safeAreaPadding(.horizontal, 0)
+        }
+        .scrollIndicators(.visible)
+        .accessibilityElement(children: .contain))
     }
 
     private func examRow(_ exam: OrbitSchoolHubV2Exam) -> some View {
@@ -505,7 +518,15 @@ private struct SchoolActionHistoryView: View {
     var body: some View {
         Group {
             if !store.actionCapability.canMutate {
-                SchoolActionsUnavailableView(capability: store.actionCapability) { Task { await store.refreshActionCapability() } }
+                List {
+                    Section {
+                        Routes05ContextHeader(section: "discovery", eyebrow: "AUDIT / FAMILY ACTIONS", title: "Що\nзмінилось?", detail: "Історія лише Orbit-власних дій і підтверджених сервером результатів.", accent: Routes05Tokens.mint)
+                    }
+                    Section {
+                        SchoolActionsUnavailableView(capability: store.actionCapability) { Task { await store.refreshActionCapability() } }
+                    }
+                }
+                .listStyle(.plain)
             } else {
                 historyList
             }
@@ -627,6 +648,39 @@ private enum SchoolHubFormat {
     static func due(_ task: SchoolHubTask) -> String? {
         guard let key = SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) else { return nil }
         return long(key)
+    }
+}
+
+private struct Routes05TimetableCell: View {
+    let entry: OrbitSchoolHubV2TimetableEntry
+    let lessonIndex: Int
+
+    private var fill: Color {
+        [Routes05Tokens.blue, Routes05Tokens.mint, Routes05Tokens.lilac, Routes05Tokens.yellow, Routes05Tokens.orange][(lessonIndex - 1) % 5]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(entry.subject)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Routes05Tokens.accentInk)
+                .lineLimit(2)
+            Text([entry.startsAtLocal ?? entry.startsAt, entry.room, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(Routes05Tokens.accentInk.opacity(0.78))
+                .lineLimit(3)
+            if entry.isCancelled {
+                Label("Скасовано", systemImage: "xmark.circle")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Routes05Tokens.accentInk)
+            }
+        }
+        .frame(width: 148, height: 92, alignment: .topLeading)
+        .padding(10)
+        .background(fill)
+        .overlay(Rectangle().stroke(Routes05Tokens.ink, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Урок \(lessonIndex), \(entry.subject)")
     }
 }
 
@@ -956,8 +1010,10 @@ final class SchoolHubV2Store {
         let freshness = OrbitSchoolHubV2Freshness(state: "READY_WITH_DATA", sourceStates: ["schulmanager": "READY"], observedAt: observed, source: "schulmanager", fingerprint: "routes05")
         let coverage = OrbitSchoolHubV2Coverage(state: "READY_WITH_DATA", rowCount: 2, sourceStatus: "READY", sourceFingerprint: "routes05", successfulSyncAt: observed, observedAt: observed, errorCode: nil, startDayKey: "2026-10-19", endDayKey: "2026-10-25")
         let exam = OrbitSchoolHubV2Exam(id: "routes05-exam", subject: "Deutsch", dayKey: "2026-10-24", lessonStart: 3, lessonEnd: 4, startsAt: "2026-10-24T10:00:00+02:00", room: "5F", teacher: "M. Bauer", group: nil, groupName: nil, startClassHourNumber: 3, typeName: "Klassenarbeit", typeColor: "#C9B8FF", typeVisibleForStudents: true, comment: "Projektwoche", status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
-        let lessons = fixture.items.enumerated().map { index, _ in
-            OrbitSchoolHubV2TimetableEntry(id: "routes05-lesson-\(index)", dayKey: "2026-10-24", localDate: "2026-10-24", lessonIndex: index + 1, subject: index == 0 ? "Deutsch" : "Mathematik", teacher: "M. Bauer", room: "5F", group: nil, groupName: nil, startsAt: "2026-10-24T08:00:00+02:00", endsAt: "2026-10-24T08:45:00+02:00", startsAtLocal: index == 0 ? "08:00" : "09:00", endsAtLocal: index == 0 ? "08:45" : "09:45", classHourNumber: index + 1, isCancelled: false, originalLessonCount: 1, teachers: [OrbitSchoolHubV2Teacher(abbreviation: "MB")], groups: [OrbitSchoolHubV2Group(name: "5F")], status: "scheduled", kind: "lesson", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
+        let lessonDays = ["2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23"]
+        let subjects = ["Deutsch", "Mathematik", "Sport", "Englisch", "Biologie"]
+        let lessons = lessonDays.enumerated().map { index, day in
+            OrbitSchoolHubV2TimetableEntry(id: "routes05-lesson-\(index)", dayKey: day, localDate: day, lessonIndex: index + 1, subject: subjects[index], teacher: "M. Bauer", room: "5F", group: nil, groupName: nil, startsAt: "\(day)T08:00:00+02:00", endsAt: "\(day)T08:45:00+02:00", startsAtLocal: String(format: "%02d:00", 8 + index), endsAtLocal: String(format: "%02d:45", 8 + index), classHourNumber: index + 1, isCancelled: false, originalLessonCount: 1, teachers: [OrbitSchoolHubV2Teacher(abbreviation: "MB")], groups: [OrbitSchoolHubV2Group(name: "5F")], status: "scheduled", kind: "lesson", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
         }
         overview = OrbitSchoolHubV2Overview(state: "READY", freshness: freshness, sourceStates: ["schulmanager": "READY"], profileTitle: fixture.studentNames.first, todayDayKey: "2026-10-24", upcomingExams: [exam], projects: [], coverage: ["timetable": coverage, "exams": coverage])
         exams = [exam]
@@ -2168,7 +2224,15 @@ private struct SchoolNotesView: View {
     var body: some View {
         Group {
             if !store.actionCapability.canMutate {
-                SchoolActionsUnavailableView(capability: store.actionCapability) { Task { await store.refreshActionCapability() } }
+                List {
+                    Section {
+                        Routes05ContextHeader(section: "discovery", eyebrow: "PRIVATE / NOTES", title: "Місце\nдля думок.", detail: "Приватні нотатки поточного Orbit-профілю, окремо від тексту школи.", accent: Routes05Tokens.lilac)
+                    }
+                    Section {
+                        SchoolActionsUnavailableView(capability: store.actionCapability) { Task { await store.refreshActionCapability() } }
+                    }
+                }
+                .listStyle(.plain)
             } else {
                 notesList
             }

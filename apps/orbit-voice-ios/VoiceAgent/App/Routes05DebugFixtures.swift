@@ -70,7 +70,11 @@ enum Routes05DebugFixtures {
             subscriptionId: nil, tasks: [OrbitSchoolItemTask(key: "prepare", title: "Підготувати матеріали", action: "Перевірити дату в джерелі", dueAt: "2026-10-24", allDay: true, importance: "normal", target: nil, confidence: 1, reason: "Source text",)]
         )
         let task = OrbitSchoolTask(key: "prepare", stableIdentity: true, title: "Підготовка до тесту", action: "Перевірити дату в джерелі", dueAt: "2026-10-24", endsAt: nil, allDay: true, importance: "high", target: nil, confidence: 1, reason: "Source text", location: nil, sourceItemId: letter.id, sourceType: "letter", sourceExternalId: letter.externalId, bucket: nil, status: "open", completedAt: nil, actionTaskId: nil, calendarEventId: nil)
-        return Routes05SchoolFixture(items: [letter], events: [], tasks: [task], studentNames: ["Ліна"])
+        let events = [
+            OrbitSchulmanagerCalendarEvent(uid: "routes05-event-1", title: "Projektwoche", description: "Підготовка до проєктного тижня", location: "Gymnasium am Park", startsAt: "2026-10-20T09:00:00+02:00", endsAt: "2026-10-20T10:00:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "ours", audienceClass: "class", relevanceReason: "Профіль учня"),
+            OrbitSchulmanagerCalendarEvent(uid: "routes05-event-2", title: "Батьківська зустріч", description: "Зустріч класу", location: "Кімната 5F", startsAt: "2026-10-22T17:30:00+02:00", endsAt: "2026-10-22T18:30:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "likely", audienceClass: "class", relevanceReason: "Класна подія")
+        ]
+        return Routes05SchoolFixture(items: [letter], events: events, tasks: [task], studentNames: ["Ліна"])
     }()
 
     static let family = Routes05FamilyFixture(
