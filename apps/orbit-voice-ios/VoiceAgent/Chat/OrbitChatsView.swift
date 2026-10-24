@@ -344,10 +344,6 @@ private struct OrbitConversationView: View {
                             .id("chat-latest")
                     }
                     .padding(.vertical)
-                    // Keep the first transcript item below the inline native
-                    // navigation controls. This is local to conversation
-                    // content and remains compatible with scroll-to-latest.
-                    .padding(.top, 96)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
@@ -374,6 +370,10 @@ private struct OrbitConversationView: View {
                     scrollToLatest(using: proxy, animated: false)
                 }
             }
+            // Reserve the inline native navigation-bar footprint on the
+            // viewport, rather than in transcript content. This keeps
+            // scroll-to-latest from cancelling the masthead clearance.
+            .padding(.top, 96)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Divider()
