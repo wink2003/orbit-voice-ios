@@ -344,16 +344,12 @@ private struct OrbitConversationView: View {
                             .id("chat-latest")
                     }
                     .padding(.vertical)
-                    .safeAreaPadding(.top, 8)
+                    // Keep the first transcript item below the inline native
+                    // navigation controls. This is local to conversation
+                    // content and remains compatible with scroll-to-latest.
+                    .padding(.top, 96)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                // The native navigation bar is rendered above this scroll
-                // viewport on the conversation route. Reserve its footprint
-                // for every scroll position, including scroll-to-latest, so
-                // the ROUTES masthead cannot slide underneath toolbar items.
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    Color.clear.frame(height: 96)
-                }
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     max(0, geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height)
                 } action: { _, distanceFromLatest in
