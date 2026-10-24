@@ -144,7 +144,7 @@ struct SchoolInboxView: View {
         }
         .background(Routes05Tokens.canvas)
         .safeAreaPadding(.bottom, 16)
-        .navigationTitle("Вхідні")
+        .navigationTitle("")
         .refreshable { await load() }
         .onAppear { Task { await load(); await refreshNotificationPermission() } }
         .alert("Школа недоступна", isPresented: .constant(error != nil)) { Button("Повторити") { error = nil; Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
@@ -361,7 +361,7 @@ struct SchoolTasksView: View {
                 }
             } else if !loading { ContentUnavailableView("Огляд недоступний", systemImage: "calendar.badge.exclamationmark") }
         }
-        .navigationTitle("Наступні 10 днів")
+        .navigationTitle("")
         .task {
 #if DEBUG
             if fixture == nil { await load() }
@@ -537,7 +537,7 @@ struct SchoolDetailView: View {
             .padding(.horizontal, 16).padding(.bottom, 24)
         }
         .background(Routes05Tokens.canvas)
-        .navigationTitle(item.type == "letter" ? "Лист" : "Повідомлення")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaPadding(.bottom, 16)
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }

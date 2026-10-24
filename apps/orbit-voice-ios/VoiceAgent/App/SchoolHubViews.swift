@@ -316,7 +316,7 @@ private struct SchoolHubV2View: View {
             case .ready: content
             }
         }
-        .navigationTitle("Школа v2")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: store.weekStart) {
 #if DEBUG
@@ -510,7 +510,7 @@ private struct SchoolActionHistoryView: View {
                 historyList
             }
         }
-        .navigationTitle("Історія змін")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if store.actionCapability.canMutate { await reload() } }
         .refreshable { if store.actionCapability.canMutate { await reload() } }
@@ -1083,8 +1083,8 @@ struct SchoolHubView: View {
                     #else
                     SchoolInboxView(embeddedInNavigation: true, hubMode: true).routes05ContextSurface()
                     #endif
-                case .tasks: SchoolTaskListView(store: store).routes05ContextSurface().navigationTitle("Справи").navigationBarTitleDisplayMode(.inline)
-                case .calendar: SchoolWeekCalendarView(store: store).routes05ContextSurface().navigationTitle("Дати").navigationBarTitleDisplayMode(.inline)
+                case .tasks: SchoolTaskListView(store: store).routes05ContextSurface()
+                case .calendar: SchoolWeekCalendarView(store: store).routes05ContextSurface()
                 case .timeline: SchoolTimelineView(store: store).routes05ContextSurface()
                 case .search: SchoolUnifiedSearchView(store: store).routes05ContextSurface()
 #if DEBUG
@@ -2173,7 +2173,7 @@ private struct SchoolNotesView: View {
                 notesList
             }
         }
-        .navigationTitle("Нотатки")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if store.actionCapability.canMutate { await load() } }
         .refreshable { if store.actionCapability.canMutate { await load() } }
@@ -2756,7 +2756,7 @@ private struct SchoolTimelineView: View {
                 }
             }
         }
-        .navigationTitle("Хронологія")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -2841,7 +2841,7 @@ private struct SchoolUnifiedSearchView: View {
                 }
             }
         }
-        .navigationTitle("Знайти у школі")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Листи, справи, події")
     }

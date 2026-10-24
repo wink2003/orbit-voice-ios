@@ -43,7 +43,7 @@ struct SchoolBrainView: View {
         }
         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { contentMaxY = $0 }
         .background(Routes05Tokens.canvas.ignoresSafeArea())
-        .navigationTitle("Запитати про школу")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task {
 #if DEBUG
