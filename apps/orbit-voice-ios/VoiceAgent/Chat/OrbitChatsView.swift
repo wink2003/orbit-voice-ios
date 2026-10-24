@@ -146,7 +146,7 @@ struct OrbitChatsView: View {
                 Circle().stroke(Routes05Tokens.ink, lineWidth: 7).frame(width: 66, height: 66)
                 Circle().fill(Routes05Tokens.yellow).frame(width: 40, height: 40)
             }
-            .frame(width: 126, maxHeight: .infinity)
+            .frame(width: 126).frame(maxHeight: .infinity)
             .background(Routes05Tokens.mint)
         }
         .frame(minHeight: 162)
