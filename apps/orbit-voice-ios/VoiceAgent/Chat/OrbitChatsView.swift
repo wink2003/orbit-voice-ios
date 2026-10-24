@@ -614,6 +614,13 @@ private struct MessageBubble: View {
         HStack {
             if message.senderKind == "person" { Spacer(minLength: 52) }
             VStack(alignment: message.senderKind == "person" ? .trailing : .leading, spacing: 4) {
+                Text(message.senderKind == "person" ? "ВИ" : "ORBIT / ВІДПОВІДЬ")
+                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(message.senderKind == "person" ? Routes05Tokens.accentInk : Routes05Tokens.darkSurfaceInk)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(message.senderKind == "person" ? Routes05Tokens.mint : Routes05Tokens.darkSurface)
                 SelectableMarkdownText(
                     content: message.content,
                     foregroundColor: message.senderKind == "person" ? .black : .label
