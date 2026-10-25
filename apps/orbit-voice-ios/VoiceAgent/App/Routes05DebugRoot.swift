@@ -20,6 +20,7 @@ struct Routes05DebugRoot: View {
     private var screen: Routes05DebugScreen {
         if arguments.contains("--routes05-today") { return .today }
         if arguments.contains("--routes05-orbit") || arguments.contains("--routes05-chats") { return .orbit }
+        if arguments.contains("--routes05-family-menu") { return .familyMenu }
         if arguments.contains("--routes05-school") { return .school }
         if arguments.contains("--routes05-conversation") { return .conversation }
         if arguments.contains("--routes05-inbox") { return .inbox }

@@ -1067,13 +1067,16 @@ final class SchoolHubV2Store {
         let freshness = OrbitSchoolHubV2Freshness(state: "READY_WITH_DATA", sourceStates: ["schulmanager": "READY"], observedAt: observed, source: "schulmanager", fingerprint: "routes05")
         let coverage = OrbitSchoolHubV2Coverage(state: "READY_WITH_DATA", rowCount: 2, sourceStatus: "READY", sourceFingerprint: "routes05", successfulSyncAt: observed, observedAt: observed, errorCode: nil, startDayKey: "2026-10-19", endDayKey: "2026-10-25")
         let exam = OrbitSchoolHubV2Exam(id: "routes05-exam", subject: "Deutsch", dayKey: "2026-10-24", lessonStart: 3, lessonEnd: 4, startsAt: "2026-10-24T10:00:00+02:00", room: "5F", teacher: "M. Bauer", group: nil, groupName: nil, startClassHourNumber: 3, typeName: "Klassenarbeit", typeColor: "#C9B8FF", typeVisibleForStudents: true, comment: "Projektwoche", status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
+        let examNextWeek = OrbitSchoolHubV2Exam(id: "routes05-exam-next", subject: "Mathematik", dayKey: "2026-10-30", lessonStart: nil, lessonEnd: nil, startsAt: nil, room: nil, teacher: "M. Bauer", group: nil, groupName: nil, startClassHourNumber: nil, typeName: "Test", typeColor: "#C9B8FF", typeVisibleForStudents: true, comment: nil, status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
+        let examFollowingWeek = OrbitSchoolHubV2Exam(id: "routes05-exam-following", subject: "Englisch", dayKey: "2026-11-05", lessonStart: nil, lessonEnd: nil, startsAt: nil, room: "B12", teacher: nil, group: nil, groupName: nil, startClassHourNumber: nil, typeName: nil, typeColor: nil, typeVisibleForStudents: true, comment: nil, status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
+        let fixtureExams = [exam, examNextWeek, examFollowingWeek]
         let lessonDays = ["2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23"]
         let subjects = ["Deutsch", "Mathematik", "Sport", "Englisch", "Biologie"]
         let lessons = lessonDays.enumerated().map { index, day in
             OrbitSchoolHubV2TimetableEntry(id: "routes05-lesson-\(index)", dayKey: day, localDate: day, lessonIndex: index + 1, subject: subjects[index], teacher: "M. Bauer", room: "5F", group: nil, groupName: nil, startsAt: "\(day)T08:00:00+02:00", endsAt: "\(day)T08:45:00+02:00", startsAtLocal: String(format: "%02d:00", 8 + index), endsAtLocal: String(format: "%02d:45", 8 + index), classHourNumber: index + 1, isCancelled: false, originalLessonCount: 1, teachers: [OrbitSchoolHubV2Teacher(abbreviation: "MB")], groups: [OrbitSchoolHubV2Group(name: "5F")], status: "scheduled", kind: "lesson", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
         }
-        overview = OrbitSchoolHubV2Overview(state: "READY", freshness: freshness, sourceStates: ["schulmanager": "READY"], profileTitle: fixture.studentNames.first, todayDayKey: "2026-10-24", upcomingExams: [exam], projects: [], coverage: ["timetable": coverage, "exams": coverage])
-        exams = [exam]
+        overview = OrbitSchoolHubV2Overview(state: "READY", freshness: freshness, sourceStates: ["schulmanager": "READY"], profileTitle: fixture.studentNames.first, todayDayKey: "2026-10-24", upcomingExams: fixtureExams, projects: [], coverage: ["timetable": coverage, "exams": coverage])
+        exams = fixtureExams
         timetable = lessons
         self.freshness = freshness
         coverageState = "READY_WITH_DATA"
@@ -3278,10 +3281,17 @@ private struct Routes05SchoolTimetableProductionView: View {
     }
     private func timetableGrid(width: CGFloat) -> some View {
         let axis: CGFloat = 50; let gap: CGFloat = 5; let dayWidth = max(76, floor((width - 32 - axis - gap * 4) / 4))
-        return ScrollView(.horizontal, showsIndicators: true) { VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: gap) { Text("УРОК").font(.system(size: 10, weight: .bold, design: .monospaced)).frame(width: axis, alignment: .leading); ForEach(days, id: \.self) { day in Text("\(SchoolHubFormat.weekdayShort(day).uppercased()) / \(SchoolHubFormat.dayNumber(day))").font(.system(size: 10, weight: .black, design: .monospaced)).lineLimit(1).minimumScaleFactor(0.7).frame(width: dayWidth) } }.frame(height: 40).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
+        return ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: true) { VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: gap) { Text("УРОК").font(.system(size: 10, weight: .bold, design: .monospaced)).frame(width: axis, alignment: .leading); ForEach(days, id: \.self) { day in Text("\(SchoolHubFormat.weekdayShort(day).uppercased()) / \(SchoolHubFormat.dayNumber(day))").font(.system(size: 10, weight: .black, design: .monospaced)).lineLimit(1).minimumScaleFactor(0.7).frame(width: dayWidth).id(day) } }.frame(height: 40).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
             ForEach(slots, id: \.self) { slot in let height = slotHeight(slot); HStack(alignment: .top, spacing: gap) { Text(String(format: "%02d", slot)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Routes05Tokens.secondary).frame(width: axis, height: height, alignment: .topLeading); ForEach(Array(days.enumerated()), id: \.element) { index, day in cell(day: day, slot: slot, dayIndex: index, width: dayWidth, height: height) } }.padding(.vertical, 3).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) } }
-        }.padding(.horizontal, 16) }.accessibilityElement(children: .contain)
+        }.padding(.horizontal, 16) }
+            .onAppear {
+                guard Routes05DebugCapture.scrollHorizontal, let lastDay = days.last else { return }
+                DispatchQueue.main.async { proxy.scrollTo(lastDay, anchor: .trailing) }
+            }
+        }.accessibilityElement(children: .contain)
+        }
     }
     @ViewBuilder private func cell(day: String, slot: Int, dayIndex: Int, width: CGFloat, height: CGFloat) -> some View {
         let entries = store.timetable.filter { $0.localDate == day && $0.lessonIndex == slot }

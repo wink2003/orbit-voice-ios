@@ -114,6 +114,23 @@ jobs:
             done
           done
 
+          # Targeted Issue #17 evidence. These are DEBUG fixtures only: the
+          # Family route opens the real More owner, Exams spans multiple weeks,
+          # and Timetable is positioned at the rightmost horizontal column.
+          for screen in family-menu exams timetable; do
+            for appearance in light dark; do
+              xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+              args="--routes05-$screen"
+              if [ "$screen" = "timetable" ]; then args="$args --routes05-scroll-horizontal"; fi
+              if [ "$appearance" = "dark" ]; then args="$args --routes05-dark"; fi
+              perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
+              sleep 5
+              file="$out/routes05-${screen}-${appearance}-targeted.png"
+              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
+              test -s "$file"
+            done
+          done
+
       - name: Capture ROUTES 05 Inbox fidelity on native iOS
         if: github.ref == 'refs/heads/codex/routes05-inbox-fidelity-111'
         env:

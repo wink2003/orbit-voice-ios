@@ -45,6 +45,7 @@ struct NovaShellView: View {
             case .orbit: OrbitChatsView(fixture: Routes05DebugFixtures.chats)
             case .school: SchoolHubView(fixture: Routes05DebugFixtures.school)
             case .family: MainOrbit3FamilyView(fixture: Routes05DebugFixtures.family)
+            case .familyMenu: MainOrbit3FamilyView(fixture: Routes05DebugFixtures.family, initialShowingMore: true)
             case .conversation: OrbitChatsView(fixture: Routes05DebugFixtures.chats, debugConversation: true)
             case .inbox: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "inbox")
             case .letter: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "letter")

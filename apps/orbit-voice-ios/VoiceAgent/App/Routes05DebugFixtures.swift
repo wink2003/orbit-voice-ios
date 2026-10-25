@@ -19,7 +19,7 @@ struct Routes05FamilyFixture {
 }
 
 enum Routes05DebugScreen {
-    case today, orbit, school, family
+    case today, orbit, school, family, familyMenu
     case conversation, inbox, letter, tasks, timetable, exams, brain, calendar, schoolCalendar, search, timeline, briefing, notes, history
     case contacts, memory, voice, familyChat, settings, integrations, memoryDetail, contactDetail, actionConfirm, admin, profile, notifications, memoryImports, unknown
 }

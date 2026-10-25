@@ -451,10 +451,12 @@ extension View {
 #if DEBUG
 enum Routes05DebugCapture {
     static let scrollToBottom = ProcessInfo.processInfo.arguments.contains("--routes05-bottom")
+    static let scrollHorizontal = ProcessInfo.processInfo.arguments.contains("--routes05-scroll-horizontal")
 }
 #else
 enum Routes05DebugCapture {
     static let scrollToBottom = false
+    static let scrollHorizontal = false
 }
 #endif
 
