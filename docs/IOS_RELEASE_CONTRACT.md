@@ -51,6 +51,23 @@ These are **diagnostic concepts**, not newly authorized API error codes. Don't p
 - Forensic operator report: releases **110**/**111** completed canonical Guard/Passkey/SideStore flow without separate prepublication physical app acceptance. **Passkey timestamps/receipts reported, not independently read here**; CI metadata independently checked.
 - Read-only production feed observed at **2026-10-25 13:51 UTC**: Main **111**, Mini **29**; **the separate active 112 release is not touched by this document**. The state can change after this observation.
 
+
+## Missed or expired Guard Passkey — canonical recovery
+
+A missed Passkey window is **not an authorization denial** and is not a reason to change Guard policy, sign the IPA another way, rebuild automatically, or create a preview exception.
+
+**Always first read the authoritative status for the existing operation** using the canonical `pipeline-status` / `ceremony-status` read-only commands, then confirm journal/locks, running process, prior publication kind-state, Guard/Broker restoration and exact request expiry through legitimate operator access.
+
+- **`IN_PROGRESS` / `WAITING_FOR_PASSKEY`**: reconnect to the existing ceremony with bounded `ceremony-status --wait`. Never send a duplicate Guard request.
+- **`COMPLETE` / publication `SUCCEEDED`**: verify existing publication and physical installation. Never republish.
+- **`UNCERTAIN`, `EXECUTING`, `VERIFYING`, missing terminal proof or unverified restoration**: stop; use canonical read-only investigation and authorized reconciliation/recovery. **No blind retry.**
+- **`EXPIRED` / `DECLINED`**: a **fresh attempt** may be appropriate *only after* the authoritative journal proves publication **did not happen**, Guard/Broker restoration is `VERIFIED`, no runner is active, no uncertainty exists, and original candidate/intent/preparation are still valid. New Guard request/nonce/TTL and a new human Passkey are required. **Never** reuse or extend the expired approval.
+- **`FAILED_KNOWN`**: review the terminal failure; correct it and use an appropriately authorized new operation identity.
+
+**Current pipeline gap (verified 2026-10-25):** installed `orbit_release_pipeline.start()` returns `alreadyStarted` when the pipeline record is `STARTED`, even when its ceremony has ended `EXPIRED`. Calling `pipeline-start` again **does not by itself prove a new Passkey request was sent**. The ceremony engine can create a new attempt after terminal expiry with verified restoration, but the pipeline needs a deliberate, reviewed retry transition. See [canonical retry issue #6](https://github.com/wink2003/orbit-family-ai/issues/6). Do not bypass the pipeline using an ad-hoc direct `ceremony-start` or publisher command.
+
+The informational [operator diagnostics patch](https://github.com/wink2003/orbit-family-ai/blob/main/docs/patches/UR-IOS-RELEASE-CONTRACT-CLARITY-20261025.patch) covers classification with synthetic tests; it is not yet a deployed fix for the canonical retry state machine.
+
 ## Guardrails for Codex
 
 A ready dev branch plus successful CI → **promote to eligible branch, rebuild and create intent**. Do not propose security-policy exceptions to evade normal branch eligibility. A missing Passkey request is **not** a Guard rejection. Do not claim that `physical-iPhone-acceptance` is a prepublication blocker; explicitly distinguish hardware Passkey from postpublication app testing.
