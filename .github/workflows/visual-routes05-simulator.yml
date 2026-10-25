@@ -2,6 +2,12 @@ name: ROUTES 05 native simulator evidence
 
 on:
   workflow_dispatch:
+    inputs:
+      targeted_only:
+        description: 'Capture only Issue 17 targeted menu, exams and timetable evidence'
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - codex/routes05-batch1
@@ -90,6 +96,7 @@ jobs:
           printf 'simulator=%s\nudid=%s\n' "$DEVICE_NAME" "$device" > "$out/metadata.txt"
           xcrun simctl list runtimes >> "$out/metadata.txt"
 
+          if [ "${{ inputs.targeted_only }}" != "true" ]; then
           for screen in today chats school family; do
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
@@ -113,6 +120,7 @@ jobs:
               test -s "$out/routes05-${screen}-${appearance}-bottom.png"
             done
           done
+          fi
 
           # Targeted Issue #17 evidence. These are DEBUG fixtures only: the
           # Family route opens the real More owner, Exams spans multiple weeks,
