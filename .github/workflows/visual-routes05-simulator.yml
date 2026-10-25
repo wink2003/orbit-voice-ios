@@ -87,7 +87,7 @@ jobs:
           printf 'simulator=%s\nudid=%s\n' "$DEVICE_NAME" "$device" > "$out/metadata.txt"
           xcrun simctl list runtimes >> "$out/metadata.txt"
 
-          for screen in today orbit school family; do
+          for screen in today chats school family; do
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
               args="--routes05-$screen"
@@ -120,7 +120,29 @@ jobs:
           device="$DEVICE_UDID"
           app="$RUNNER_TEMP/orbit-routes05-simulator/Build/Products/Debug-iphonesimulator/VoiceAgent.app"
           out="$RUNNER_TEMP/orbit-routes05-screenshots"
-          for screen in conversation inbox letter tasks timetable exams brain calendar search timeline briefing notes history; do
+          for screen in conversation inbox letter tasks timetable exams schoolbrain schoolcalendar schoolsearch schooltimeline schoolbriefing schoolnotes schoolhistory; do
+            for appearance in light dark; do
+              xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+              args="--routes05-$screen"
+              if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
+              perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
+              sleep 4
+              file="$out/routes05-${screen}-${appearance}.png"
+              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
+              test -s "$file"
+            done
+          done
+
+      - name: Capture remaining manifest routes
+        if: github.ref == 'refs/heads/codex/routes05-batch2-school-chat'
+        env:
+          DEVICE_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          device="$DEVICE_UDID"
+          app="$RUNNER_TEMP/orbit-routes05-simulator/Build/Products/Debug-iphonesimulator/VoiceAgent.app"
+          out="$RUNNER_TEMP/orbit-routes05-screenshots"
+          for screen in calendar contacts memory voice familychat settings integrations memorydetail contactdetail actionconfirm admin profile notifications memoryimports unknown; do
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
               args="--routes05-$screen"
