@@ -74,7 +74,31 @@ enum Routes05DebugFixtures {
             OrbitSchulmanagerCalendarEvent(uid: "routes05-event-1", title: "Projektwoche", description: "Підготовка до проєктного тижня", location: "Gymnasium am Park", startsAt: "2026-10-20T09:00:00+02:00", endsAt: "2026-10-20T10:00:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "ours", audienceClass: "class", relevanceReason: "Профіль учня"),
             OrbitSchulmanagerCalendarEvent(uid: "routes05-event-2", title: "Батьківська зустріч", description: "Зустріч класу", location: "Кімната 5F", startsAt: "2026-10-22T17:30:00+02:00", endsAt: "2026-10-22T18:30:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "likely", audienceClass: "class", relevanceReason: "Класна подія")
         ]
-        return Routes05SchoolFixture(items: [letter], events: events, tasks: [task], studentNames: ["Ліна"])
+        // Screenshot-only, synthetic Inbox records. Production always fetches its own authorized items.
+        let demoInbox: [OrbitSchoolItem] = [
+            OrbitSchoolItem(id: "routes05-message-swim", type: "message", source: "schulmanager",
+                externalId: "demo-swim", title: "Schwimm-AG — уточнення", sender: "Демо-викладачка",
+                originalGerman: "Bitte prüfen Sie die Schwimmzeiten.", originalPlainText: "Bitte prüfen Sie die Schwimmzeiten.",
+                previewPlainText: "Інформація про плавання", titlePlainText: "Schwimm-AG — уточнення",
+                translationUkrainian: "Перевірте час занять із плавання.", important: nil,
+                sourceTimestamp: now.addingTimeInterval(-86400), importedAt: now, orbitReadAt: nil,
+                unread: true, attachments: [], events: [], threadId: nil, subscriptionId: nil, tasks: []),
+            OrbitSchoolItem(id: "routes05-parent-meeting", type: "letter", source: "schulmanager",
+                externalId: "demo-meeting", title: "Elternsprechtag", sender: "Навчальна адміністрація (демо)",
+                originalGerman: "Die Elternsprechstunde findet statt.", originalPlainText: "Die Elternsprechstunde findet statt.",
+                previewPlainText: "Зустріч із батьками", titlePlainText: "Elternsprechtag",
+                translationUkrainian: "Інформація для батьків.", important: nil,
+                sourceTimestamp: now.addingTimeInterval(-172800), importedAt: now, orbitReadAt: now,
+                unread: false, attachments: [], events: [], threadId: nil, subscriptionId: nil, tasks: []),
+            OrbitSchoolItem(id: "routes05-class-message", type: "message", source: "schulmanager",
+                externalId: "demo-class", title: "Нове повідомлення", sender: "Демо-вчитель",
+                originalGerman: "Bitte beachten Sie den Hinweis.", originalPlainText: "Bitte beachten Sie den Hinweis.",
+                previewPlainText: "Коротке повідомлення для класу", titlePlainText: "Нове повідомлення",
+                translationUkrainian: "Зверніть увагу на оголошення.", important: nil,
+                sourceTimestamp: now.addingTimeInterval(-259200), importedAt: now, orbitReadAt: now,
+                unread: false, attachments: [], events: [], threadId: nil, subscriptionId: nil, tasks: [])
+        ]
+        return Routes05SchoolFixture(items: [letter] + demoInbox, events: events, tasks: [task], studentNames: ["Ліна"])
     }()
 
     static let family = Routes05FamilyFixture(
