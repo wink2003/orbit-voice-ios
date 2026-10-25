@@ -13,6 +13,17 @@ struct OrbitMoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Routes05ContextHeader(
+                        section: "system",
+                        eyebrow: "SYSTEM / 19",
+                        title: "Налаштування",
+                        detail: "Профіль, доступ і функції цього iPhone.",
+                        accent: Routes05Tokens.yellow
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                }
                 if authentication.impersonating {
                     Section {
                         Label("Тестовий профіль: \(authentication.displayName ?? "активний")", systemImage: "person.crop.circle.badge.exclamationmark")

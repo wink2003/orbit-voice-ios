@@ -61,14 +61,20 @@ struct MainVoiceHomeView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color.bg1, state.accent.opacity(0.13), Color.bg1],
+                colors: [Routes05Tokens.canvas, state.accent.opacity(0.13), Routes05Tokens.canvas],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
 
             VStack(spacing: 24) {
-                header
+                Routes05ContextHeader(
+                    section: "system",
+                    eyebrow: "SYSTEM / 17",
+                    title: "Голос",
+                    detail: "LiveKit і звуковий стан цього пристрою.",
+                    accent: Routes05Tokens.orange
+                )
                 Spacer(minLength: 12)
                 voiceOrb
                 status
@@ -81,21 +87,6 @@ struct MainVoiceHomeView: View {
             .padding(.vertical, 20)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: state)
-    }
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("ORBIT").font(.headline.weight(.bold)).tracking(3).foregroundStyle(.tint)
-                Text("Голос").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Image(systemName: "waveform")
-                .font(.title3.weight(.semibold))
-                .frame(width: 42, height: 42)
-                .background(.thinMaterial, in: Circle())
-                .accessibilityHidden(true)
-        }
     }
 
     private var voiceOrb: some View {

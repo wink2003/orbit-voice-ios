@@ -5,7 +5,10 @@ struct OrbitDashboardView: View {
     let isSelected: Bool
     @StateObject private var store = ServerOverviewStore()
     var body: some View {
-        ScrollView { VStack(alignment: .leading, spacing: 16) { content }.padding(16) }.background(Routes05Tokens.canvas).routes05ContextSurface().navigationTitle("Admin · сервер").toolbar { Button { store.loadIfNeeded(force: true) } label: { Image(systemName: "arrow.clockwise") }.disabled(store.isLoading) }.refreshable { store.loadIfNeeded(force: true) }
+        ScrollView { VStack(alignment: .leading, spacing: 16) {
+            Routes05ContextHeader(section: "system", eyebrow: "SYSTEM / 24", title: "Admin", detail: "Read-only operational overview; actions remain guarded.", accent: Routes05Tokens.mint)
+            content
+        }.padding(.bottom, 16) }.background(Routes05Tokens.canvas).routes05ContextSurface().navigationTitle("Admin · сервер").toolbar { Button { store.loadIfNeeded(force: true) } label: { Image(systemName: "arrow.clockwise") }.disabled(store.isLoading) }.refreshable { store.loadIfNeeded(force: true) }
         .task(id: isSelected) { if isSelected { store.loadIfNeeded() } }
     }
     @ViewBuilder private var content: some View {

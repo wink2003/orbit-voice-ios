@@ -98,6 +98,13 @@ struct FamilyMessengerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Routes05ContextHeader(
+                section: "system",
+                eyebrow: "SYSTEM / 18",
+                title: "Родинний чат",
+                detail: "Повідомлення лише в межах авторизованого профілю.",
+                accent: Routes05Tokens.mint
+            )
             if messages.isEmpty {
                 ContentUnavailableView("Родинний чат", systemImage: "bubble.left.and.bubble.right", description: Text("Напишіть коротке повідомлення для сім’ї."))
             } else {
@@ -180,12 +187,12 @@ struct OrbitCalendarView: View {
         NavigationStack {
             List {
                 Section {
-                    NovaDestinationHeader(
-                        eyebrow: "FAMILY RHYTHM · AUTHORIZED",
+                    Routes05ContextHeader(
+                        section: "core",
+                        eyebrow: "ORBIT / 06",
                         title: "Календар",
                         detail: "Події вашої сім’ї та підключених календарів.",
-                        tint: NovaTodayTokens.indigo,
-                        symbol: "calendar"
+                        accent: Routes05Tokens.yellow
                     )
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
                     .listRowBackground(Color.clear)
@@ -493,12 +500,12 @@ struct OrbitToolsView: View {
         NavigationStack {
             List {
                 Section {
-                    NovaDestinationHeader(
-                        eyebrow: "ORBIT · READ-ONLY STATUS",
+                    Routes05ContextHeader(
+                        section: "system",
+                        eyebrow: "SYSTEM / 20",
                         title: "Інтеграції",
                         detail: "Стан сервісів і безпечні точки входу Orbit.",
-                        tint: NovaTodayTokens.indigo,
-                        symbol: "slider.horizontal.3"
+                        accent: Routes05Tokens.yellow
                     )
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
                     .listRowBackground(Color.clear)
@@ -565,12 +572,12 @@ struct OrbitContactsView: View {
     var body: some View {
         List {
             Section {
-                NovaDestinationHeader(
-                    eyebrow: "CONTACTS · AUTHORIZED",
+                Routes05ContextHeader(
+                    section: "core",
+                    eyebrow: "ORBIT / 07",
                     title: "Контакти",
                     detail: "Явно збережені ідентичності для безпечних пропозицій у Orbit.",
-                    tint: NovaTodayTokens.indigo,
-                    symbol: "person.crop.circle.badge.plus"
+                    accent: Routes05Tokens.yellow
                 )
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
                 .listRowBackground(Color.clear)
@@ -843,12 +850,12 @@ struct MemoryCenterView: View {
                     List {
                         if let response {
                             Section {
-                                NovaDestinationHeader(
-                                    eyebrow: "MEMORY · PROVENANCE",
+                                Routes05ContextHeader(
+                                    section: "core",
+                                    eyebrow: "ORBIT / 08",
                                     title: "Пам’ять",
                                     detail: "Факти з часом, джерелом і межами профілю.",
-                                    tint: NovaTodayTokens.indigo,
-                                    symbol: "brain.head.profile"
+                                    accent: Routes05Tokens.lilac
                                 )
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
                                 .listRowBackground(Color.clear)
@@ -1319,12 +1326,12 @@ struct OrbitSettingsView: View {
     var body: some View {
             List {
                 Section {
-                    NovaDestinationHeader(
-                        eyebrow: "ORBIT · THIS IPHONE",
+                    Routes05ContextHeader(
+                        section: "system",
+                        eyebrow: "SYSTEM / 19",
                         title: "Налаштування",
                         detail: "Приватність, голос і вигляд застосунку на цьому пристрої.",
-                        tint: NovaTodayTokens.indigo,
-                        symbol: "gearshape"
+                        accent: Routes05Tokens.yellow
                     )
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
                     .listRowBackground(Color.clear)
