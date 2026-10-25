@@ -44,7 +44,11 @@ struct SchoolInboxView: View {
     private let embeddedInNavigation: Bool
     private let hubMode: Bool
     @State private var items: [OrbitSchoolItem] = []
-    @State private var typeFilter: SchoolInboxTypeFilter = .all
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var inheritedColorScheme
+    @State private var appearanceOverride: ColorScheme?
+    @State private var chip: InboxChip = .all
+    @State private var showingSearch = false
     @State private var taskResponse: OrbitSchoolTasksResponse?
     @State private var query = ""
     @State private var error: String?
@@ -75,79 +79,217 @@ struct SchoolInboxView: View {
             else { NavigationStack { schoolList } }
         }
     }
-    private var schoolList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                Routes05ContextHeader(
-                    section: "school",
-                    eyebrow: "SCHULMANAGER / READ ONLY",
-                    title: "Вхідні\nзі школи.",
-                    detail: "Оригінали, переклади й джерела — без запису до Schulmanager.",
-                    accent: Routes05Tokens.blue
-                )
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    TextField("Пошук у вхідних", text: $query)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .submitLabel(.search)
-                        .accessibilityLabel("Пошук листів і повідомлень")
-                    if !query.isEmpty {
-                        Button {
-                            query = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Очистити пошук")
-                    }
-                }
-                .padding(.horizontal, 14)
-                .frame(minHeight: 44)
-                .background(Routes05Tokens.surface)
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
-                Picker("Тип матеріалу", selection: $typeFilter) {
-                    ForEach(SchoolInboxTypeFilter.allCases) { option in Text(option.title).tag(option) }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityLabel("Тип матеріалу")
-                Text(actionSummaryText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if loading { ProgressView().frame(maxWidth: .infinity).padding(.vertical, 12) }
-                if visibleItems.isEmpty && !loading {
-                    ContentUnavailableView(
-                        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Шкільних матеріалів не знайдено" : "Нічого не знайдено",
-                        systemImage: query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "graduationcap" : "magnifyingglass",
-                        description: Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Для цього профілю або фільтра немає отриманих листів чи повідомлень." : "Спробуйте інший пошуковий запит або тип матеріалу.")
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-                }
-                LazyVStack(spacing: 8) {
-                    ForEach(visibleItems) { item in
-                        NavigationLink { SchoolDetailView(item: item) } label: { schoolRow(item) }
-                            .buttonStyle(.plain)
-                    }
-                }
-                if notificationPermission == .denied {
-                    notificationSection.font(.footnote).padding(.top, 8)
-                }
+    private enum InboxChip: String, CaseIterable, Identifiable {
+        case all, letters, chats, unread
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .all: "Всі"
+            case .letters: "Листи"
+            case .chats: "Чати"
+            case .unread: "Непрочитані"
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 24)
         }
-        .background(Routes05Tokens.canvas)
+    }
+
+    // The original 09_inbox.html composition, rendered as native SwiftUI.
+    // Navigation remains owned by SchoolHubView; no new stack or dock.
+    private var schoolList: some View {
+        VStack(spacing: 0) {
+            inboxMast
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 9) {
+                        Button { dismiss() } label: {
+                            Image(systemName: "arrow.left")
+                                .font(.system(size: 18, weight: .semibold))
+                                .frame(width: 40, height: 40)
+                                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.5))
+                        }
+                        .accessibilityLabel("Назад до школи")
+                        .frame(minWidth: 44, minHeight: 44)
+                        Text("Вхідні").font(.system(size: 17, weight: .black, design: .rounded))
+                        Spacer(minLength: 6)
+                        Text("0 / 05").font(.system(size: 10, weight: .black, design: .monospaced))
+                    }
+                    .padding(.top, 14)
+                    .padding(.bottom, 15)
+
+                    HStack(spacing: 8) {
+                        Text("SCHULMANAGER / READ ONLY")
+                            .font(.system(size: 10, weight: .black, design: .monospaced))
+                            .tracking(1.3)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Text("⌁ \(Date.now.formatted(.dateTime.year()))")
+                            .font(.system(size: 10, design: .monospaced))
+                    }
+                    .padding(.vertical, 12)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5)
+                    }
+
+                    HStack(alignment: .center, spacing: 12) {
+                        Text("Вхідні\nзі школи.")
+                            .font(.system(size: 35, weight: .black, design: .rounded))
+                            .tracking(-1.8)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: 6)
+                        Text(String(format: "%02d", min(items.filter(\.unread).count, 99)))
+                            .font(.system(size: 28, weight: .black, design: .rounded))
+                            .foregroundStyle(Routes05Tokens.accentInk)
+                            .frame(width: 60, height: 60)
+                            .background(Routes05Tokens.blue, in: Circle())
+                            .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+                            .accessibilityLabel("Непрочитаних: \(items.filter(\.unread).count)")
+                    }
+                    .padding(.top, 15).padding(.bottom, 13)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 7) {
+                            ForEach(InboxChip.allCases) { option in
+                                Button { chip = option } label: {
+                                    Text(option.title)
+                                        .font(.system(size: 11, weight: .heavy))
+                                        .lineLimit(1)
+                                        .foregroundStyle(chip == option ? Routes05Tokens.canvas : Routes05Tokens.ink)
+                                        .padding(.horizontal, 11)
+                                        .frame(minHeight: 34)
+                                        .background(chip == option ? Routes05Tokens.ink : Routes05Tokens.surface, in: Capsule())
+                                        .overlay(Capsule().stroke(chip == option ? Routes05Tokens.ink : Routes05Tokens.rule, lineWidth: 1.5))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(chip == option ? .isSelected : [])
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .accessibilityLabel("Фільтри вхідних")
+
+                    if showingSearch {
+                        HStack(spacing: 9) {
+                            Image(systemName: "magnifyingglass").foregroundStyle(Routes05Tokens.secondary)
+                            TextField("Пошук у вхідних", text: $query)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .submitLabel(.search)
+                            Button {
+                                query = ""
+                                showingSearch = false
+                            } label: { Image(systemName: "xmark.circle.fill") }
+                                .accessibilityLabel("Закрити пошук")
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
+                        .background(Routes05Tokens.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.rule, lineWidth: 1))
+                        .padding(.top, 10)
+                    }
+
+                    if loading {
+                        ProgressView("Завантаження вхідних…")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                    }
+                    if visibleItems.isEmpty && !loading {
+                        Routes05StateRow(
+                            text: query.isEmpty ? "Для цього профілю й фільтра немає доступних матеріалів." : "Нічого не знайдено — змініть запит або фільтр.",
+                            tint: Routes05Tokens.blue
+                        )
+                        .padding(.top, 20)
+                    }
+                    LazyVStack(spacing: 0) {
+                        ForEach(visibleItems.indices, id: \.self) { index in
+                            let item = visibleItems[index]
+                            NavigationLink { SchoolDetailView(item: item) } label: {
+                                schoolRow(item, index: index)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, 18)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("ВАЖЛИВО")
+                            .font(.system(size: 10, weight: .black, design: .monospaced))
+                            .tracking(1.4)
+                        Text("Оригінальні повідомлення лише читаються. Orbit не відповідає за вас і не змінює Schulmanager.")
+                            .font(.system(size: 12))
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Routes05Tokens.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.5))
+                    .padding(.top, 17)
+
+                    if notificationPermission == .denied {
+                        notificationSection.font(.footnote).padding(.top, 12)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 32)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .refreshable { await load() }
+        }
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
+        .foregroundStyle(Routes05Tokens.ink)
         .safeAreaPadding(.bottom, 16)
-        .navigationTitle("")
-        .refreshable { await load() }
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
+        .preferredColorScheme(appearanceOverride)
         .onAppear { Task { await load(); await refreshNotificationPermission() } }
-        .alert("Школа недоступна", isPresented: .constant(error != nil)) { Button("Повторити") { error = nil; Task { await load() } }; Button("Гаразд", role: .cancel) { error = nil } } message: { Text(error ?? "") }
+        .alert("Школа недоступна", isPresented: .constant(error != nil)) {
+            Button("Повторити") { error = nil; Task { await load() } }
+            Button("Гаразд", role: .cancel) { error = nil }
+        } message: { Text(error ?? "") }
+    }
+
+    private var inboxMast: some View {
+        HStack(spacing: 7) {
+            ZStack {
+                Circle().stroke(Routes05Tokens.ink, lineWidth: 2)
+                Circle().fill(Routes05Tokens.mint).frame(width: 8, height: 8)
+            }
+            .frame(width: 27, height: 27)
+            Text("orbit")
+                .font(.system(size: 20, weight: .black, design: .rounded)).tracking(-1.2)
+            Text("/ ROUTES")
+                .font(.system(size: 9, weight: .black, design: .monospaced))
+                .tracking(1.1).padding(.leading, 4)
+            Spacer(minLength: 4)
+            Text("SCHOOL / 05")
+                .font(.system(size: 9, weight: .black, design: .monospaced))
+                .tracking(0.5).lineLimit(1).minimumScaleFactor(0.85)
+            Button {
+                appearanceOverride = (appearanceOverride ?? inheritedColorScheme) == .dark ? .light : .dark
+            } label: {
+                Image(systemName: "circle.lefthalf.filled").font(.system(size: 15))
+                    .frame(width: 35, height: 35)
+            }
+            .accessibilityLabel("Перемкнути тему Вхідних")
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2))
+            Menu {
+                Button("Пошук", systemImage: "magnifyingglass") { showingSearch = true }
+                Button("Всі", systemImage: "tray") { chip = .all }
+                Button("Непрочитані", systemImage: "envelope.badge") { chip = .unread }
+                Text(actionSummaryText)
+            } label: {
+                Image(systemName: "list.bullet").font(.system(size: 15))
+                    .frame(width: 35, height: 35)
+            }
+            .accessibilityLabel("Дії та фільтри Вхідних")
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 49)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5)
+        }
     }
     private var itemSnapshots: [SchoolInboxItemSnapshot] {
         items.map { item in
@@ -185,7 +327,13 @@ struct SchoolInboxView: View {
     }
     private var visibleItems: [OrbitSchoolItem] {
         let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-        return SchoolHubLogic.filterInboxItemIDs(itemSnapshots, filter: .all, typeFilter: typeFilter, query: query, actionSummary: actionSummary).compactMap { byID[$0] }
+        let type: SchoolInboxTypeFilter = switch chip {
+        case .letters: .letters
+        case .chats: .messages
+        case .all, .unread: .all
+        }
+        let status: SchoolInboxFilter = chip == .unread ? .unread : .all
+        return SchoolHubLogic.filterInboxItemIDs(itemSnapshots, filter: status, typeFilter: type, query: query, actionSummary: actionSummary).compactMap { byID[$0] }
     }
     @ViewBuilder private var notificationSection: some View {
         switch notificationPermission {
@@ -195,45 +343,67 @@ struct SchoolInboxView: View {
             EmptyView()
         }
     }
-    private func schoolRow(_ item: OrbitSchoolItem) -> some View {
+    private func schoolRow(_ item: OrbitSchoolItem, index: Int) -> some View {
         let sender = item.sender.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.sender
         let title = item.titlePlainText?.isEmpty == false ? item.titlePlainText! : (item.title.isEmpty ? String((item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).prefix(80)) : item.title)
-        let preview = inboxPreview(for: item)
-        return HStack(alignment: .top, spacing: 12) {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: item.type == "letter" ? "envelope.fill" : "message.fill")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(item.type == "letter" ? Color.orange : Color.accentColor)
-                    .frame(width: 36, height: 36)
-                    .background((item.type == "letter" ? Color.orange : Color.accentColor).opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-                if item.unread {
-                    Circle().fill(Color.accentColor).frame(width: 8, height: 8).overlay(Circle().stroke(OrbitColors.card, lineWidth: 2)).offset(x: 2, y: -2)
-                }
+        let tint: Color = switch index % 4 {
+        case 0: Routes05Tokens.yellow
+        case 1: Routes05Tokens.mint
+        case 2: Routes05Tokens.lilac
+        default: Routes05Tokens.orange
+        }
+        return HStack(spacing: 12) {
+            Image(systemName: item.type == "letter" ? "envelope.fill" : "text.bubble.fill")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Routes05Tokens.accentInk)
+                .frame(width: 36, height: 36)
+                .background(tint, in: Circle())
+                .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 1.4))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Routes05Tokens.ink)
+                    .lineLimit(2)
+                Text("\(sender) · \(inboxDateLabel(item.sourceTimestamp ?? item.importedAt))")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Routes05Tokens.secondary)
+                    .lineLimit(2)
             }
-            .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(title).font(.callout.weight(item.unread ? .semibold : .medium)).lineLimit(2)
-                    Spacer(minLength: 4)
-                    if let date = item.sourceTimestamp ?? item.importedAt { Text(date, format: .dateTime.day().month(.abbreviated)).font(.caption2.weight(.medium)).foregroundStyle(.secondary).fixedSize() }
-                }
-                Text(preview).font(.footnote).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
-                    Text(sender).lineLimit(1)
-                    if let count = taskCount(for: item), count > 0 { Label("\(count) відкритих справ", systemImage: "checklist") }
-                    if item.attachments.count == 1 { Label("1 вкладення", systemImage: "paperclip") }
-                    else if item.attachments.count > 1 { Label("\(item.attachments.count) вкладення", systemImage: "paperclip") }
-                }
-                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 4)
+            if item.unread {
+                Circle().fill(Routes05Tokens.ink).frame(width: 9, height: 9)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .black))
             }
         }
-        .padding(.vertical, 10).padding(.horizontal, 4)
-        .background(Routes05Tokens.surface)
-        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.rule, lineWidth: 1))
+        .frame(minHeight: 59)
+        .padding(.vertical, 6)
+        .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title). \(preview)")
-        .accessibilityValue([item.unread ? "Непрочитано" : nil, taskCount(for: item).map { "\($0) відкритих справ" }, item.attachments.isEmpty ? nil : "\(item.attachments.count) вкладень"].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel("\(title). \(sender). \(inboxPreview(for: item))")
+        .accessibilityValue([
+            item.unread ? "Непрочитано" : nil,
+            taskCount(for: item).map { "\($0) відкритих справ" },
+            item.attachments.isEmpty ? nil : "\(item.attachments.count) вкладень"
+        ].compactMap { $0 }.joined(separator: ", "))
+    }
+
+    private func inboxDateLabel(_ date: Date?) -> String {
+        guard let date else { return "дата невідома" }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = SchoolHubLogic.schoolTimeZone
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "uk_UA")
+        formatter.timeZone = SchoolHubLogic.schoolTimeZone
+        if calendar.isDateInToday(date) {
+            formatter.dateFormat = "HH:mm"
+            return "сьогодні \(formatter.string(from: date))"
+        }
+        formatter.dateFormat = "d MMMM"
+        return formatter.string(from: date)
     }
     private func inboxPreview(for item: OrbitSchoolItem) -> String {
         let translation = item.translationUkrainian?.trimmingCharacters(in: .whitespacesAndNewlines)
