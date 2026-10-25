@@ -202,7 +202,7 @@ struct SchoolInboxView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(visibleItems.indices, id: \.self) { index in
                             let item = visibleItems[index]
-                            NavigationLink { SchoolDetailView(item: item) } label: {
+                            NavigationLink { SchoolDetailView(item: item).toolbar(.visible, for: .navigationBar).navigationBarBackButtonHidden(false) } label: {
                                 schoolRow(item, index: index)
                             }
                             .buttonStyle(.plain)
