@@ -3154,15 +3154,17 @@ private struct Routes05SchoolTimetableProductionView: View {
     }
     private var slots: [Int] { Array(Set(store.timetable.map(\.lessonIndex))).sorted() }
     private var classLabel: String? {
-        store.timetable.flatMap { entry in
-            [entry.groupName, entry.group] + entry.groups.map(\.name)
+        for entry in store.timetable {
+            let candidates: [String?] = [entry.groupName, entry.group] + entry.groups.map { $0.name }
+            if let verified = candidates.compactMap({ value -> String? in
+                guard let value else { return nil }
+                let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return normalized.isEmpty ? nil : normalized
+            }).first {
+                return verified
+            }
         }
-        .compactMap { value in
-            guard let value else { return nil }
-            let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return normalized.isEmpty ? nil : normalized
-        }
-        .first
+        return nil
     }
     private var title: String { classLabel.map { "Розклад\n\($0)." } ?? "Розклад." }
     private var weekNumber: String {
