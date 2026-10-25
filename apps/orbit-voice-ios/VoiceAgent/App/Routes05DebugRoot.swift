@@ -7,10 +7,14 @@ struct Routes05DebugRoot: View {
 
     init() {
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("--routes05-today") { _selection = State(initialValue: .home) }
-        else if args.contains("--routes05-orbit") || args.contains("--routes05-conversation") { _selection = State(initialValue: .orbit) }
-        else if args.contains(where: { $0.hasPrefix("--routes05-") }) { _selection = State(initialValue: .school) }
-        else { _selection = State(initialValue: .family) }
+        _selection = State(initialValue: Self.initialSelection(args))
+    }
+
+    private static func initialSelection(_ args: [String]) -> OrbitMainTab {
+        if args.contains("--routes05-today") || args.contains("--routes05-calendar") || args.contains("--routes05-actionconfirm") { return .home }
+        if args.contains("--routes05-orbit") || args.contains("--routes05-chats") || args.contains("--routes05-conversation") { return .orbit }
+        if args.contains("--routes05-school") || args.contains("--routes05-inbox") || args.contains("--routes05-letter") || args.contains("--routes05-tasks") || args.contains("--routes05-timetable") || args.contains("--routes05-exams") || args.contains("--routes05-brain") || args.contains("--routes05-schoolbrain") || args.contains("--routes05-schoolcalendar") || args.contains("--routes05-search") || args.contains("--routes05-schoolsearch") || args.contains("--routes05-timeline") || args.contains("--routes05-schooltimeline") || args.contains("--routes05-briefing") || args.contains("--routes05-schoolbriefing") || args.contains("--routes05-notes") || args.contains("--routes05-schoolnotes") || args.contains("--routes05-history") || args.contains("--routes05-schoolhistory") { return .school }
+        return .family
     }
 
     private var screen: Routes05DebugScreen {
