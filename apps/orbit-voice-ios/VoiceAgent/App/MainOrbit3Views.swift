@@ -361,11 +361,12 @@ struct MainOrbit3FamilyView: View {
     @State private var showingFamilyMore = false
 
     #if DEBUG
-    init(fixture: Routes05FamilyFixture? = nil) {
+    init(fixture: Routes05FamilyFixture? = nil, initialShowingMore: Bool = false) {
         self.fixture = fixture
         _profiles = State(initialValue: fixture?.profiles ?? [])
         _messages = State(initialValue: fixture?.messages ?? [])
         _isLoading = State(initialValue: fixture == nil)
+        _showingFamilyMore = State(initialValue: initialShowingMore)
     }
     #endif
 
