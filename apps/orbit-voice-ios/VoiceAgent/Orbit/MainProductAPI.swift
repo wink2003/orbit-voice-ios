@@ -95,6 +95,35 @@ struct OrbitSchoolHubV2Overview: Decodable, Hashable {
     let upcomingExams: [OrbitSchoolHubV2Exam]
     let projects: [OrbitSchoolHubV2Project]
     let coverage: [String: OrbitSchoolHubV2Coverage]?
+    let schoolClass: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case state, freshness, sourceStates, profileTitle, todayDayKey, upcomingExams, projects, coverage
+        case studentClass, schoolClass, className, school_class
+    }
+
+    init(state: String, freshness: OrbitSchoolHubV2Freshness, sourceStates: [String: String], profileTitle: String?, todayDayKey: String?, upcomingExams: [OrbitSchoolHubV2Exam], projects: [OrbitSchoolHubV2Project], coverage: [String: OrbitSchoolHubV2Coverage]?, schoolClass: String? = nil) {
+        self.state = state; self.freshness = freshness; self.sourceStates = sourceStates; self.profileTitle = profileTitle; self.todayDayKey = todayDayKey; self.upcomingExams = upcomingExams; self.projects = projects; self.coverage = coverage; self.schoolClass = schoolClass
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        state = try c.decode(String.self, forKey: .state)
+        freshness = try c.decode(OrbitSchoolHubV2Freshness.self, forKey: .freshness)
+        sourceStates = try c.decode([String: String].self, forKey: .sourceStates)
+        profileTitle = try c.decodeIfPresent(String.self, forKey: .profileTitle)
+        todayDayKey = try c.decodeIfPresent(String.self, forKey: .todayDayKey)
+        upcomingExams = try c.decode([OrbitSchoolHubV2Exam].self, forKey: .upcomingExams)
+        projects = try c.decode([OrbitSchoolHubV2Project].self, forKey: .projects)
+        coverage = try c.decodeIfPresent([String: OrbitSchoolHubV2Coverage].self, forKey: .coverage)
+        schoolClass = [
+            try c.decodeIfPresent(String.self, forKey: .studentClass),
+            try c.decodeIfPresent(String.self, forKey: .schoolClass),
+            try c.decodeIfPresent(String.self, forKey: .className),
+            try c.decodeIfPresent(String.self, forKey: .school_class)
+        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+    }
 }
 struct OrbitSchoolHubV2OverviewResponse: Decodable { let overview: OrbitSchoolHubV2Overview }
 struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {

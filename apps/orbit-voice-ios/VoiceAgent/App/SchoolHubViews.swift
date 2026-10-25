@@ -12,6 +12,7 @@ final class SchoolHubStore {
     var events: [OrbitSchulmanagerCalendarEvent] = []
     var canonicalTasks: [OrbitSchoolTask] = []
     var studentNames: [String] = []
+    var studentClass: String?
     var itemsLoadedOnce = false
     var calendarLoadedOnce = false
     var tasksLoadedOnce = false
@@ -53,7 +54,7 @@ final class SchoolHubStore {
 
     func reset(to key: String) {
         gate.reset(to: key)
-        items = []; events = []; canonicalTasks = []; actionTasks = []; studentNames = []
+        items = []; events = []; canonicalTasks = []; actionTasks = []; studentNames = []; studentClass = nil
         actionCapability = .unknown
         calendarLinks = [:]; updatingTaskIDs = []
         itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false; taskCoverage = nil; taskCoverageTruncated = false
@@ -139,7 +140,8 @@ final class SchoolHubStore {
         async let tasksResult: Void = loadTasks(token)
         async let actionTasksResult: Void = loadActionTasks(token)
         async let namesResult: Void = loadNames(token)
-        _ = await (itemsResult, calendarResult, tasksResult, actionTasksResult, namesResult)
+        async let classResult: Void = loadStudentClass(token)
+        _ = await (itemsResult, calendarResult, tasksResult, actionTasksResult, namesResult, classResult)
     }
 
     private func loadItems(_ token: Int) async {
@@ -204,6 +206,13 @@ final class SchoolHubStore {
         if let profiles = try? await MainProductAPI.shared.familyProfiles(), gate.accepts(token) {
             studentNames = profiles.filter(\.isMinor).map(\.displayName)
         }
+    }
+
+    private func loadStudentClass(_ token: Int) async {
+        let start = SchoolHubLogic.dayKey(of: Date())
+        let end = SchoolHubLogic.addDays(7, to: start) ?? start
+        guard let response = try? await MainProductAPI.shared.schoolOverview(start: start, end: end), gate.accepts(token) else { return }
+        studentClass = response.overview.schoolClass
     }
 
     private func loadActionTasks(_ token: Int) async {
@@ -332,12 +341,12 @@ private struct SchoolHubV2View: View {
         VStack(spacing: 0) {
             Routes05ContextHeader(
                 section: "school",
-                eyebrow: initialSection == .exams ? "SCHOOL / UPCOMING" : "WEEK / TIMETABLE",
-                title: initialSection == .exams ? "Контрольні.\nСпокійно." : "Розклад\n5F.",
+                eyebrow: tab == 1 ? "SCHOOL / UPCOMING" : "WEEK / TIMETABLE",
+                title: tab == 1 ? "Контрольні.\nСпокійно." : timetableTitle,
                 detail: "Підтверджуйте інформацію джерелом; стан покриття відображається нижче.",
                 accent: initialSection == .exams ? Routes05Tokens.lilac : Routes05Tokens.mint
             )
-            weekToolbar
+            if tab != 1 { weekToolbar }
             Picker("Розділ", selection: $tab) {
                 Text("Огляд").tag(0)
                 Text("Іспити").tag(1)
@@ -351,6 +360,9 @@ private struct SchoolHubV2View: View {
                     Image(systemName: state == "READY_WITH_DATA" ? "checkmark.circle.fill" : state == "READY_EMPTY" ? "checkmark.circle" : "clock.badge.exclamationmark")
                     Text(state == "READY_WITH_DATA" ? "Дані за тиждень оновлено" : state == "READY_EMPTY" ? "Тиждень перевірено: даних немає" : state == "NOT_SYNCED" ? "Тиждень ще не синхронізовано" : state == "STALE" ? "Дані можуть бути застарілими" : "Дані тимчасово недоступні")
                     if let label = OrbitFreshness.label(from: freshness.observedAt) { Text("· \(label)") }
+                    if store.outOfRangeTimetableCount > 0 {
+                        Text("· \(store.outOfRangeTimetableCount) поза тижнем не показано")
+                    }
                     Spacer()
                 }
                 .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.bottom, 4)
@@ -362,6 +374,11 @@ private struct SchoolHubV2View: View {
             }
         }
         .background(Routes05Tokens.canvas.ignoresSafeArea())
+    }
+
+    private var timetableTitle: String {
+        guard let value = store.overview?.schoolClass?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return "Розклад." }
+        return "Розклад\n\(value)."
     }
 
     private var weekToolbar: some View {
@@ -406,12 +423,28 @@ private struct SchoolHubV2View: View {
     }
 
     private var examsView: some View {
-        List {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
             if store.coverageState == "NOT_SYNCED" { ContentUnavailableView("Дані за цей тиждень ще не завантажені", systemImage: "clock.badge.exclamationmark", description: Text("Для вибраного тижня ще немає підтвердженої синхронізації.")) }
             else if ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState) { ContentUnavailableView("Дані тимчасово недоступні", systemImage: "cloud.slash", description: Text("Стан синхронізації не підтверджено для цього тижня.")) }
             else if store.exams.isEmpty { ContentUnavailableView("Іспитів немає", systemImage: "checkmark.circle", description: Text("За вибраний період іспитів не знайдено.")) }
-            else { ForEach(store.exams) { examRow($0) } }
-        }.listStyle(.insetGrouped)
+            else { ForEach(store.examWeeks, id: \.week) { week in
+                Text("ТИЖДЕНЬ \(week.week)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.3).foregroundStyle(Routes05Tokens.secondary)
+                ForEach(week.days, id: \.date) { day in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(SchoolHubFormat.long(day.date)).font(.headline.weight(.black))
+                        ForEach(day.exams) { exam in examRow(exam) }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Routes05Tokens.surface)
+                    .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
+                }
+            } }
+            if let end = store.examCoverageEnd { Text("Покриття іспитів: до \(SchoolHubFormat.long(end))").font(.caption).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16) }
+            }
+            .padding(.vertical, 8)
+        }
+        .novaDockAwareScrollContent()
     }
 
     private var timetableView: some View {
@@ -423,8 +456,8 @@ private struct SchoolHubV2View: View {
             return AnyView(ContentUnavailableView(title, systemImage: "calendar.badge.exclamationmark", description: Text(message)))
         }
 
-        let days = Array(Set(store.timetable.map(\.dayKey))).sorted()
-        let lessonIndexes = Array(Set(store.timetable.map(\.lessonIndex))).sorted()
+        let days = (0..<5).compactMap { SchoolHubLogic.addDays($0, to: store.weekStart) }
+        let lessonIndexes = Array(Set(store.timetable.filter { days.contains($0.localDate) }.map(\.lessonIndex))).sorted()
         return AnyView(ScrollView([.horizontal, .vertical]) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
@@ -437,17 +470,21 @@ private struct SchoolHubV2View: View {
                 }
                 .padding(.horizontal, 16)
                 ForEach(lessonIndexes, id: \.self) { lessonIndex in
+                    let rowHeight = max(92, CGFloat(days.map { day in
+                        store.timetable.filter { entry in entry.localDate == day && entry.lessonIndex == lessonIndex }.count
+                    }.max() ?? 0) * 70)
                     HStack(alignment: .top, spacing: 8) {
                         Text(String(format: "%02d", lessonIndex))
                             .font(.headline.monospacedDigit())
-                            .frame(width: 56, height: 92, alignment: .topLeading)
+                            .frame(width: 56, height: rowHeight, alignment: .topLeading)
                         ForEach(days, id: \.self) { day in
-                            if let entry = store.timetable.first(where: { $0.dayKey == day && $0.lessonIndex == lessonIndex }) {
-                                Routes05TimetableCell(entry: entry, lessonIndex: lessonIndex)
+                            let entries = store.timetable.filter { $0.localDate == day && $0.lessonIndex == lessonIndex }
+                            if !entries.isEmpty {
+                                Routes05TimetableCell(entries: entries, lessonIndex: lessonIndex, height: rowHeight)
                             } else {
                                 RoundedRectangle(cornerRadius: 3)
                                     .stroke(Routes05Tokens.ink.opacity(0.18), lineWidth: 1)
-                                    .frame(width: 148, height: 92)
+                                    .frame(width: 148, height: rowHeight)
                                     .overlay(Text("—").foregroundStyle(.secondary))
                             }
                         }
@@ -652,8 +689,9 @@ private enum SchoolHubFormat {
 }
 
 private struct Routes05TimetableCell: View {
-    let entry: OrbitSchoolHubV2TimetableEntry
+    let entries: [OrbitSchoolHubV2TimetableEntry]
     let lessonIndex: Int
+    let height: CGFloat
 
     private var fill: Color {
         [Routes05Tokens.blue, Routes05Tokens.mint, Routes05Tokens.lilac, Routes05Tokens.yellow, Routes05Tokens.orange][(lessonIndex - 1) % 5]
@@ -661,26 +699,30 @@ private struct Routes05TimetableCell: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(entry.subject)
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(Routes05Tokens.accentInk)
-                .lineLimit(2)
-            Text([entry.startsAtLocal ?? entry.startsAt, entry.room, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(Routes05Tokens.accentInk.opacity(0.78))
-                .lineLimit(3)
-            if entry.isCancelled {
-                Label("Скасовано", systemImage: "xmark.circle")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Routes05Tokens.accentInk)
+            ForEach(entries) { entry in
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(entry.subject)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Routes05Tokens.accentInk)
+                        .lineLimit(2)
+                    Text([entry.startsAtLocal ?? entry.startsAt, entry.room, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(Routes05Tokens.accentInk.opacity(0.78))
+                        .lineLimit(3)
+                    if entry.isCancelled {
+                        Label("Скасовано", systemImage: "xmark.circle")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(Routes05Tokens.accentInk)
+                    }
+                }
             }
         }
-        .frame(width: 148, height: 92, alignment: .topLeading)
+        .frame(width: 148, height: height, alignment: .topLeading)
         .padding(10)
         .background(fill)
         .overlay(Rectangle().stroke(Routes05Tokens.ink, lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Урок \(lessonIndex), \(entry.subject)")
+        .accessibilityLabel("Урок \(lessonIndex), \(entries.map(\.subject).joined(separator: ", "))")
     }
 }
 
@@ -1000,7 +1042,22 @@ final class SchoolHubV2Store {
     var coverageState: String = "NOT_SYNCED"
     var weekStart: String = SchoolHubV2Store.currentWeekStart()
     var errorText: String?
+    var examCoverageEnd: String?
     var weekEnd: String { SchoolHubLogic.addDays(7, to: weekStart) ?? weekStart }
+    var outOfRangeTimetableCount: Int {
+        let days = Set((0..<5).compactMap { SchoolHubLogic.addDays($0, to: weekStart) })
+        return timetable.filter { !days.contains($0.localDate) }.count
+    }
+    var examWeeks: [ExamWeek] {
+        Dictionary(grouping: exams.filter { !$0.dayKey.isEmpty }, by: { SchoolHubLogic.isoWeek(of: $0.dayKey) })
+            .sorted { $0.key < $1.key }
+            .map { week, values in
+                ExamWeek(week: week, days: Dictionary(grouping: values.sorted { $0.dayKey < $1.dayKey }, by: \.dayKey).sorted { $0.key < $1.key }.map { ExamDay(date: $0.key, exams: $0.value) })
+            }
+    }
+
+    struct ExamWeek: Identifiable { let week: String; let days: [ExamDay]; var id: String { week } }
+    struct ExamDay: Identifiable { let date: String; let exams: [OrbitSchoolHubV2Exam]; var id: String { date } }
 
     init() {}
 
@@ -1028,11 +1085,16 @@ final class SchoolHubV2Store {
         phase = .loading; errorText = nil
         do {
             async let overviewResult = MainProductAPI.shared.schoolOverview(start: weekStart, end: weekEnd)
-            async let examsResult = MainProductAPI.shared.schoolExams(from: weekStart, to: weekEnd)
+            let examEnd = SchoolHubLogic.addDays(56, to: weekStart) ?? weekEnd
+            async let examsResult = MainProductAPI.shared.schoolExams(from: weekStart, to: examEnd)
             async let timetableResult = MainProductAPI.shared.schoolTimetable(from: weekStart, to: weekEnd)
             let (overviewResponse, examsResponse, timetableResponse) = try await (overviewResult, examsResult, timetableResult)
             overview = overviewResponse.overview
-            exams = examsResponse.exams
+            exams = Dictionary(grouping: examsResponse.exams, by: \.id).compactMap { $0.value.first }.sorted {
+                if $0.dayKey != $1.dayKey { return $0.dayKey < $1.dayKey }
+                return $0.id < $1.id
+            }
+            examCoverageEnd = examsResponse.to
             timetable = timetableResponse.timetable.entries.sorted { lhs, rhs in
                 if lhs.dayKey != rhs.dayKey { return lhs.dayKey < rhs.dayKey }
                 if lhs.lessonIndex != rhs.lessonIndex { return lhs.lessonIndex < rhs.lessonIndex }
@@ -1226,6 +1288,7 @@ private struct SchoolCommandCenter: View {
                 routesUpcoming
                         routesAsk
                     }
+                    .padding(.top, 8)
                     .padding(.bottom, 120)
                 }
                 .safeAreaPadding(.bottom, 96)
@@ -1242,29 +1305,13 @@ private struct SchoolCommandCenter: View {
     }
 
     private var routesHeader: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("SOURCE / SCHULMANAGER · READ ONLY")
-                    .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
-                    .foregroundStyle(Routes05Tokens.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(2)
-                Text("Школа.\nНа зв’язку.")
-                    .font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineSpacing(-4)
-                Text("Профіль учня · події, листи й підготовка.")
-                    .font(.footnote.weight(.medium)).foregroundStyle(Routes05Tokens.secondary)
-                    .lineLimit(2)
-                if !store.studentNames.isEmpty {
-                    Text(store.studentNames.joined(separator: " · ")).font(.subheadline.weight(.bold))
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Text("↗").font(.system(size: 29, weight: .black)).foregroundStyle(Routes05Tokens.accentInk)
-                .frame(width: 59, height: 59).background(Routes05Tokens.mint, in: Circle())
-                .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
-                .layoutPriority(1)
+        Routes05RootHeader(
+            "SOURCE / SCHULMANAGER · READ ONLY",
+            title: "Школа.\nНа зв’язку.",
+            detail: store.studentNames.isEmpty ? "Профіль учня · події, листи й підготовка." : "\(store.studentNames.joined(separator: " · ")) · події, листи й підготовка."
+        ) {
+            Routes05SchoolBadge(classLabel: store.studentClass)
         }
-        .padding(.horizontal, 16).padding(.top, 12)
     }
 
     private var routesGrid: some View {
@@ -3148,21 +3195,14 @@ private struct Routes05SchoolTimetableProductionView: View {
 #endif
 
     private var days: [String] {
-        let weekdays = (0..<5).compactMap { SchoolHubLogic.addDays($0, to: store.weekStart) }
-        let known = Set(store.timetable.map(\.dayKey))
-        return weekdays + known.subtracting(weekdays).sorted()
+        (0..<5).compactMap { SchoolHubLogic.addDays($0, to: store.weekStart) }
     }
-    private var slots: [Int] { Array(Set(store.timetable.map(\.lessonIndex))).sorted() }
+    private var slots: [Int] {
+        Array(Set(store.timetable.filter { days.contains($0.localDate) }.map(\.lessonIndex))).sorted()
+    }
     private var classLabel: String? {
-        for entry in store.timetable {
-            let candidates: [String?] = [entry.groupName, entry.group] + entry.groups.map { $0.name }
-            if let verified = candidates.compactMap({ value -> String? in
-                guard let value else { return nil }
-                let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                return normalized.isEmpty ? nil : normalized
-            }).first {
-                return verified
-            }
+        if let verified = store.overview?.schoolClass?.trimmingCharacters(in: .whitespacesAndNewlines), !verified.isEmpty {
+            return verified
         }
         return nil
     }
@@ -3233,7 +3273,7 @@ private struct Routes05SchoolTimetableProductionView: View {
         else { GeometryReader { proxy in timetableGrid(width: proxy.size.width) }.frame(height: slots.map { slotHeight($0) }.reduce(CGFloat(40)) { $0 + $1 + 6 }) }
     }
     private func slotHeight(_ slot: Int) -> CGFloat {
-        let maximumEntries = days.map { day in store.timetable.filter { $0.dayKey == day && $0.lessonIndex == slot }.count }.max() ?? 0
+        let maximumEntries = days.map { day in store.timetable.filter { $0.localDate == day && $0.lessonIndex == slot }.count }.max() ?? 0
         return max(104, CGFloat(maximumEntries) * 52 + 14)
     }
     private func timetableGrid(width: CGFloat) -> some View {
@@ -3244,7 +3284,7 @@ private struct Routes05SchoolTimetableProductionView: View {
         }.padding(.horizontal, 16) }.accessibilityElement(children: .contain)
     }
     @ViewBuilder private func cell(day: String, slot: Int, dayIndex: Int, width: CGFloat, height: CGFloat) -> some View {
-        let entries = store.timetable.filter { $0.dayKey == day && $0.lessonIndex == slot }
+        let entries = store.timetable.filter { $0.localDate == day && $0.lessonIndex == slot }
         if entries.isEmpty { Rectangle().fill(Routes05Tokens.surface).overlay(Rectangle().stroke(Routes05Tokens.rule.opacity(0.55), lineWidth: 1)).overlay(Text("—").foregroundStyle(Routes05Tokens.secondary)).frame(width: width, height: height) }
         else { VStack(alignment: .leading, spacing: 3) { ForEach(entries) { entry in VStack(alignment: .leading, spacing: 3) { Text(entry.subject).font(.system(.subheadline, design: .rounded).weight(.black)).strikethrough(entry.isCancelled).lineLimit(2).minimumScaleFactor(0.76); if let room = entry.room, !room.isEmpty { Text(room).font(.system(size: 10)).lineLimit(1) }; Text([entry.startsAtLocal, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 9)).lineLimit(2); if entry.isCancelled { Text("Скасовано").font(.system(size: 9, weight: .bold)) } }.foregroundStyle(Routes05Tokens.accentInk) } }.padding(7).frame(width: width, height: height, alignment: .topLeading).background([Routes05Tokens.lilac, Routes05Tokens.mint, Routes05Tokens.orange, Routes05Tokens.yellow, Routes05Tokens.blue][(dayIndex + slot - 1) % 5]).overlay(Rectangle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 1)).accessibilityElement(children: .combine).accessibilityLabel("Урок \(slot), \(entries.map(\.subject).joined(separator: ", "))") }
     }
