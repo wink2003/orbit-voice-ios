@@ -100,6 +100,7 @@ jobs:
           for screen in today chats school family; do
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+              sleep 2
               args="--routes05-$screen"
               if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
               printf 'Launching %s / %s with args: %s\n' "$screen" "$appearance" "$args"
@@ -132,7 +133,7 @@ jobs:
               if [ "$screen" = "timetable" ]; then args="$args --routes05-scroll-horizontal"; fi
               if [ "$appearance" = "dark" ]; then args="$args --routes05-dark"; fi
               perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
-              sleep 5
+              sleep 10
               file="$out/routes05-${screen}-${appearance}-targeted.png"
               perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
               test -s "$file"
