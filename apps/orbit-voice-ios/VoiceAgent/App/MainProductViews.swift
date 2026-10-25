@@ -177,6 +177,8 @@ struct FamilyMessengerView: View {
 
 struct OrbitCalendarView: View {
     @State private var events: [OrbitCalendarEvent] = []
+    @State private var selectedDate = Calendar.current.startOfDay(for: .now)
+    @State private var filter = "Всі"
     @State private var showingEditor = false
     @State private var editingEvent: OrbitCalendarEvent?
     @State private var deleteCandidate: OrbitCalendarEvent?
@@ -196,13 +198,15 @@ struct OrbitCalendarView: View {
                     )
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
                     .listRowBackground(Color.clear)
+                    filterPills
+                    dayStrip
                     NavigationLink { SchoolCalendarView() } label: { Label("Шкільні події — окремий календар школи", systemImage: "graduationcap") }
                         .frame(minHeight: OrbitSpacing.minTarget)
                 } footer: { Text("Тут сімейні та підключені зовнішні події. Шкільні події з вкладки «Школа» потрапляють сюди лише після вашого підтвердження.") }
                 if events.isEmpty && loaded {
                     ContentUnavailableView("Подій не знайдено", systemImage: "calendar", description: Text("Немає подій у сімейному та підключених календарях на найближчі 3 місяці. Додайте першу сімейну подію кнопкою «+»."))
                 } else {
-                    ForEach(events) { event in calendarRow(event) }
+                    ForEach(displayedEvents) { event in calendarRow(event) }
                 }
             }
             .listStyle(.insetGrouped)
@@ -237,7 +241,66 @@ struct OrbitCalendarView: View {
         }
     }
 
-    private func load() async { do { events = try await MainProductAPI.shared.calendarEvents(); loaded = true } catch let caught { error = caught } }
+    private var displayedEvents: [OrbitCalendarEvent] {
+        events.filter { event in
+            let filterMatches = filter == "Всі" || (filter == "Сімейні" && event.sourceType == "orbit_family") || (filter == "Зовнішні" && event.sourceType != "orbit_family")
+            return filterMatches && Calendar.current.isDate(event.startsAt, inSameDayAs: selectedDate)
+        }
+    }
+
+    private var calendarDays: [Date] {
+        (-2...2).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: selectedDate) }
+    }
+
+    private var filterPills: some View {
+        HStack(spacing: 8) {
+            ForEach(["Всі", "Сімейні", "Зовнішні"], id: \.self) { value in
+                Button(value) { filter = value }
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(filter == value ? Routes05Tokens.darkSurfaceInk : Routes05Tokens.ink)
+                    .padding(.horizontal, 13)
+                    .frame(minHeight: 36)
+                    .background(filter == value ? Routes05Tokens.darkSurface : Routes05Tokens.surface, in: Capsule())
+                    .overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: 1))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+    }
+
+    private var dayStrip: some View {
+        HStack(spacing: 8) {
+            ForEach(calendarDays, id: \.self) { date in
+                Button { selectedDate = date } label: {
+                    VStack(spacing: 4) {
+                        Text(date.formatted(.dateTime.weekday(.abbreviated))).font(.caption2.weight(.black))
+                        Text(date.formatted(.dateTime.day())).font(.title3.weight(.black))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 68)
+                    .foregroundStyle(Calendar.current.isDate(date, inSameDayAs: selectedDate) ? Routes05Tokens.accentInk : Routes05Tokens.ink)
+                    .background(Calendar.current.isDate(date, inSameDayAs: selectedDate) ? Routes05Tokens.yellow : Routes05Tokens.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+    }
+
+    private func load() async {
+        do {
+            let loadedEvents = try await MainProductAPI.shared.calendarEvents()
+            events = loadedEvents
+            if !loadedEvents.contains(where: { Calendar.current.isDate($0.startsAt, inSameDayAs: selectedDate) }),
+               let first = loadedEvents.sorted(by: { $0.startsAt < $1.startsAt }).first {
+                selectedDate = Calendar.current.startOfDay(for: first.startsAt)
+            }
+            loaded = true
+        } catch let caught {
+            error = caught
+        }
+    }
 
     private func calendarRow(_ event: OrbitCalendarEvent) -> some View {
         Group {
