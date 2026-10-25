@@ -51,29 +51,19 @@ struct OrbitTodayView: View {
     }
 
     private var routesHeader: some View {
-        ZStack(alignment: .topTrailing) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(today.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased())
-                    .font(.system(size: 11, weight: .black, design: .monospaced))
-                    .tracking(1.2)
-                    .foregroundStyle(Routes05Tokens.secondary)
-                Text("Ваш день.\nБез шуму.")
-                    .font(.system(.largeTitle, design: .rounded).weight(.black))
-                    .tracking(-1.8)
-                    .lineSpacing(-4)
-                Text("Один маршрут для всього, що має значення.")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Routes05Tokens.secondary)
-                    .lineLimit(2)
-            }
+        Routes05RootHeader(
+            today.formatted(.dateTime.weekday(.wide).day().month(.wide)).uppercased(),
+            title: "Ваш день.\nБез шуму.",
+            detail: "Один маршрут для всього, що має значення."
+        ) {
             Text("↗")
                 .font(.system(size: 29, weight: .black))
                 .foregroundStyle(Routes05Tokens.accentInk)
                 .frame(width: 59, height: 59)
                 .background(Routes05Tokens.mint, in: Circle())
                 .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 16)
         .environment(\.locale, Locale(identifier: "uk_UA"))
     }
 

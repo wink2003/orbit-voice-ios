@@ -395,6 +395,13 @@ nonisolated enum SchoolHubLogic {
         return dayKey(of: moved)
     }
 
+    static func isoWeek(of key: String) -> String {
+        guard let date = date(fromDayKey: key) else { return "—" }
+        var value = Calendar(identifier: .iso8601)
+        value.timeZone = schoolTimeZone
+        return String(format: "%04d-W%02d", value.component(.yearForWeekOfYear, from: date), value.component(.weekOfYear, from: date))
+    }
+
     /// Date-only values stay civil dates; instants are converted to the school timezone.
     static func dayKey(for value: String?, allDay: Bool) -> String? {
         guard let value, !value.isEmpty else { return nil }

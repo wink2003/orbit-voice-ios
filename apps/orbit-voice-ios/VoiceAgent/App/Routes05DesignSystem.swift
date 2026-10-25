@@ -73,7 +73,7 @@ struct Routes05Mast: View {
                 .font(.system(size: 9, weight: .black, design: .monospaced)).tracking(1.1)
             if let action {
                 Button(action: action) { Image(systemName: "ellipsis") }
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
                     .foregroundStyle(Routes05Tokens.ink)
                     .background(Routes05Tokens.surface)
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.2))
@@ -84,6 +84,80 @@ struct Routes05Mast: View {
         .frame(minHeight: 49)
         .foregroundStyle(Routes05Tokens.ink)
         .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
+    }
+}
+
+/// Shared root geometry. Keeping the text column and badge in one fixed-width
+/// trailing slot prevents long localized titles from moving the badge left.
+struct Routes05RootHeader<Badge: View>: View {
+    let eyebrow: String
+    let title: String
+    let detail: String?
+    let badge: Badge
+
+    init(_ eyebrow: String, title: String, detail: String? = nil, @ViewBuilder badge: () -> Badge) {
+        self.eyebrow = eyebrow
+        self.title = title
+        self.detail = detail
+        self.badge = badge()
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(eyebrow)
+                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundStyle(Routes05Tokens.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(title)
+                    .font(.system(.largeTitle, design: .rounded).weight(.black))
+                    .tracking(-1.8)
+                    .lineSpacing(-4)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Routes05Tokens.secondary)
+                        .lineLimit(3)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            badge
+                .frame(width: 59, height: 59)
+                .layoutPriority(1)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+}
+
+struct Routes05OrbitBadge: View {
+    var body: some View {
+        ZStack {
+            Circle().stroke(Routes05Tokens.ink, lineWidth: 7).frame(width: 52, height: 52)
+            Circle().fill(Routes05Tokens.yellow).frame(width: 30, height: 30)
+        }
+        .frame(width: 59, height: 59)
+        .background(Routes05Tokens.mint, in: Circle())
+        .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+        .accessibilityLabel("Orbit")
+    }
+}
+
+struct Routes05SchoolBadge: View {
+    let classLabel: String?
+
+    var body: some View {
+        Text(classLabel?.isEmpty == false ? classLabel! : "—")
+            .font(.system(.headline, design: .rounded).weight(.black))
+            .minimumScaleFactor(0.65)
+            .lineLimit(1)
+            .foregroundStyle(Routes05Tokens.accentInk)
+            .frame(width: 59, height: 59)
+            .background(Routes05Tokens.mint, in: Circle())
+            .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+            .accessibilityLabel(classLabel?.isEmpty == false ? "Клас \(classLabel!)" : "Клас не визначено")
     }
 }
 

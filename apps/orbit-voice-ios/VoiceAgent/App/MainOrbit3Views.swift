@@ -374,7 +374,7 @@ struct MainOrbit3FamilyView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                    Routes05Mast(section: "family")
+                    Routes05Mast(section: "family") { showingFamilyMore = true }
                     routesHeader
                     routesPeopleHero
                     routesProfiles
@@ -417,28 +417,22 @@ struct MainOrbit3FamilyView: View {
             .alert("Сімейні дані недоступні", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("Гаразд") { errorMessage = nil }
             } message: { Text(errorMessage ?? "Спробуйте оновити ще раз.") }
-            .sheet(isPresented: $showingFamilyMore) { NavigationStack { OrbitToolsView() } }
+            .sheet(isPresented: $showingFamilyMore) { OrbitMoreView() }
         }
     }
 
     private var routesHeader: some View {
-        ZStack(alignment: .topTrailing) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("PRIVATE BY DESIGN / FAMILY")
-                    .font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.2)
-                    .foregroundStyle(Routes05Tokens.secondary)
-                Text("Свої.\nПоруч.")
-                    .font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineSpacing(-4)
-                Text("Спільний простір без змішування особистого.")
-                    .font(.footnote.weight(.medium)).foregroundStyle(Routes05Tokens.secondary)
-                    .lineLimit(2)
-                }
+        Routes05RootHeader(
+            "PRIVATE BY DESIGN / FAMILY",
+            title: "Свої.\nПоруч.",
+            detail: "Спільний простір без змішування особистого."
+        ) {
             Image(systemName: "heart.fill")
                 .font(.title2.weight(.black)).foregroundStyle(Routes05Tokens.accentInk)
-                .frame(width: 59, height: 59).background(Routes05Tokens.lilac, in: Circle())
+                .frame(width: 59, height: 59)
+                .background(Routes05Tokens.lilac, in: Circle())
                 .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
         }
-        .padding(.horizontal, 16).padding(.top, 12)
     }
 
     private var routesPeopleHero: some View {

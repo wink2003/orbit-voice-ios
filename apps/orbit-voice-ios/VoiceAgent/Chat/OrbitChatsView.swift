@@ -55,7 +55,9 @@ struct OrbitChatsView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                     Routes05Mast(section: "core") { showingVoice = true }
-                    Routes05Chapter("ORBIT / 02", title: "Orbit / розмови", detail: "Ваші розмови, збережені в Orbit.", accent: Routes05Tokens.yellow)
+                    Routes05RootHeader("ORBIT / 02", title: "Orbit / розмови", detail: "Ваші розмови, збережені в Orbit.") {
+                        Routes05OrbitBadge()
+                    }
                     coreAgentHero
                     Routes05SectionHeader("Розмови", action: "Створити") { createConversation() }
                         .padding(.horizontal, 16)
