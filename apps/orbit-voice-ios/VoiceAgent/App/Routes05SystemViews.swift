@@ -169,7 +169,7 @@ struct Routes05SystemRouteView: View {
     }
 
     private func message(_ sender: String, _ text: String, tint: Color) -> some View {
-        HStack(alignment: .top, spacing: 10) { Circle().fill(tint).frame(width: 32, height: 32).overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 1)); VStack(alignment: .leading, spacing: 3) { Text(sender).font(.caption.weight(.black)); Text(text).font(.body) } Spacer() }.padding(14).background(Routes05Tokens.surface).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }.padding(.horizontal, 16)
+        HStack(alignment: .top, spacing: 10) { Circle().fill(tint).frame(width: 32, height: 32).overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 1)); VStack(alignment: .leading, spacing: 3) { Text(sender).font(.caption.weight(.black)); Text(text).font(.body) }; Spacer() }.padding(14).background(Routes05Tokens.surface).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }.padding(.horizontal, 16)
     }
 
     private var settings: some View {
@@ -218,4 +218,3 @@ struct Routes05SystemRouteView: View {
     private func filterPills(_ values: [String]) -> some View { ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) { ForEach(values, id: \.self) { value in Button(value) { selectedFilter = value }.font(.subheadline.weight(.black)).foregroundStyle(selectedFilter == value ? Routes05Tokens.darkSurfaceInk : Routes05Tokens.ink).padding(.horizontal, 14).frame(minHeight: 36).background(selectedFilter == value ? Routes05Tokens.darkSurface : Routes05Tokens.surface, in: Capsule()).overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: 1.5)) } }.padding(.horizontal, 16).padding(.top, 14) } }
     private func darkAction(_ title: String, detail: String, _ action: @escaping () -> Void) -> some View { Button(action: action) { HStack { Text(title).font(.headline.weight(.black)); Text(detail).font(.subheadline); Spacer(); Image(systemName: "arrow.up.right") }.foregroundStyle(Routes05Tokens.darkSurfaceInk).padding(16).frame(maxWidth: .infinity).background(Routes05Tokens.darkSurface) }.buttonStyle(.plain).padding(.horizontal, 16) }
 }
-
