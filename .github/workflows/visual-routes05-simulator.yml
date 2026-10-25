@@ -93,8 +93,23 @@ jobs:
           xcrun simctl install "$device" "$app"
           out="$RUNNER_TEMP/orbit-routes05-screenshots"
           mkdir -p "$out"
-          printf 'simulator=%s\nudid=%s\n' "$DEVICE_NAME" "$device" > "$out/metadata.txt"
+          mkdir -p "$out/failures"
+          printf 'simulator=%s\nudid=%s\ncommit=%s\n' "$DEVICE_NAME" "$device" "$GITHUB_SHA" > "$out/metadata.txt"
           xcrun simctl list runtimes >> "$out/metadata.txt"
+
+          data_container=$(xcrun simctl get_app_container "$device" net.opik.orbit.voice data)
+          ready_file="$data_container/Library/Caches/routes05-ready.json"
+          wait_for_ready() {
+            local route="$1" capture_id="$2"
+            for _ in $(seq 1 30); do
+              if test -s "$ready_file" && grep -Fq "\"route\":\"$route\"" "$ready_file" && grep -Fq "\"captureID\":\"$capture_id\"" "$ready_file"; then
+                cp "$ready_file" "$out/$route-$capture_id.ready.json"
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
 
           if [ "${{ inputs.targeted_only }}" != "true" ]; then
           for screen in today chats school family; do
@@ -128,15 +143,32 @@ jobs:
           # and Timetable is positioned at the rightmost horizontal column.
           for screen in family-menu exams timetable; do
             for appearance in light dark; do
-              xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
-              args="--routes05-$screen"
-              if [ "$screen" = "timetable" ]; then args="$args --routes05-scroll-horizontal"; fi
-              if [ "$appearance" = "dark" ]; then args="$args --routes05-dark"; fi
-              perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
-              sleep 10
               file="$out/routes05-${screen}-${appearance}-targeted.png"
-              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
-              test -s "$file"
+              captured=false
+              for attempt in 1 2 3; do
+                capture_id="${GITHUB_RUN_ID}-${screen}-${appearance}-${attempt}"
+                xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+                sleep 2
+                args="--routes05-$screen --routes05-capture-id $capture_id --routes05-appearance $appearance"
+                if [ "$screen" = "timetable" ]; then args="$args --routes05-scroll-horizontal"; fi
+                if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
+                launch_log="$out/failures/$screen-$appearance-attempt-$attempt.launch.log"
+                if ! perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args > "$launch_log" 2>&1; then continue; fi
+                if ! wait_for_ready "$screen" "$capture_id"; then
+                  printf 'readiness-timeout route=%s appearance=%s attempt=%s\n' "$screen" "$appearance" "$attempt" >> "$out/failures/diagnostics.log"
+                  continue
+                fi
+                if ! perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"; then continue; fi
+                if python3 .github/scripts/routes05_validate_png.py "$file" > "$out/$screen-$appearance.png-check" 2>&1; then
+                  captured=true
+                  break
+                fi
+                cp "$file" "$out/failures/$screen-$appearance-attempt-$attempt.png"
+              done
+              if [ "$captured" != true ]; then
+                printf 'capture-failed route=%s appearance=%s\n' "$screen" "$appearance" >> "$out/failures/diagnostics.log"
+                exit 1
+              fi
             done
           done
 

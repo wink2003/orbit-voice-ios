@@ -452,6 +452,34 @@ extension View {
 enum Routes05DebugCapture {
     static let scrollToBottom = ProcessInfo.processInfo.arguments.contains("--routes05-bottom")
     static let scrollHorizontal = ProcessInfo.processInfo.arguments.contains("--routes05-scroll-horizontal")
+
+    private static var arguments: [String] { ProcessInfo.processInfo.arguments }
+
+    private static func argumentValue(_ name: String) -> String? {
+        guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else { return nil }
+        return arguments[index + 1]
+    }
+
+    static let captureID = argumentValue("--routes05-capture-id")
+    static let appearance = argumentValue("--routes05-appearance") ?? (arguments.contains("--routes05-dark") ? "dark" : "light")
+
+    /// The simulator workflow waits for this marker before taking a screenshot.
+    /// It is DEBUG-only and written only by the targeted evidence routes.
+    static func markReady(route: String) {
+        guard let captureID else { return }
+        let payload: [String: Any] = [
+            "route": route,
+            "captureID": captureID,
+            "appearance": appearance,
+            "arguments": arguments,
+            "timestamp": Date().timeIntervalSince1970
+        ]
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return }
+        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        try? data.write(to: cache.appendingPathComponent("routes05-ready.json"), options: .atomic)
+    }
 }
 #else
 enum Routes05DebugCapture {
