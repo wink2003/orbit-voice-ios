@@ -3282,15 +3282,37 @@ private struct Routes05SchoolTimetableProductionView: View {
     private func timetableGrid(width: CGFloat) -> some View {
         let axis: CGFloat = 50; let gap: CGFloat = 5; let dayWidth = max(76, floor((width - 32 - axis - gap * 4) / 4))
         return ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: true) { VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: gap) { Text("УРОК").font(.system(size: 10, weight: .bold, design: .monospaced)).frame(width: axis, alignment: .leading); ForEach(days, id: \.self) { day in Text("\(SchoolHubFormat.weekdayShort(day).uppercased()) / \(SchoolHubFormat.dayNumber(day))").font(.system(size: 10, weight: .black, design: .monospaced)).lineLimit(1).minimumScaleFactor(0.7).frame(width: dayWidth).id(day) } }.frame(height: 40).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
-            ForEach(slots, id: \.self) { slot in let height = slotHeight(slot); HStack(alignment: .top, spacing: gap) { Text(String(format: "%02d", slot)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Routes05Tokens.secondary).frame(width: axis, height: height, alignment: .topLeading); ForEach(Array(days.enumerated()), id: \.element) { index, day in cell(day: day, slot: slot, dayIndex: index, width: dayWidth, height: height) } }.padding(.vertical, 3).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) } }
-        }.padding(.horizontal, 16) }
+            ScrollView(.horizontal, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: gap) {
+                        Text("УРОК").font(.system(size: 10, weight: .bold, design: .monospaced)).frame(width: axis, alignment: .leading)
+                        ForEach(days, id: \.self) { day in
+                            Text("\(SchoolHubFormat.weekdayShort(day).uppercased()) / \(SchoolHubFormat.dayNumber(day))")
+                                .font(.system(size: 10, weight: .black, design: .monospaced))
+                                .lineLimit(1).minimumScaleFactor(0.7).frame(width: dayWidth).id(day)
+                        }
+                    }
+                    .frame(height: 40)
+                    .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
+                    ForEach(slots, id: \.self) { slot in
+                        let height = slotHeight(slot)
+                        HStack(alignment: .top, spacing: gap) {
+                            Text(String(format: "%02d", slot)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Routes05Tokens.secondary).frame(width: axis, height: height, alignment: .topLeading)
+                            ForEach(Array(days.enumerated()), id: \.element) { index, day in
+                                cell(day: day, slot: slot, dayIndex: index, width: dayWidth, height: height)
+                            }
+                        }
+                        .padding(.vertical, 3)
+                        .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
             .onAppear {
                 guard Routes05DebugCapture.scrollHorizontal, let lastDay = days.last else { return }
                 DispatchQueue.main.async { proxy.scrollTo(lastDay, anchor: .trailing) }
             }
-        }.accessibilityElement(children: .contain)
+            .accessibilityElement(children: .contain)
         }
     }
     @ViewBuilder private func cell(day: String, slot: Int, dayIndex: Int, width: CGFloat, height: CGFloat) -> some View {
