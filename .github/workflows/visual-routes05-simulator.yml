@@ -141,6 +141,7 @@ jobs:
           # Targeted Issue #17 evidence. These are DEBUG fixtures only: the
           # Family route opens the real More owner, Exams spans multiple weeks,
           # and Timetable is positioned at the rightmost horizontal column.
+          all_targeted_passed=true
           for screen in family-menu exams timetable; do
             for appearance in light dark; do
               file="$out/routes05-${screen}-${appearance}-targeted.png"
@@ -167,10 +168,11 @@ jobs:
               done
               if [ "$captured" != true ]; then
                 printf 'capture-failed route=%s appearance=%s\n' "$screen" "$appearance" >> "$out/failures/diagnostics.log"
-                exit 1
+                all_targeted_passed=false
               fi
             done
           done
+          if [ "$all_targeted_passed" != true ]; then exit 1; fi
 
       - name: Capture ROUTES 05 Inbox fidelity on native iOS
         if: github.ref == 'refs/heads/codex/routes05-inbox-fidelity-111'
@@ -271,6 +273,7 @@ jobs:
           done
 
       - name: Upload native screenshots, metadata and build logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Orbit-ROUTES05-native-evidence
