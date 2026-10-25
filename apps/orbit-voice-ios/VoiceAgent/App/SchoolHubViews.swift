@@ -1156,10 +1156,10 @@ struct SchoolHubView: View {
                 case let .v2(section):
                     if section == .timetable {
 #if DEBUG
-                        if let fixture { Routes05SchoolTimetableProductionView(studentLabel: store.studentNames.first, fixture: fixture).routes05ContextSurface() }
-                        else { Routes05SchoolTimetableProductionView(studentLabel: store.studentNames.first).routes05ContextSurface() }
+                        if let fixture { Routes05SchoolTimetableProductionView(studentLabel: store.studentNames.first, fixture: fixture, onOpenOverview: { path.append(.v2(.overview)) }, onOpenExams: { path.append(.v2(.exams)) }).routes05ContextSurface() }
+                        else { Routes05SchoolTimetableProductionView(studentLabel: store.studentNames.first, onOpenOverview: { path.append(.v2(.overview)) }, onOpenExams: { path.append(.v2(.exams)) }).routes05ContextSurface() }
 #else
-                        Routes05SchoolTimetableProductionView(studentLabel: store.studentNames.first).routes05ContextSurface()
+                        Routes05SchoolTimetableProductionView(studentLabel: store.studentNames.first, onOpenOverview: { path.append(.v2(.overview)) }, onOpenExams: { path.append(.v2(.exams)) }).routes05ContextSurface()
 #endif
                     } else {
 #if DEBUG
@@ -3065,7 +3065,7 @@ private struct Routes05SchoolTasksProductionView: View {
     private var filters: some View {
         ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) { ForEach(Routes05TaskFilter.allCases) { item in
             let selected = item == filter
-            Button { filter = item } label: { Text("\(item.title) \(item.count(counts))").font(.system(.subheadline, design: .rounded).weight(.bold)).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).padding(.horizontal, 15).frame(minHeight: 42).background(selected ? Routes05Tokens.darkSurfaceInk : Routes05Tokens.surface, in: Capsule()).overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: selected ? 0 : 1)) }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+            Button { filter = item } label: { Text("\(item.title) \(item.count(counts))").font(.system(.subheadline, design: .rounded).weight(.bold)).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).padding(.horizontal, 15).frame(minHeight: 42).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface, in: Capsule()).overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: selected ? 1 : 1)) }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
         } }.padding(.horizontal, 16) }.padding(.bottom, 16)
     }
 
@@ -3125,22 +3125,32 @@ private struct Routes05TaskRow: View {
 
 private struct Routes05SchoolTimetableProductionView: View {
     let studentLabel: String?
+    let onOpenOverview: () -> Void
+    let onOpenExams: () -> Void
     @State private var store = SchoolHubV2Store()
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDay: String?
 
-    init(studentLabel: String?) {
+    init(studentLabel: String?, onOpenOverview: @escaping () -> Void = {}, onOpenExams: @escaping () -> Void = {}) {
         self.studentLabel = studentLabel
+        self.onOpenOverview = onOpenOverview
+        self.onOpenExams = onOpenExams
     }
 
 #if DEBUG
-    init(studentLabel: String?, fixture: Routes05SchoolFixture) {
+    init(studentLabel: String?, fixture: Routes05SchoolFixture, onOpenOverview: @escaping () -> Void = {}, onOpenExams: @escaping () -> Void = {}) {
         self.studentLabel = studentLabel
+        self.onOpenOverview = onOpenOverview
+        self.onOpenExams = onOpenExams
         _store = State(initialValue: SchoolHubV2Store(fixture: fixture))
     }
 #endif
 
-    private var days: [String] { Array(Set(store.timetable.map(\.dayKey))).sorted() }
+    private var days: [String] {
+        let weekdays = (0..<5).compactMap { SchoolHubLogic.addDays($0, to: store.weekStart) }
+        let known = Set(store.timetable.map(\.dayKey))
+        return weekdays + known.subtracting(weekdays).sorted()
+    }
     private var slots: [Int] { Array(Set(store.timetable.map(\.lessonIndex))).sorted() }
     private var classLabel: String { store.timetable.compactMap { $0.groupName ?? $0.group }.first ?? "школа" }
     private var weekNumber: String {
@@ -3174,7 +3184,7 @@ private struct Routes05SchoolTimetableProductionView: View {
             Button { dismiss() } label: { Image(systemName: "arrow.left").font(.title3.weight(.semibold)).frame(width: 43, height: 43).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.5)) }.accessibilityLabel("Назад до школи")
             Text("Розклад").font(.system(.headline, design: .rounded).weight(.black))
             Spacer()
-            Menu { Button("Огляд") { dismiss() }; Button("Іспити") { dismiss() } } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Інші розділи школи")
+            Menu { Button("Огляд", action: onOpenOverview); Button("Іспити", action: onOpenExams) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Інші розділи школи")
         }.padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 17)
     }
     private var intro: some View {
@@ -3206,18 +3216,22 @@ private struct Routes05SchoolTimetableProductionView: View {
     @ViewBuilder private var content: some View {
         if store.phase == .loading && store.timetable.isEmpty { ProgressView("Завантаження розкладу…").frame(maxWidth: .infinity, minHeight: 150) }
         else if store.timetable.isEmpty { ContentUnavailableView("Немає підтвердженого розкладу", systemImage: "calendar.badge.exclamationmark", description: Text(coverageText)).padding(.vertical, 24) }
-        else { GeometryReader { proxy in timetableGrid(width: proxy.size.width) }.frame(height: CGFloat(max(1, slots.count)) * 121 + 45) }
+        else { GeometryReader { proxy in timetableGrid(width: proxy.size.width) }.frame(height: slots.map { slotHeight($0) }.reduce(CGFloat(40)) { $0 + $1 + 6 }) }
+    }
+    private func slotHeight(_ slot: Int) -> CGFloat {
+        let maximumEntries = days.map { day in store.timetable.filter { $0.dayKey == day && $0.lessonIndex == slot }.count }.max() ?? 0
+        return max(104, CGFloat(maximumEntries) * 52 + 14)
     }
     private func timetableGrid(width: CGFloat) -> some View {
         let axis: CGFloat = 50; let gap: CGFloat = 5; let dayWidth = max(76, floor((width - 32 - axis - gap * 4) / 4))
         return ScrollView(.horizontal, showsIndicators: true) { VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: gap) { Text("УРОК").font(.system(size: 10, weight: .bold, design: .monospaced)).frame(width: axis, alignment: .leading); ForEach(days, id: \.self) { day in Text("\(SchoolHubFormat.weekdayShort(day).uppercased()) / \(SchoolHubFormat.dayNumber(day))").font(.system(size: 10, weight: .black, design: .monospaced)).lineLimit(1).minimumScaleFactor(0.7).frame(width: dayWidth) } }.frame(height: 40).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
-            ForEach(slots, id: \.self) { slot in HStack(alignment: .top, spacing: gap) { Text(String(format: "%02d", slot)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Routes05Tokens.secondary).frame(width: axis, height: 115, alignment: .topLeading); ForEach(Array(days.enumerated()), id: \.element) { index, day in cell(day: day, slot: slot, dayIndex: index, width: dayWidth) } }.padding(.vertical, 3).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) } }
+            ForEach(slots, id: \.self) { slot in let height = slotHeight(slot); HStack(alignment: .top, spacing: gap) { Text(String(format: "%02d", slot)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Routes05Tokens.secondary).frame(width: axis, height: height, alignment: .topLeading); ForEach(Array(days.enumerated()), id: \.element) { index, day in cell(day: day, slot: slot, dayIndex: index, width: dayWidth, height: height) } }.padding(.vertical, 3).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) } }
         }.padding(.horizontal, 16) }.accessibilityElement(children: .contain)
     }
-    @ViewBuilder private func cell(day: String, slot: Int, dayIndex: Int, width: CGFloat) -> some View {
+    @ViewBuilder private func cell(day: String, slot: Int, dayIndex: Int, width: CGFloat, height: CGFloat) -> some View {
         let entries = store.timetable.filter { $0.dayKey == day && $0.lessonIndex == slot }
-        if entries.isEmpty { Rectangle().fill(Routes05Tokens.surface).overlay(Rectangle().stroke(Routes05Tokens.rule.opacity(0.55), lineWidth: 1)).overlay(Text("—").foregroundStyle(Routes05Tokens.secondary)).frame(width: width, height: 115) }
-        else { VStack(alignment: .leading, spacing: 3) { ForEach(entries) { entry in VStack(alignment: .leading, spacing: 3) { Text(entry.subject).font(.system(.subheadline, design: .rounded).weight(.black)).strikethrough(entry.isCancelled).lineLimit(2).minimumScaleFactor(0.76); if let room = entry.room, !room.isEmpty { Text(room).font(.system(size: 10)).lineLimit(1) }; Text([entry.startsAtLocal, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 9)).lineLimit(2); if entry.isCancelled { Text("Скасовано").font(.system(size: 9, weight: .bold)) } }.foregroundStyle(Routes05Tokens.accentInk) } }.padding(7).frame(width: width, height: 115, alignment: .topLeading).background([Routes05Tokens.lilac, Routes05Tokens.mint, Routes05Tokens.orange, Routes05Tokens.yellow, Routes05Tokens.blue][(dayIndex + slot - 1) % 5]).overlay(Rectangle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 1)).accessibilityElement(children: .combine).accessibilityLabel("Урок \(slot), \(entries.map(\.subject).joined(separator: ", "))") }
+        if entries.isEmpty { Rectangle().fill(Routes05Tokens.surface).overlay(Rectangle().stroke(Routes05Tokens.rule.opacity(0.55), lineWidth: 1)).overlay(Text("—").foregroundStyle(Routes05Tokens.secondary)).frame(width: width, height: height) }
+        else { VStack(alignment: .leading, spacing: 3) { ForEach(entries) { entry in VStack(alignment: .leading, spacing: 3) { Text(entry.subject).font(.system(.subheadline, design: .rounded).weight(.black)).strikethrough(entry.isCancelled).lineLimit(2).minimumScaleFactor(0.76); if let room = entry.room, !room.isEmpty { Text(room).font(.system(size: 10)).lineLimit(1) }; Text([entry.startsAtLocal, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 9)).lineLimit(2); if entry.isCancelled { Text("Скасовано").font(.system(size: 9, weight: .bold)) } }.foregroundStyle(Routes05Tokens.accentInk) } }.padding(7).frame(width: width, height: height, alignment: .topLeading).background([Routes05Tokens.lilac, Routes05Tokens.mint, Routes05Tokens.orange, Routes05Tokens.yellow, Routes05Tokens.blue][(dayIndex + slot - 1) % 5]).overlay(Rectangle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 1)).accessibilityElement(children: .combine).accessibilityLabel("Урок \(slot), \(entries.map(\.subject).joined(separator: ", "))") }
     }
 }
