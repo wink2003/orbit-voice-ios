@@ -1139,7 +1139,7 @@ struct SchoolHubView: View {
                     #else
                     SchoolInboxView(embeddedInNavigation: true, hubMode: true).routes05ContextSurface()
                     #endif
-                case .tasks: SchoolTaskListView(store: store).routes05ContextSurface()
+                case .tasks: Routes05SchoolTasksProductionView(store: store).routes05ContextSurface()
                 case .calendar: SchoolWeekCalendarView(store: store).routes05ContextSurface()
                 case .timeline: SchoolTimelineView(store: store).routes05ContextSurface()
                 case .search: SchoolUnifiedSearchView(store: store).routes05ContextSurface()
@@ -1154,12 +1154,21 @@ struct SchoolHubView: View {
                 case .history: SchoolActionHistoryView(store: store).routes05ContextSurface()
                 case let .notes(entityType, entityId): SchoolNotesView(store: store, entityType: entityType, entityId: entityId).routes05ContextSurface()
                 case let .v2(section):
+                    if section == .timetable {
 #if DEBUG
-                    if let fixture { SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section, fixture: fixture).routes05ContextSurface() }
-                    else { SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface() }
+                        if let fixture { Routes05SchoolTimetableProductionView(studentLabel: store.studentNames.first, fixture: fixture).routes05ContextSurface() }
+                        else { Routes05SchoolTimetableProductionView(studentLabel: store.studentNames.first).routes05ContextSurface() }
 #else
-                    SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface()
+                        Routes05SchoolTimetableProductionView(studentLabel: store.studentNames.first).routes05ContextSurface()
 #endif
+                    } else {
+#if DEBUG
+                        if let fixture { SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section, fixture: fixture).routes05ContextSurface() }
+                        else { SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface() }
+#else
+                        SchoolHubV2View(studentLabel: store.studentNames.first, initialSection: section).routes05ContextSurface()
+#endif
+                    }
                 case let .letter(id):
                     #if DEBUG
                     if let item = fixture?.items.first(where: { $0.id == id }) { SchoolDetailView(item: item) }
@@ -2952,5 +2961,263 @@ private struct SchoolSearchResultsView: View {
                 Section { ForEach(tasks) { SchoolTaskRow(store: store, task: $0) } } header: { SchoolSectionHeader(title: "Справи", systemImage: "checklist", count: tasks.count) }
             }
         }
+    }
+}
+
+// MARK: - ROUTES 05 pixel-fidelity school surfaces
+
+/// Production presentation for the ROUTES 05 task route.  The store, API,
+/// confirmation semantics and detail destinations remain the existing ones.
+private struct Routes05SchoolTasksProductionView: View {
+    let store: SchoolHubStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var filter: Routes05TaskFilter = .all
+    @State private var query = ""
+    @State private var showSearch = false
+    @State private var showCreate = false
+    @State private var calendarTask: SchoolHubTask?
+    @State private var pendingTask: SchoolHubTask?
+    @State private var error: String?
+
+    private var tasks: [SchoolHubTask] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = q.isEmpty ? store.hubTasks : SchoolHubLogic.searchTasks(store.hubTasks, query: q)
+        return source.filter { task in
+            switch filter {
+            case .all: true
+            case .open: !SchoolHubLogic.isCompleted(task)
+            case .completed: SchoolHubLogic.isCompleted(task)
+            }
+        }
+    }
+
+    private var counts: SchoolTaskCounts { SchoolHubLogic.taskCounts(store.hubTasks) }
+    private var today: String { SchoolHubLogic.dayKey(of: Date()) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Routes05Mast(section: "school")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    topBar
+                    intro
+                    hero
+                    filters
+                    stateNotice
+                    if store.tasksPhase == .loading && !store.tasksLoadedOnce {
+                        ProgressView("Завантаження справ…").frame(maxWidth: .infinity, minHeight: 120)
+                    } else if tasks.isEmpty {
+                        ContentUnavailableView(query.isEmpty ? "Справ не знайдено" : "Нічого не знайдено", systemImage: "checklist", description: Text("Оберіть інший фільтр або оновіть дані."))
+                            .padding(.vertical, 24)
+                    } else {
+                        ForEach(Routes05TaskGroup.allCases, id: \.self) { group in
+                            let groupTasks = tasks.filter { taskGroup($0) == group }
+                            if !groupTasks.isEmpty { taskGroupView(group, tasks: groupTasks) }
+                        }
+                    }
+                    Text("Статус справ і дані зі шкільних джерел відображаються окремо. Зміни виконуються лише після перевірки прав та підтвердження.")
+                        .font(.footnote).foregroundStyle(Routes05Tokens.secondary)
+                        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 30)
+                }
+            }
+            .refreshable { await store.load() }
+        }
+        .foregroundStyle(Routes05Tokens.ink)
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showCreate) { SchoolFamilyTaskEditorView(store: store) }
+        .sheet(item: $calendarTask) { SchoolTaskCalendarSheet(store: store, task: $0) }
+        .confirmationDialog(pendingTask.map { $0.status == "completed" ? "Повернути справу у відкриті?" : "Позначити справу виконаною?" } ?? "Змінити стан справи?", isPresented: Binding(get: { pendingTask != nil }, set: { if !$0 { pendingTask = nil } }), titleVisibility: .visible) {
+            if let task = pendingTask {
+                Button(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною") { confirm(task) }
+            }
+            Button("Скасувати", role: .cancel) { pendingTask = nil }
+        } message: { Text(pendingTask?.title ?? "") }
+        .alert("Стан справи", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            Button("Гаразд") { error = nil }
+        } message: { Text(error ?? "") }
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: { Image(systemName: "arrow.left").font(.title3.weight(.semibold)).frame(width: 43, height: 43).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.5)) }.accessibilityLabel("Назад до школи")
+            Text("Справи / школа").font(.system(.headline, design: .rounded).weight(.black)).lineLimit(1)
+            Spacer(minLength: 4)
+            Button { showSearch.toggle(); if !showSearch { query = "" } } label: { Image(systemName: showSearch ? "xmark" : "magnifyingglass").frame(width: 42, height: 44) }.accessibilityLabel(showSearch ? "Закрити пошук" : "Шукати справи")
+            if store.actionCapability.canMutate { Button { showCreate = true } label: { Image(systemName: "plus").frame(width: 42, height: 44) }.accessibilityLabel("Створити сімейну справу") }
+        }
+        .padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 17)
+    }
+
+    private var intro: some View {
+        HStack { Text("ACTION CENTER / FAMILY").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.8); Spacer(); Text("ORBIT / SCHOOL").font(.system(size: 9, weight: .medium, design: .monospaced)) }
+            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
+    }
+
+    private var hero: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text("Справи.\nПо черзі.").font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-2).lineSpacing(-5).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+            Spacer()
+            Text(String(format: "%02d", tasks.filter { !$0.status.elementsEqual("completed") && SchoolHubLogic.dayKey(for: $0.dueAt, allDay: $0.allDay) == today }.count)).font(.system(size: 30, weight: .black, design: .rounded)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 77, height: 77).background(Routes05Tokens.orange, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityLabel("Справ на сьогодні")
+        }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 15)
+    }
+
+    private var filters: some View {
+        ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) { ForEach(Routes05TaskFilter.allCases) { item in
+            let selected = item == filter
+            Button { filter = item } label: { Text("\(item.title) \(item.count(counts))").font(.system(.subheadline, design: .rounded).weight(.bold)).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).padding(.horizontal, 15).frame(minHeight: 42).background(selected ? Routes05Tokens.darkSurfaceInk : Routes05Tokens.surface, in: Capsule()).overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: selected ? 0 : 1)) }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+        } }.padding(.horizontal, 16) }.padding(.bottom, 16)
+    }
+
+    @ViewBuilder private var stateNotice: some View {
+        if showSearch { TextField("Пошук справ", text: $query).textFieldStyle(.roundedBorder).padding(.horizontal, 16).padding(.bottom, 10) }
+        if store.tasksPhase == .failed { Label(store.tasksLoadedOnce ? "Не вдалося оновити список; показано останні дані." : "Не вдалося завантажити справи.", systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.bottom, 8) }
+        if store.taskCoverageTruncated { Label("Показано не всі справи: список обмежено.", systemImage: "info.circle").font(.footnote).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.bottom, 8) }
+        if !store.actionCapability.canMutate && store.actionCapability != .unknown { Label(store.actionCapability.message, systemImage: "lock").font(.footnote).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.bottom, 8) }
+    }
+
+    private func taskGroup(_ task: SchoolHubTask) -> Routes05TaskGroup {
+        guard let key = SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) else { return .undated }
+        if key == today { return .today }
+        let week = Set(SchoolHubLogic.weekDays(containing: today))
+        return week.contains(key) ? .thisWeek : .later
+    }
+
+    private func taskGroupView(_ group: Routes05TaskGroup, tasks: [SchoolHubTask]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(group.title).font(.system(.title3, design: .rounded).weight(.black)).padding(.bottom, 9)
+            ForEach(tasks) { task in
+                Routes05TaskRow(task: task, store: store, onStatus: { pendingTask = task }, onCalendar: { calendarTask = task })
+                Rectangle().fill(Routes05Tokens.rule).frame(height: 1)
+            }
+        }.padding(.horizontal, 16).padding(.top, 16)
+    }
+
+    private func confirm(_ task: SchoolHubTask) {
+        pendingTask = nil
+        let completed = task.status != "completed"
+        Task { do { try await store.setTaskStatus(task, completed: completed) } catch { error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." } }
+    }
+}
+
+private enum Routes05TaskFilter: CaseIterable, Identifiable { case all, open, completed; var id: Self { self }; var title: String { self == .all ? "Всі" : self == .open ? "Відкриті" : "Завершені" }; func count(_ counts: SchoolTaskCounts) -> Int { self == .all ? counts.all : self == .open ? counts.open : counts.completed } }
+private enum Routes05TaskGroup: CaseIterable { case today, thisWeek, later, undated; var title: String { self == .today ? "Сьогодні" : self == .thisWeek ? "Цього тижня" : self == .later ? "Інші дати" : "Без дати" } }
+
+private struct Routes05TaskRow: View {
+    let task: SchoolHubTask
+    let store: SchoolHubStore
+    let onStatus: () -> Void
+    let onCalendar: () -> Void
+    private var evidence: SchoolEvidence { let item = store.item(id: task.sourceItemId); return SchoolHubLogic.evidence(forTask: task, sourceLoaded: item != nil, activeNames: store.studentNames, sourceText: item?.originalPlainText ?? item?.originalGerman ?? "") }
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: onStatus) { Image(systemName: task.status == "completed" ? "checkmark.square.fill" : "square").font(.system(size: 26)).frame(width: 44, height: 54).overlay { if store.isUpdating(task) { ProgressView().controlSize(.small) } } }.disabled(!store.actionCapability.canMutate || store.isUpdating(task)).accessibilityLabel(task.status == "completed" ? "Повернути справу у відкриті" : "Позначити справу виконаною")
+            NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 5) { Text(task.title).font(.system(.body, design: .rounded).weight(.bold)).multilineTextAlignment(.leading); if evidence == .needsVerification { Image(systemName: "exclamationmark.triangle").foregroundStyle(Routes05Tokens.orange) } }
+                    Text([task.dueAt.flatMap { SchoolHubLogic.dayKey(for: $0, allDay: task.allDay).map(SchoolHubFormat.shortDay) }, task.provenanceLabel, task.target].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(Routes05Tokens.secondary).lineLimit(2)
+                }.frame(maxWidth: .infinity, minHeight: 77, alignment: .leading)
+            }.buttonStyle(.plain)
+            Image(systemName: "arrow.right").font(.subheadline.weight(.bold)).accessibilityHidden(true)
+        }.padding(.vertical, 4).contextMenu { if task.canAddToCalendar && task.calendarEventId == nil { Button(action: onCalendar) { Label("До сімейного календаря", systemImage: "calendar.badge.plus") } } }
+    }
+}
+
+private struct Routes05SchoolTimetableProductionView: View {
+    let studentLabel: String?
+    @State private var store = SchoolHubV2Store()
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedDay: String?
+
+    init(studentLabel: String?) {
+        self.studentLabel = studentLabel
+    }
+
+#if DEBUG
+    init(studentLabel: String?, fixture: Routes05SchoolFixture) {
+        self.studentLabel = studentLabel
+        _store = State(initialValue: SchoolHubV2Store(fixture: fixture))
+    }
+#endif
+
+    private var days: [String] { Array(Set(store.timetable.map(\.dayKey))).sorted() }
+    private var slots: [Int] { Array(Set(store.timetable.map(\.lessonIndex))).sorted() }
+    private var classLabel: String { store.timetable.compactMap { $0.groupName ?? $0.group }.first ?? "школа" }
+    private var weekNumber: String {
+        guard let date = SchoolHubLogic.date(fromDayKey: store.weekStart) else { return "—" }
+        var calendar = Calendar(identifier: .iso8601); calendar.timeZone = SchoolHubLogic.schoolTimeZone
+        return String(calendar.component(.weekOfYear, from: date))
+    }
+    private var year: String { String(store.weekStart.prefix(4)) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Routes05Mast(section: "school")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    intro
+                    hero
+                    weekControls
+                    coverage
+                    content
+                }.padding(.bottom, 28)
+            }.refreshable { await store.load() }
+        }
+        .foregroundStyle(Routes05Tokens.ink).background(Routes05Tokens.canvas.ignoresSafeArea()).toolbar(.hidden, for: .navigationBar)
+        .task(id: store.weekStart) { await store.load() }
+        .onChange(of: days) { _, value in if !value.contains(selectedDay ?? "") { selectedDay = value.first } }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: { Image(systemName: "arrow.left").font(.title3.weight(.semibold)).frame(width: 43, height: 43).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.5)) }.accessibilityLabel("Назад до школи")
+            Text("Розклад").font(.system(.headline, design: .rounded).weight(.black))
+            Spacer()
+            Menu { Button("Огляд") { dismiss() }; Button("Іспити") { dismiss() } } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Інші розділи школи")
+        }.padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 17)
+    }
+    private var intro: some View {
+        HStack { Text("WEEK / \(weekNumber)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.8); Spacer(); Text(year).font(.system(size: 10, weight: .medium, design: .monospaced)) }
+            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
+    }
+    private var hero: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text("Розклад\n\(classLabel).").font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-2).lineSpacing(-5).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+            Spacer()
+            Image(systemName: "calendar").font(.system(size: 29, weight: .heavy)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 77, height: 77).background(Routes05Tokens.mint, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityHidden(true)
+        }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 8)
+    }
+    private var weekControls: some View {
+        VStack(spacing: 11) {
+            HStack { Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.accessibilityLabel("Попередній тиждень"); Spacer(); Text("\(SchoolHubFormat.shortDay(store.weekStart)) – \(SchoolHubFormat.shortDay(SchoolHubLogic.addDays(4, to: store.weekStart) ?? store.weekStart))").font(.system(.headline, design: .rounded).weight(.bold)).multilineTextAlignment(.center); Spacer(); Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }.accessibilityLabel("Наступний тиждень") }.buttonStyle(.plain)
+            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 7) { ForEach(days, id: \.self) { day in
+                let selected = selectedDay == day || (selectedDay == nil && day == days.first)
+                Button { selectedDay = day } label: { VStack(spacing: 4) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.largeTitle, design: .rounded).weight(.black)) }.frame(width: 72, height: 79).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
+            } }.padding(.horizontal, 16) }
+        }.padding(.horizontal, 0).padding(.top, 12)
+    }
+    private var coverage: some View {
+        Label(coverageText, systemImage: store.coverageState == "READY_WITH_DATA" ? "checkmark.circle" : "info.circle").font(.caption).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 16)
+    }
+    private var coverageText: String {
+        switch store.coverageState { case "READY_WITH_DATA": return "Дані за тиждень оновлено"; case "READY_EMPTY": return "Тиждень перевірено: даних немає"; case "STALE": return "Дані можуть бути застарілими"; case "NOT_SYNCED": return "Тиждень ще не синхронізовано"; case "PARTIAL": return "Дані неповні"; default: return store.phase == .loading ? "Завантаження розкладу…" : "Дані тимчасово недоступні" }
+    }
+    @ViewBuilder private var content: some View {
+        if store.phase == .loading && store.timetable.isEmpty { ProgressView("Завантаження розкладу…").frame(maxWidth: .infinity, minHeight: 150) }
+        else if store.timetable.isEmpty { ContentUnavailableView("Немає підтвердженого розкладу", systemImage: "calendar.badge.exclamationmark", description: Text(coverageText)).padding(.vertical, 24) }
+        else { GeometryReader { proxy in timetableGrid(width: proxy.size.width) }.frame(height: CGFloat(max(1, slots.count)) * 121 + 45) }
+    }
+    private func timetableGrid(width: CGFloat) -> some View {
+        let axis: CGFloat = 50; let gap: CGFloat = 5; let dayWidth = max(76, floor((width - 32 - axis - gap * 4) / 4))
+        return ScrollView(.horizontal, showsIndicators: true) { VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: gap) { Text("УРОК").font(.system(size: 10, weight: .bold, design: .monospaced)).frame(width: axis, alignment: .leading); ForEach(days, id: \.self) { day in Text("\(SchoolHubFormat.weekdayShort(day).uppercased()) / \(SchoolHubFormat.dayNumber(day))").font(.system(size: 10, weight: .black, design: .monospaced)).lineLimit(1).minimumScaleFactor(0.7).frame(width: dayWidth) } }.frame(height: 40).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
+            ForEach(slots, id: \.self) { slot in HStack(alignment: .top, spacing: gap) { Text(String(format: "%02d", slot)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Routes05Tokens.secondary).frame(width: axis, height: 115, alignment: .topLeading); ForEach(Array(days.enumerated()), id: \.element) { index, day in cell(day: day, slot: slot, dayIndex: index, width: dayWidth) } }.padding(.vertical, 3).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) } }
+        }.padding(.horizontal, 16) }.accessibilityElement(children: .contain)
+    }
+    @ViewBuilder private func cell(day: String, slot: Int, dayIndex: Int, width: CGFloat) -> some View {
+        let entries = store.timetable.filter { $0.dayKey == day && $0.lessonIndex == slot }
+        if entries.isEmpty { Rectangle().fill(Routes05Tokens.surface).overlay(Rectangle().stroke(Routes05Tokens.rule.opacity(0.55), lineWidth: 1)).overlay(Text("—").foregroundStyle(Routes05Tokens.secondary)).frame(width: width, height: 115) }
+        else { VStack(alignment: .leading, spacing: 3) { ForEach(entries) { entry in VStack(alignment: .leading, spacing: 3) { Text(entry.subject).font(.system(.subheadline, design: .rounded).weight(.black)).strikethrough(entry.isCancelled).lineLimit(2).minimumScaleFactor(0.76); if let room = entry.room, !room.isEmpty { Text(room).font(.system(size: 10)).lineLimit(1) }; Text([entry.startsAtLocal, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 9)).lineLimit(2); if entry.isCancelled { Text("Скасовано").font(.system(size: 9, weight: .bold)) } }.foregroundStyle(Routes05Tokens.accentInk) } }.padding(7).frame(width: width, height: 115, alignment: .topLeading).background([Routes05Tokens.lilac, Routes05Tokens.mint, Routes05Tokens.orange, Routes05Tokens.yellow, Routes05Tokens.blue][(dayIndex + slot - 1) % 5]).overlay(Rectangle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 1)).accessibilityElement(children: .combine).accessibilityLabel("Урок \(slot), \(entries.map(\.subject).joined(separator: ", "))") }
     }
 }
