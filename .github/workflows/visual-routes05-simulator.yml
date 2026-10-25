@@ -194,6 +194,8 @@ jobs:
           set -euo pipefail
           device="$DEVICE_UDID"
           out="$RUNNER_TEMP/orbit-routes05-screenshots"
+          xcrun simctl boot "$device" 2>/dev/null || true
+          xcrun simctl bootstatus "$device" -b
           for screen in tasks timetable; do
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
