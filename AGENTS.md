@@ -25,3 +25,15 @@
 - Roadmap updates must be minimal, dated, evidence-linked, and performed through an authorized writable checkout of the **documentation repo**, not by editing unrelated production trees.
 
 Other ChatGPT/Codex conversations are **not automatically synced** with GitHub. Fetch the source at each new session.
+
+## Main Orbit iOS release contract — REQUIRED, read first
+
+Follow [`docs/IOS_RELEASE_CONTRACT.md`](docs/IOS_RELEASE_CONTRACT.md) **before deciding that publication is blocked**. The exact current canonical production intent/Guard policy is the authority; this Markdown document does not override it.
+
+**Order:** development implementation → reviewed promotion to protected `release/main-orbit` (preserve release-only commits) → **new eligible-branch CI** → exact source/IPA artifact verification → trusted root-owned intent/prepare → checkpoint/backup/restore/staged-feed evidence → **real Guard request and human Passkey approval on iPhone** → existing canonical SideStore publication → public IPA/feed verification → **physical app acceptance on iPhone AFTER publication**.
+
+Do **not** confuse two entirely different acts on the same device: (a) Passkey authorization **before** publication and (b) installing/testing the new app **after** publication. `physical-iPhone-acceptance` is **NOT** an additional prepublication release admission gate. `checkpointRequired: true` means recovery evidence; `SUPPORTED_OFFLINE_ONLY` describes the Unified Releases operator adapter rather than a Guard rejection.
+
+If a candidate comes from a development branch, classify `BRANCH_NOT_ELIGIBLE`; inspect actual release-branch HEAD, seek review/authorization for non-destructive promotion, rerun **eligible** CI and resume the same canonical release pipeline. If no intent exists, classify `INTENT_NOT_CREATED`, **not** `POLICY_BLOCKED` or `GUARD_REJECTED`. Do not search for alternate signer/publisher, preview exception, direct feed edit, or Guard security policy change to fix branch eligibility or metadata wording.
+
+If evidence is unavailable or a release is already underway, **do not race with the existing operator**. Report the current unknown/read-only observations and coordinate with that existing operation. Never generate simulated Passkey evidence or treat a human chat message as a completed Guard approval.
