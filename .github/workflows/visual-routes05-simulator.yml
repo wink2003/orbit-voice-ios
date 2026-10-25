@@ -73,7 +73,7 @@ jobs:
           fi
 
       - name: Capture light and dark native screenshots
-        if: github.ref != 'refs/heads/codex/routes05-inbox-fidelity-111'
+        if: github.ref != 'refs/heads/codex/routes05-inbox-fidelity-111' && github.ref != 'refs/heads/codex/routes05-school-tasks-timetable'
         env:
           DEVICE_UDID: ${{ steps.simulator.outputs.udid }}
           DEVICE_NAME: ${{ steps.simulator.outputs.name }}
