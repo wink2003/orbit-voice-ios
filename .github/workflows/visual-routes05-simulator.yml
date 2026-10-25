@@ -195,6 +195,7 @@ jobs:
           device="$DEVICE_UDID"
           app="$RUNNER_TEMP/orbit-routes05-simulator/Build/Products/Debug-iphonesimulator/VoiceAgent.app"
           out="$RUNNER_TEMP/orbit-routes05-screenshots"
+          mkdir -p "$out"
           xcrun simctl boot "$device" 2>/dev/null || true
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$app"
