@@ -335,6 +335,11 @@ private struct SchoolHubV2View: View {
 #endif
         }
         .refreshable { await store.load() }
+#if DEBUG
+        .onAppear {
+            if initialSection == .exams { Routes05DebugCapture.markReady(route: "exams") }
+        }
+#endif
     }
 
     private var content: some View {
@@ -3234,6 +3239,9 @@ private struct Routes05SchoolTimetableProductionView: View {
         .foregroundStyle(Routes05Tokens.ink).background(Routes05Tokens.canvas.ignoresSafeArea()).toolbar(.hidden, for: .navigationBar)
         .task(id: store.weekStart) { await store.load() }
         .onChange(of: days) { _, value in if !value.contains(selectedDay ?? "") { selectedDay = value.first } }
+#if DEBUG
+        .onAppear { Routes05DebugCapture.markReady(route: "timetable") }
+#endif
     }
 
     private var header: some View {

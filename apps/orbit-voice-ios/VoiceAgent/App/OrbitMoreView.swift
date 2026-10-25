@@ -83,6 +83,9 @@ struct OrbitMoreView: View {
             }
             .routes05ContextSurface()
             .navigationTitle("Ще")
+#if DEBUG
+            .onAppear { Routes05DebugCapture.markReady(route: "family-menu") }
+#endif
             .sheet(item: $selectedTarget) { target in
                 NavigationStack {
                     Form {
