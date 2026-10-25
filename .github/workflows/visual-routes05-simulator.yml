@@ -6,6 +6,7 @@ on:
     branches:
       - codex/routes05-batch1
       - codex/routes05-batch2-school-chat
+      - codex/routes05-school-tasks-timetable
       - codex/routes05-inbox-fidelity-111
     paths:
       - "apps/orbit-voice-ios/**"
@@ -72,7 +73,7 @@ jobs:
           fi
 
       - name: Capture light and dark native screenshots
-        if: github.ref != 'refs/heads/codex/routes05-inbox-fidelity-111'
+        if: github.ref != 'refs/heads/codex/routes05-inbox-fidelity-111' && github.ref != 'refs/heads/codex/routes05-school-tasks-timetable'
         env:
           DEVICE_UDID: ${{ steps.simulator.outputs.udid }}
           DEVICE_NAME: ${{ steps.simulator.outputs.name }}
@@ -178,6 +179,32 @@ jobs:
               args="--routes05-$screen"
               if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
               perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
+              sleep 4
+              file="$out/routes05-${screen}-${appearance}.png"
+              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
+              test -s "$file"
+            done
+          done
+
+      - name: Capture targeted School Tasks and Timetable
+        if: github.ref == 'refs/heads/codex/routes05-school-tasks-timetable'
+        env:
+          DEVICE_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          device="$DEVICE_UDID"
+          app="$RUNNER_TEMP/orbit-routes05-simulator/Build/Products/Debug-iphonesimulator/VoiceAgent.app"
+          out="$RUNNER_TEMP/orbit-routes05-screenshots"
+          mkdir -p "$out"
+          xcrun simctl boot "$device" 2>/dev/null || true
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$app"
+          for screen in tasks timetable; do
+            for appearance in light dark; do
+              xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+              args="--routes05-$screen"
+              if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
+              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl launch "$device" net.opik.orbit.voice $args
               sleep 4
               file="$out/routes05-${screen}-${appearance}.png"
               perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
