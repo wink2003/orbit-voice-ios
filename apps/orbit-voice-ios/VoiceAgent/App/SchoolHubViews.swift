@@ -3096,7 +3096,7 @@ private struct Routes05SchoolTasksProductionView: View {
     private func confirm(_ task: SchoolHubTask) {
         pendingTask = nil
         let completed = task.status != "completed"
-        Task { do { try await store.setTaskStatus(task, completed: completed) } catch { error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." } }
+        Task { do { try await store.setTaskStatus(task, completed: completed) } catch { self.error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." } }
     }
 }
 
