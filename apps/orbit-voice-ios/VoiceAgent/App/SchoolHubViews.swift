@@ -2993,6 +2993,7 @@ private struct Routes05SchoolTasksProductionView: View {
 
     private var counts: SchoolTaskCounts { SchoolHubLogic.taskCounts(store.hubTasks) }
     private var today: String { SchoolHubLogic.dayKey(of: Date()) }
+    private var openTaskCount: Int { store.openHubTasks.count }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -3058,7 +3059,7 @@ private struct Routes05SchoolTasksProductionView: View {
         HStack(alignment: .center, spacing: 12) {
             Text("Справи.\nПо черзі.").font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-2).lineSpacing(-5).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
             Spacer()
-            Text(String(format: "%02d", tasks.filter { !$0.status.elementsEqual("completed") && SchoolHubLogic.dayKey(for: $0.dueAt, allDay: $0.allDay) == today }.count)).font(.system(size: 30, weight: .black, design: .rounded)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 77, height: 77).background(Routes05Tokens.orange, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityLabel("Справ на сьогодні")
+            Text(String(format: "%02d", openTaskCount)).font(.system(size: 30, weight: .black, design: .rounded)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 77, height: 77).background(Routes05Tokens.orange, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityLabel("Відкритих справ: \(openTaskCount)")
         }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 15)
     }
 
@@ -3152,7 +3153,18 @@ private struct Routes05SchoolTimetableProductionView: View {
         return weekdays + known.subtracting(weekdays).sorted()
     }
     private var slots: [Int] { Array(Set(store.timetable.map(\.lessonIndex))).sorted() }
-    private var classLabel: String { store.timetable.compactMap { $0.groupName ?? $0.group }.first ?? "школа" }
+    private var classLabel: String? {
+        store.timetable.flatMap { entry in
+            [entry.groupName, entry.group] + entry.groups.map(\.name)
+        }
+        .compactMap { value in
+            guard let value else { return nil }
+            let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return normalized.isEmpty ? nil : normalized
+        }
+        .first
+    }
+    private var title: String { classLabel.map { "Розклад\n\($0)." } ?? "Розклад." }
     private var weekNumber: String {
         guard let date = SchoolHubLogic.date(fromDayKey: store.weekStart) else { return "—" }
         var calendar = Calendar(identifier: .iso8601); calendar.timeZone = SchoolHubLogic.schoolTimeZone
@@ -3193,7 +3205,7 @@ private struct Routes05SchoolTimetableProductionView: View {
     }
     private var hero: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text("Розклад\n\(classLabel).").font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-2).lineSpacing(-5).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+            Text(title).font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-2).lineSpacing(-5).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
             Spacer()
             Image(systemName: "calendar").font(.system(size: 29, weight: .heavy)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 77, height: 77).background(Routes05Tokens.mint, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityHidden(true)
         }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 8)
