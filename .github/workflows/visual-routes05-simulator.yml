@@ -204,7 +204,7 @@ jobs:
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
               args="--routes05-$screen"
               if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
-              perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
+              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl launch "$device" net.opik.orbit.voice $args
               sleep 4
               file="$out/routes05-${screen}-${appearance}.png"
               perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
