@@ -517,7 +517,6 @@ private struct SchoolHubV2View: View {
 private struct SchoolV2StateView: View {
     let title: String; let message: String; let icon: String; let retry: (() -> Void)?
     var body: some View {
-        ScrollViewReader { proxy in
         ScrollView {
             VStack(spacing: 16) {
                 Routes05ContextHeader(
