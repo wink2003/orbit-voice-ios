@@ -757,6 +757,17 @@ private struct ConceptCalendarEvent: Identifiable {
     let involvedPersonIDs: [String]
     let notes: String
 
+    init(id: String, title: String, startsAt: Date, endsAt: Date, allDay: Bool, sourceID: String, involvedPersonIDs: [String], notes: String) {
+        self.id = id
+        self.title = title
+        self.startsAt = startsAt
+        self.endsAt = endsAt
+        self.allDay = allDay
+        self.sourceID = sourceID
+        self.involvedPersonIDs = involvedPersonIDs
+        self.notes = notes
+    }
+
     init(apiEvent: OrbitCalendarEvent) {
         id = apiEvent.id
         title = apiEvent.title
