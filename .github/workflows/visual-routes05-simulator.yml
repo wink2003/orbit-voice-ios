@@ -138,6 +138,37 @@ jobs:
           done
           fi
 
+          if [ "${GITHUB_REF}" = "refs/heads/codex/calendar-v2" ]; then
+            for appearance in light dark; do
+              xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+              sleep 2
+              args="--routes05-calendar --routes05-calendar-fixture --routes05-appearance $appearance --routes05-capture-id ${GITHUB_RUN_ID}-calendar-${appearance}"
+              if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
+              perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
+              sleep 4
+              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-calendar-${appearance}.png"
+              test -s "$out/routes05-calendar-${appearance}.png"
+
+              xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+              sleep 2
+              bottom_args="--routes05-calendar --routes05-calendar-fixture --routes05-bottom --routes05-appearance $appearance --routes05-capture-id ${GITHUB_RUN_ID}-calendar-${appearance}-bottom"
+              if [ "$appearance" = dark ]; then bottom_args="$bottom_args --routes05-dark"; fi
+              perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $bottom_args
+              sleep 8
+              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-calendar-${appearance}-bottom.png"
+              test -s "$out/routes05-calendar-${appearance}-bottom.png"
+
+              xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+              sleep 2
+              detail_args="--routes05-calendar --routes05-calendar-fixture-detail --routes05-appearance $appearance --routes05-capture-id ${GITHUB_RUN_ID}-calendar-${appearance}-detail"
+              if [ "$appearance" = dark ]; then detail_args="$detail_args --routes05-dark"; fi
+              perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $detail_args
+              sleep 5
+              perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-calendar-${appearance}-detail.png"
+              test -s "$out/routes05-calendar-${appearance}-detail.png"
+            done
+          fi
+
           # Targeted Issue #17 evidence. These are DEBUG fixtures only: the
           # Family route opens the real More owner, Exams spans multiple weeks,
           # and Timetable is positioned at the rightmost horizontal column.

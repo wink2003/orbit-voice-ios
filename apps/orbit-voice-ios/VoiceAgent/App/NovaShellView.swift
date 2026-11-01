@@ -53,7 +53,7 @@ struct NovaShellView: View {
             case .timetable: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "timetable")
             case .exams: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "exams")
             case .brain: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "brain")
-            case .calendar: Routes05SystemRouteView(routeID: "calendar")
+            case .calendar: OrbitCalendarView()
             case .schoolCalendar: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "calendar")
             case .search: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "search")
             case .timeline: SchoolHubView(fixture: Routes05DebugFixtures.school, initialDebugRoute: "timeline")

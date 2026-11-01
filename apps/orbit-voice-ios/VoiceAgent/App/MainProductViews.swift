@@ -175,7 +175,8 @@ struct FamilyMessengerView: View {
     }
 }
 
-struct OrbitCalendarView: View {
+@available(*, deprecated, message: "Use OrbitCalendarView backed by OrbitCalendarV2View")
+private struct OrbitCalendarLegacyView: View {
     @State private var events: [OrbitCalendarEvent] = []
     @State private var selectedDate = Calendar.current.startOfDay(for: .now)
     @State private var filter = "Всі"
@@ -349,7 +350,7 @@ struct OrbitCalendarView: View {
     private func replace(_ event: OrbitCalendarEvent) { if let index = events.firstIndex(where: { $0.id == event.id }) { events[index] = event } else { events.append(event) } }
 }
 
-private struct CalendarEventEditor: View {
+struct CalendarEventEditor: View {
     @Environment(\.dismiss) private var dismiss
     let existing: OrbitCalendarEvent?
     let onSave: (OrbitCalendarEvent?) async -> Void
