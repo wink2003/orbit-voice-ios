@@ -2091,13 +2091,44 @@ private struct SchoolTaskDetailView: View {
                     detailTag(task.kind == "family" ? "ORBIT · FAMILY" : "SOURCE · SCHOOL", tint: task.kind == "family" ? Routes05Tokens.lilac : Routes05Tokens.mint)
                     detailTag(task.status == "completed" ? "ВИКОНАНО" : "ВІДКРИТО", tint: task.status == "completed" ? Routes05Tokens.mint : Routes05Tokens.yellow)
                 }
-                Text(task.title).font(.system(size: 30, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true).textSelection(.enabled).accessibilityAddTraits(.isHeader)
+                HStack(alignment: .top, spacing: 12) {
+                    Text(task.title).font(.system(size: 30, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true).textSelection(.enabled).accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                    Image(systemName: task.kind == "family" ? "checklist" : "list.bullet.rectangle")
+                        .font(.title2.weight(.black))
+                        .foregroundStyle(Routes05Tokens.accentInk)
+                        .frame(width: 48, height: 48)
+                        .background(Routes05Tokens.orange, in: Circle())
+                        .overlay(Circle().stroke(Routes05Tokens.accentInk, lineWidth: 1.5))
+                        .accessibilityHidden(true)
+                }
                 if let action = task.action, action != task.title { Text(action).font(.body).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
                 detailCard {
                     Label(task.provenanceLabel, systemImage: task.kind == "family" ? "person.2" : "building.2.crop.circle")
                         .font(.callout.weight(.bold))
                     if let target = task.target, !target.isEmpty { Text("Кого стосується: \(target)").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
                     if let importance = task.importance, !importance.isEmpty { Text("Позначка джерела: \(importance)").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
+                }
+                mainActionCard {
+                    HStack {
+                        Text("01  СТАН ORBIT").font(.caption.weight(.black).monospaced())
+                        Spacer()
+                        Text(task.status == "completed" ? "ВИКОНАНО" : "ВІДКРИТО").font(.caption2.weight(.black).monospaced())
+                    }
+                    if store.actionTasksPhase == .loaded && store.actionCapability.canMutate && task.identityStable {
+                        Button { pendingStatusChange = SchoolTaskStatusConfirmation(completed: task.status == "completed") } label: {
+                            Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle")
+                                .font(.body.weight(.bold))
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .padding(.horizontal, 12)
+                                .background(Routes05Tokens.surface)
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.2))
+                        }.buttonStyle(.plain).disabled(updating)
+                        Text(task.kind == "family" ? "Завершення збережеться у сімейних справах Orbit." : "Позначка лише в Orbit; школі відповідь автоматично не надсилається.").font(.caption)
+                        if updating { ProgressView().tint(Routes05Tokens.accentInk) }
+                    } else {
+                        Label(!task.identityStable ? "Немає стабільного ідентифікатора." : (store.actionCapability.canMutate ? "Дія тимчасово недоступна." : store.actionCapability.message), systemImage: "info.circle")
+                    }
                 }
                 detailCard {
                     Text("02  КОЛИ І КОГО СТОСУЄТЬСЯ").font(.caption.weight(.black).monospaced()).tracking(0.5)
@@ -2109,16 +2140,6 @@ private struct SchoolTaskDetailView: View {
                     }
                 }
                 if let reason = task.reason, !reason.isEmpty { detailCard { Text("КОНТЕКСТ").font(.caption.weight(.black).monospaced()); Text(reason).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) } }
-                mainActionCard {
-                    Text("01  СТАН ORBIT").font(.caption.weight(.black).monospaced())
-                    if store.actionTasksPhase == .loaded && store.actionCapability.canMutate && task.identityStable {
-                        Button { pendingStatusChange = SchoolTaskStatusConfirmation(completed: task.status == "completed") } label: { Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle") }.frame(minHeight: OrbitSpacing.minTarget).disabled(updating)
-                        if updating { ProgressView().frame(maxWidth: .infinity) }
-                    } else {
-                        Label(!task.identityStable ? "Немає стабільного ідентифікатора." : (store.actionCapability.canMutate ? "Дія тимчасово недоступна." : store.actionCapability.message), systemImage: "info.circle")
-                    }
-                    Text(task.kind == "family" ? "Сімейна справа Orbit не змінює шкільне джерело." : "Стан зберігається в Orbit окремо від Schulmanager.").font(.caption)
-                }
                 if task.kind == "source" {
                     detailCard {
                         Text("03  ПОВ’ЯЗАНИЙ ЛИСТ").font(.caption.weight(.black).monospaced())
@@ -2168,6 +2189,7 @@ private struct SchoolTaskDetailView: View {
             .foregroundStyle(Routes05Tokens.accentInk)
             .background(Routes05Tokens.orange)
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.5))
+            .shadow(color: Routes05Tokens.accentInk, radius: 0, x: 3, y: 3)
     }
 
     private func detailTag(_ title: String, tint: Color) -> some View {

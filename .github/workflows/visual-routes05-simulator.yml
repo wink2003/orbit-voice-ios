@@ -171,6 +171,8 @@ jobs:
           fi
 
           if [ "${GITHUB_REF}" = "refs/heads/codex/school-detail-v2" ]; then
+            school_out="$out/school-detail"
+            mkdir -p "$school_out"
             for screen in letter message-detail source-task-detail family-task-detail; do
               for appearance in light dark; do
                 xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
@@ -185,6 +187,24 @@ jobs:
                 file="$out/routes05-$screen-$appearance.png"
                 perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
                 test -s "$file"
+                cp "$file" "$school_out/"
+
+                # The authored screens are intentionally scrollable. Capture
+                # the bottom state through the same production view and DEBUG
+                # launch route so long sections are reviewable too.
+                xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+                sleep 2
+                bottom_args="--routes05-$screen --routes05-bottom --routes05-capture-id ${GITHUB_RUN_ID}-school-$screen-$appearance-bottom --routes05-appearance $appearance"
+                if [ "$appearance" = dark ]; then bottom_args="$bottom_args --routes05-dark"; fi
+                perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $bottom_args
+                if ! wait_for_ready "school-detail" "${GITHUB_RUN_ID}-school-$screen-$appearance-bottom" && ! wait_for_ready "school-task-detail" "${GITHUB_RUN_ID}-school-$screen-$appearance-bottom"; then
+                  echo "bottom readiness timeout for $screen/$appearance" >&2
+                  exit 1
+                fi
+                bottom_file="$out/routes05-$screen-$appearance-bottom.png"
+                perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$bottom_file"
+                test -s "$bottom_file"
+                cp "$bottom_file" "$school_out/"
               done
             done
           fi
@@ -332,5 +352,14 @@ jobs:
             ${{ runner.temp }}/orbit-routes05-screenshots/
             ${{ runner.temp }}/routes05-xcodebuild.log
             ${{ runner.temp }}/routes05-xcode-test.log
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload isolated School detail evidence
+        if: always() && github.ref == 'refs/heads/codex/school-detail-v2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-SchoolDetail-native-evidence
+          path: ${{ runner.temp }}/orbit-routes05-screenshots/school-detail/
           retention-days: 14
           if-no-files-found: error
