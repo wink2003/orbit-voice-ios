@@ -676,40 +676,31 @@ struct SchoolDetailView: View {
                         }
                     }
                     .padding(.horizontal, 12)
-                    .background(Routes05Tokens.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
+                    .padding(.vertical, 4)
+                    .foregroundStyle(Routes05Tokens.accentInk)
+                    .background(Routes05Tokens.yellow)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.3))
                 } else {
                     detailHeader("Що потрібно")
                     Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
                 }
                 detailHeader("Текст листа")
-                Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
-                    .pickerStyle(.segmented).padding(.bottom, 8)
-                let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian ?? "Переклад ще готується.")
-                if showOriginal {
-                    Text(verbatim: body)
-                        .font(.system(size: enlargedText ? 19 : 16))
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                } else {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(SchoolTranslatedBody.paragraphs(from: body).enumerated()), id: \.offset) { _, paragraph in
-                            Text(verbatim: paragraph)
-                                .font(.system(size: enlargedText ? 19 : 16))
-                                .lineSpacing(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
-                        }
+                let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian ?? "Переклад наразі недоступний. Перейдіть до німецького оригіналу.")
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
+                        .pickerStyle(.segmented)
+                    ForEach(Array(SchoolTranslatedBody.paragraphs(from: body).enumerated()), id: \.offset) { _, paragraph in
+                        Text(verbatim: paragraph).font(.system(size: enlargedText ? 19 : 16)).lineSpacing(enlargedText ? 7 : 4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
+                    Button { UIPasteboard.general.string = body; copyNotice = true } label: { Label("Копіювати", systemImage: "doc.on.doc") }.frame(minHeight: OrbitSpacing.minTarget)
                 }
-                Button { UIPasteboard.general.string = body; copyNotice = true } label: { Label("Копіювати вибрану версію", systemImage: "doc.on.doc") }
-                    .frame(minHeight: OrbitSpacing.minTarget)
+                .padding(15).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.2))
                 detailHeader("Короткий підсумок")
-                Text(item.important ?? "Підсумок відсутній — перевірте оригінал листа.")
-                    .font(.callout).fixedSize(horizontal: false, vertical: true)
-                Label("Підсумок Orbit (ШІ), не слова школи. Звіряйте з оригіналом.", systemImage: "sparkles")
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("ШІ ORBIT", systemImage: "sparkles").font(.caption.weight(.black).monospaced()).foregroundStyle(Routes05Tokens.accentInk).padding(.horizontal, 9).padding(.vertical, 6).background(Routes05Tokens.lilac, in: Capsule())
+                    Text(item.important ?? "Підсумок відсутній — перевірте оригінал листа.").font(.callout).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    Text("Це інтерпретація Orbit, а не офіційні слова школи.").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                }.padding(15).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
                 if !item.attachments.isEmpty {
                     detailHeader("Вкладення")
                     VStack(alignment: .leading, spacing: 0) {
@@ -728,12 +719,17 @@ struct SchoolDetailView: View {
                     detailHeader("Дати / дедлайни")
                     ForEach(item.events) { event in
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(event.title).font(.callout.weight(.medium))
+                            Label(event.title, systemImage: "calendar.badge.plus").font(.callout.weight(.bold))
                             if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)).font(.caption) }
                             if let location = event.location { Text(location).font(.caption).foregroundStyle(.secondary) }
                             Button("Додати до календаря") { Task { await add(event) } }.buttonStyle(.bordered)
-                        }.padding(.vertical, 5)
+                        }.padding(13).frame(maxWidth: .infinity, alignment: .leading).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
                     }
+                }
+                detailHeader("Майбутні можливості")
+                HStack(spacing: 10) {
+                    futureFeatureTile(title: "Запитати Orbit", detail: "Потрібен окремий API", icon: "sparkles")
+                    futureFeatureTile(title: "Нагадати", detail: "Поки недоступно", icon: "bell.badge")
                 }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 38)
@@ -784,6 +780,10 @@ struct SchoolDetailView: View {
         Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             .tracking(0.6).padding(.top, 20).padding(.bottom, 6)
             .accessibilityAddTraits(.isHeader)
+    }
+    private func futureFeatureTile(title: String, detail: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) { Image(systemName: icon); Spacer(); Text(title).font(.caption.weight(.bold)); Text(detail).font(.caption2).foregroundStyle(Routes05Tokens.secondary) }
+            .padding(12).frame(maxWidth: .infinity, minHeight: 100, alignment: .leading).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1)).opacity(0.55).accessibilityElement(children: .combine).accessibilityLabel("\(title): майбутня функція, недоступна")
     }
     private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String { guard let start = event.startsAt else { return "Дата не визначена" }; if let end = event.endsAt, end != start { return "\(start.formatted(date: .long, time: .shortened)) – \(end.formatted(date: .long, time: .shortened))" }; return start.formatted(date: .long, time: .shortened) }
     private var calendarPreviewMessage: String { guard let event = pendingCalendarEvent else { return "" }; var lines = [event.title]; if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location, !location.isEmpty { lines.append(location) }; return lines.joined(separator: "\n") }

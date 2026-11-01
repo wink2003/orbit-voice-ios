@@ -45,7 +45,7 @@ final class SchoolHubStore {
             calendarPhase = .loaded
             tasksPhase = .loaded
             actionTasksPhase = .loaded
-            actionCapability = .unavailable
+            actionCapability = .available
             taskCoverage = "all"
             gate.reset(to: "routes05-fixture")
         }
@@ -2068,6 +2068,7 @@ private struct SchoolTaskRow: View {
 private struct SchoolTaskDetailView: View {
     let store: SchoolHubStore
     let task: SchoolHubTask
+    @Environment(\.dismiss) private var dismiss
     @State private var updating = false
     @State private var error: String?
     @State private var showCalendar = false
@@ -2080,7 +2081,12 @@ private struct SchoolTaskDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Routes05Mast(section: "school")
-                HStack { Text("‹ Справи").font(.callout.weight(.bold)); Spacer(); Text(task.kind == "family" ? "СІМЕЙНА СПРАВА" : "ДЖЕРЕЛО ШКОЛИ").font(.caption2.weight(.black).monospaced()) }
+                HStack {
+                    Button { dismiss() } label: { Label("Справи", systemImage: "arrow.left").font(.callout.weight(.bold)) }
+                        .buttonStyle(.plain).frame(minHeight: OrbitSpacing.minTarget)
+                    Spacer()
+                    Text(task.kind == "family" ? "СІМЕЙНА СПРАВА" : "ДЖЕРЕЛО ШКОЛИ").font(.caption2.weight(.black).monospaced())
+                }
                 HStack(spacing: 8) {
                     detailTag(task.kind == "family" ? "ORBIT · FAMILY" : "SOURCE · SCHOOL", tint: task.kind == "family" ? Routes05Tokens.lilac : Routes05Tokens.mint)
                     detailTag(task.status == "completed" ? "ВИКОНАНО" : "ВІДКРИТО", tint: task.status == "completed" ? Routes05Tokens.mint : Routes05Tokens.yellow)
@@ -2103,15 +2109,15 @@ private struct SchoolTaskDetailView: View {
                     }
                 }
                 if let reason = task.reason, !reason.isEmpty { detailCard { Text("КОНТЕКСТ").font(.caption.weight(.black).monospaced()); Text(reason).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) } }
-                detailCard {
+                mainActionCard {
                     Text("01  СТАН ORBIT").font(.caption.weight(.black).monospaced())
-                    if store.actionTasksPhase == .loaded && task.identityStable {
+                    if store.actionTasksPhase == .loaded && store.actionCapability.canMutate && task.identityStable {
                         Button { pendingStatusChange = SchoolTaskStatusConfirmation(completed: task.status == "completed") } label: { Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle") }.frame(minHeight: OrbitSpacing.minTarget).disabled(updating)
                         if updating { ProgressView().frame(maxWidth: .infinity) }
                     } else {
-                        Label(task.identityStable ? "Дія тимчасово недоступна." : "Немає стабільного ідентифікатора.", systemImage: "info.circle").foregroundStyle(.secondary)
+                        Label(!task.identityStable ? "Немає стабільного ідентифікатора." : (store.actionCapability.canMutate ? "Дія тимчасово недоступна." : store.actionCapability.message), systemImage: "info.circle")
                     }
-                    Text(task.kind == "family" ? "Сімейна справа Orbit не змінює шкільне джерело." : "Стан зберігається в Orbit окремо від Schulmanager.").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                    Text(task.kind == "family" ? "Сімейна справа Orbit не змінює шкільне джерело." : "Стан зберігається в Orbit окремо від Schulmanager.").font(.caption)
                 }
                 if task.kind == "source" {
                     detailCard {
@@ -2121,6 +2127,7 @@ private struct SchoolTaskDetailView: View {
                     }
                 }
                 if store.actionCapability.canMutate {
+                    SchoolTaskInlinePreparation(store: store, task: task)
                     detailCard {
                         Text("04  ПІДГОТОВКА Й НОТАТКИ").font(.caption.weight(.black).monospaced())
                         NavigationLink { SchoolChecklistView(store: store, sourceItemId: task.sourceItemId.isEmpty ? nil : task.sourceItemId, sourceTaskId: task.actionID) } label: { Label("Чекліст підготовки", systemImage: "checklist.checked") }.frame(minHeight: OrbitSpacing.minTarget)
@@ -2155,6 +2162,14 @@ private struct SchoolTaskDetailView: View {
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
     }
 
+    @ViewBuilder private func mainActionCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10, content: content)
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(Routes05Tokens.accentInk)
+            .background(Routes05Tokens.orange)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.5))
+    }
+
     private func detailTag(_ title: String, tint: Color) -> some View {
         Text(title).font(.caption2.weight(.black).monospaced()).foregroundStyle(Routes05Tokens.accentInk).padding(.horizontal, 10).padding(.vertical, 6).background(tint, in: Capsule())
     }
@@ -2173,6 +2188,110 @@ private struct SchoolTaskDetailView: View {
             defer { updating = false }
             do { try await store.setTaskStatus(task, completed: completed) }
             catch { self.error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
+        }
+    }
+}
+
+private struct SchoolTaskInlinePreparation: View {
+    let store: SchoolHubStore
+    let task: SchoolHubTask
+    @State private var checklists: [OrbitSchoolActionChecklist] = []
+    @State private var notes: [OrbitSchoolActionNote] = []
+    @State private var draft = ""
+    @State private var loading = true
+    @State private var saving = false
+    @State private var error: String?
+
+    private var visibleChecklists: [OrbitSchoolActionChecklist] {
+        checklists.filter { checklist in
+            (task.sourceItemId.isEmpty == false && checklist.sourceItemId == task.sourceItemId) ||
+            (task.actionID != nil && checklist.sourceTaskId == task.actionID)
+        }
+    }
+    private var entityID: String? { task.kind == "family" ? task.actionID : task.sourceNoteEntityId }
+    private var visibleNotes: [OrbitSchoolActionNote] { notes.filter { $0.entityType == "task" && $0.entityId == entityID } }
+
+    var body: some View {
+        detailCard {
+            Text("04  ПІДГОТОВКА").font(.caption.weight(.black).monospaced()).tracking(0.5)
+            if loading {
+                ProgressView("Завантажуємо Orbit-дані…").frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 44)
+            } else if let error {
+                Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                Button("Повторити") { Task { await load() } }.frame(minHeight: OrbitSpacing.minTarget)
+            } else {
+                checklistSurface
+                notesSurface
+            }
+        }
+        .task { await load() }
+    }
+
+    @ViewBuilder private var checklistSurface: some View {
+        if let checklist = visibleChecklists.first {
+            let done = checklist.items.filter { $0.completedAt != nil }.count
+            VStack(alignment: .leading, spacing: 7) {
+                HStack { Label("Чекліст", systemImage: "checklist"); Spacer(); Text("\(done)/\(checklist.items.count)").font(.caption.monospacedDigit()) }
+                ProgressView(value: Double(done), total: Double(max(checklist.items.count, 1))).tint(Routes05Tokens.mint)
+                ForEach(checklist.items.prefix(3)) { item in
+                    Label(item.title, systemImage: item.completedAt == nil ? "square" : "checkmark.square.fill")
+                        .font(.caption).foregroundStyle(item.completedAt == nil ? Routes05Tokens.ink : Routes05Tokens.secondary)
+                }
+                if checklist.items.count > 3 { Text("Ще \(checklist.items.count - 3) пунктів у повному чеклісті").font(.caption2).foregroundStyle(Routes05Tokens.secondary) }
+            }
+        } else {
+            Label("Чекліста для цієї справи ще немає", systemImage: "checklist").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+        }
+    }
+
+    @ViewBuilder private var notesSurface: some View {
+        if let entityID {
+            VStack(alignment: .leading, spacing: 7) {
+                Label("Сімейні нотатки", systemImage: "note.text").font(.callout.weight(.semibold))
+                if let note = visibleNotes.first { Text(note.content).font(.caption).lineLimit(3).textSelection(.enabled) }
+                else { Text("Нотаток ще немає").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
+                TextField("Додати нотатку…", text: $draft, axis: .vertical).lineLimit(1...3)
+                Button { createNote(entityID: entityID) } label: { HStack { Text("Зберегти нотатку"); if saving { Spacer(); ProgressView() } } }
+                    .disabled(saving || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .frame(minHeight: OrbitSpacing.minTarget)
+            }
+        } else {
+            Label("Нотатки недоступні: немає стабільного Orbit identity.", systemImage: "lock.slash").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+        }
+    }
+
+    private func detailCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10, content: content)
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Routes05Tokens.surface)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
+    }
+
+    private func load() async {
+#if DEBUG
+        if store.scopeKey == "routes05-fixture" {
+            loading = false
+            return
+        }
+#endif
+        loading = true; error = nil
+        do {
+            checklists = try await MainProductAPI.shared.schoolActionChecklists().checklists
+            if let entityID { notes = try await MainProductAPI.shared.schoolActionNotes(entityType: "task", entityId: entityID).notes }
+            loading = false
+        } catch {
+            loading = false
+            self.error = "Підготовчі дані тимчасово недоступні."
+        }
+    }
+
+    private func createNote(entityID: String) {
+        let content = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !content.isEmpty else { return }
+        saving = true
+        Task {
+            defer { saving = false }
+            do { _ = try await MainProductAPI.shared.createSchoolActionNote(entityType: "task", entityId: entityID, content: content); draft = ""; await load() }
+            catch { self.error = "Нотатку не збережено. Перевірте доступ і повторіть." }
         }
     }
 }
