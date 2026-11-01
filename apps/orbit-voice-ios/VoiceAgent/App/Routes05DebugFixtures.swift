@@ -32,6 +32,10 @@ enum Routes05DebugFixtures {
         return value
     }()
 
+    private static func decodeFixture<T: Decodable>(_ type: T.Type, _ json: String) -> T {
+        try! JSONDecoder().decode(type, from: Data(json.utf8))
+    }
+
     static let today = NovaTodayFixture.demo
 
     static let chats = Routes05ChatFixture(
@@ -67,7 +71,7 @@ enum Routes05DebugFixtures {
             previewPlainText: "Батьківський вечір · зміна часу", titlePlainText: "Батьківський вечір: зміна часу",
             translationUkrainian: "Шановні батьки!\n\nПовідомляємо, що батьківський вечір для нашого класу відбудеться у четвер о 18:00, а не о 17:30, як повідомлялося раніше.\n\nБудь ласка, підтвердіть участь до вівторка. Зустріч відбудеться в кабінеті B12.\n\nДякуємо за розуміння.\n\nЗ повагою,\nАдміністрація школи",
             important: "Час зустрічі змінився на 18:00. Потрібно підтвердити участь до вівторка.", sourceTimestamp: now,
-            importedAt: now, orbitReadAt: nil, unread: true, attachments: [OrbitSchoolAttachment(id: "routes05-parent-pdf", filename: "Інформація для батьків.pdf", contentType: "PDF", inline: false, url: nil, downloadURL: nil)], events: [OrbitSchoolEvent(key: "routes05-parent-event", title: "Батьківський вечір", startsAt: ISO8601DateFormatter().date(from: "2026-10-29T18:00:00+02:00"), endsAt: ISO8601DateFormatter().date(from: "2026-10-29T19:00:00+02:00"), allDay: false, location: "Кабінет B12")], threadId: nil,
+            importedAt: now, orbitReadAt: nil, unread: true, attachments: decodeFixture([OrbitSchoolAttachment].self, "[{\"id\":\"routes05-parent-pdf\",\"filename\":\"Інформація для батьків.pdf\",\"contentType\":\"PDF\",\"inline\":false}]"), events: decodeFixture([OrbitSchoolEvent].self, "[{\"key\":\"routes05-parent-event\",\"title\":\"Батьківський вечір\",\"startsAt\":\"2026-10-29T18:00:00+02:00\",\"endsAt\":\"2026-10-29T19:00:00+02:00\",\"allDay\":false,\"location\":\"Кабінет B12\"}]"), threadId: nil,
             subscriptionId: nil, tasks: [OrbitSchoolItemTask(key: "prepare", title: "Підтвердити участь", action: "До вт, 3 листопада", dueAt: "2026-11-03", allDay: true, importance: "normal", target: nil, confidence: 1, reason: "Source text",)]
         )
         let task = OrbitSchoolTask(key: "prepare", stableIdentity: true, title: "Підтвердити участь у батьківському вечорі", action: "Відповісти школі до вівторка. Зустріч відбудеться о 18:00 у кабінеті B12.", dueAt: "2026-11-03", endsAt: nil, allDay: true, importance: "high", target: "Батьки учня", confidence: 1, reason: "Позначка джерела: потрібна відповідь", location: "Кабінет B12", sourceItemId: letter.id, sourceType: "letter", sourceExternalId: letter.externalId, bucket: nil, status: "open", completedAt: nil, actionTaskId: nil, calendarEventId: nil)
