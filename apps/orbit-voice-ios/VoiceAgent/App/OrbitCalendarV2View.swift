@@ -15,6 +15,8 @@ struct OrbitCalendarV2View: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private let calendar = ConceptCalendarDates.calendar
+    private let debugFixtureMode: Bool
+    private let debugDetailMode: Bool
 
     @State private var referenceDate: Date
     @State private var visibleMonth: Date
@@ -38,8 +40,17 @@ struct OrbitCalendarV2View: View {
     @State private var draftInvolvedIDs: Set<String> = []
 
     init(referenceDate: Date = .now) {
-        _referenceDate = State(initialValue: referenceDate)
-        _visibleMonth = State(initialValue: ConceptCalendarDates.monthStart(referenceDate))
+        #if DEBUG
+        debugFixtureMode = ProcessInfo.processInfo.arguments.contains("--routes05-calendar-fixture") || ProcessInfo.processInfo.arguments.contains("--routes05-calendar-fixture-detail")
+        debugDetailMode = ProcessInfo.processInfo.arguments.contains("--routes05-calendar-fixture-detail")
+        let initialDate = debugFixtureMode ? ConceptCalendarDates.debugFixtureDate : referenceDate
+        #else
+        debugFixtureMode = false
+        debugDetailMode = false
+        let initialDate = referenceDate
+        #endif
+        _referenceDate = State(initialValue: initialDate)
+        _visibleMonth = State(initialValue: ConceptCalendarDates.monthStart(initialDate))
     }
 
     private var activeEvents: [ConceptCalendarEvent] {
@@ -578,6 +589,23 @@ struct OrbitCalendarV2View: View {
 
     private func load() async {
         isLoading = true
+        #if DEBUG
+        if debugFixtureMode {
+            let fixture = ConceptCalendarDates.debugFixture(referenceDate: referenceDate)
+            sources = fixture.sources
+            enabledSourceIDs = Set(fixture.sources.map(\.id))
+            events = fixture.events
+            liveEvents = []
+            people = fixture.people
+            coverageText = "DEBUG fixture · synthetic data · API не викликався"
+            loadError = nil
+            isLoading = false
+            if debugDetailMode {
+                selectedEvent = fixture.events.first(where: { $0.id == "fixture-detail" })
+            }
+            return
+        }
+        #endif
         do {
             async let sourceResult = MainProductAPI.shared.calendarSources()
             async let monthResult = loadVisibleMonthEvents()
@@ -691,6 +719,15 @@ private struct ConceptCalendarSource: Identifiable {
     let relatedPersonIDs: [String]
     let writable: Bool
 
+    init(id: String, name: String, accountLabel: String, color: Color, relatedPersonIDs: [String], writable: Bool) {
+        self.id = id
+        self.name = name
+        self.accountLabel = accountLabel
+        self.color = color
+        self.relatedPersonIDs = relatedPersonIDs
+        self.writable = writable
+    }
+
     init(_ source: OrbitCalendarSource) {
         id = source.id
         name = source.displayName
@@ -775,6 +812,36 @@ private enum ConceptCalendarDates {
         }
         return formatter("EEE · d LLL yyyy").string(from: date).uppercased()
     }
+
+    #if DEBUG
+    static var debugFixtureDate: Date {
+        calendar.date(from: DateComponents(year: 2026, month: 10, day: 26, hour: 9))!
+    }
+
+    static func debugFixture(referenceDate: Date) -> (sources: [ConceptCalendarSource], events: [ConceptCalendarEvent], people: [ConceptCalendarPerson]) {
+        let day = calendar.startOfDay(for: referenceDate)
+        func date(_ offset: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+            calendar.date(byAdding: .minute, value: hour * 60 + minute, to: calendar.date(byAdding: .day, value: offset, to: day)!)!
+        }
+        let sources = [
+            ConceptCalendarSource(id: "fixture-family", name: "Сімейний Orbit", accountLabel: "DEBUG · family", color: Routes05Tokens.mint, relatedPersonIDs: [], writable: true),
+            ConceptCalendarSource(id: "fixture-icloud", name: "iCloud · Спільний", accountLabel: "DEBUG · iCloud", color: Routes05Tokens.blue, relatedPersonIDs: [], writable: false),
+            ConceptCalendarSource(id: "fixture-school", name: "Школа", accountLabel: "DEBUG · external", color: Routes05Tokens.purple, relatedPersonIDs: [], writable: false)
+        ]
+        let events = [
+            ConceptCalendarEvent(id: "fixture-today", title: "Сьогодні · сімейний обід", startsAt: date(0, 12), endsAt: date(0, 13), allDay: false, sourceID: "fixture-family", involvedPersonIDs: [], notes: "Synthetic fixture"),
+            ConceptCalendarEvent(id: "fixture-detail", title: "Сімейна вечеря", startsAt: date(1, 18, 30), endsAt: date(1, 20), allDay: false, sourceID: "fixture-family", involvedPersonIDs: [], notes: "Місце: кухня"),
+            ConceptCalendarEvent(id: "fixture-all-day", title: "Осінні канікули", startsAt: date(3, 0), endsAt: date(6, 0), allDay: true, sourceID: "fixture-icloud", involvedPersonIDs: [], notes: "Multi-day fixture"),
+            ConceptCalendarEvent(id: "fixture-overlap", title: "Плавання", startsAt: date(4, 17), endsAt: date(4, 18), allDay: false, sourceID: "fixture-school", involvedPersonIDs: [], notes: "Overlapping source"),
+            ConceptCalendarEvent(id: "fixture-future-1", title: "Планування тижня", startsAt: date(8, 9), endsAt: date(8, 10), allDay: false, sourceID: "fixture-family", involvedPersonIDs: [], notes: "Upcoming fixture"),
+            ConceptCalendarEvent(id: "fixture-future-2", title: "Візит до лікаря", startsAt: date(15, 14), endsAt: date(15, 15), allDay: false, sourceID: "fixture-icloud", involvedPersonIDs: [], notes: "Upcoming fixture"),
+            ConceptCalendarEvent(id: "fixture-future-3", title: "День народження", startsAt: date(31, 11), endsAt: date(31, 12), allDay: false, sourceID: "fixture-family", involvedPersonIDs: [], notes: "Upcoming fixture"),
+            ConceptCalendarEvent(id: "fixture-future-4", title: "Подія наступного місяця", startsAt: date(39, 16), endsAt: date(39, 17), allDay: false, sourceID: "fixture-school", involvedPersonIDs: [], notes: "Upcoming fixture"),
+            ConceptCalendarEvent(id: "fixture-future-5", title: "Подія через два місяці", startsAt: date(68, 10), endsAt: date(68, 11), allDay: false, sourceID: "fixture-icloud", involvedPersonIDs: [], notes: "Upcoming fixture")
+        ]
+        return (sources, events, [])
+    }
+    #endif
 }
 
 #Preview("Calendar · light") {
