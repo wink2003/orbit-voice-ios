@@ -105,7 +105,7 @@ struct OrbitCalendarV2View: View {
                 .scrollIndicators(.hidden)
                 #if DEBUG
                 .onChange(of: isLoading) { _, loading in
-                    guard !loading, Routes05DebugConfig.scrollToBottom else { return }
+                    guard !loading, Routes05DebugCapture.scrollToBottom else { return }
                     DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
                 }
                 #endif
