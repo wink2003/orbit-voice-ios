@@ -1251,8 +1251,11 @@ struct SchoolHubView: View {
                     #endif
                 case let .task(id):
                     #if DEBUG
-                    if let task = fixture?.tasks.first(where: { $0.id == id || $0.actionID == id }) { SchoolTaskDetailView(store: store, task: task) }
-                    else { ContentUnavailableView("Справу недоступно", systemImage: "exclamationmark.triangle") }
+                    if let task = store.hubTasks.first(where: { $0.id == id || $0.sourceTaskKey == id || $0.actionID == id }) {
+                        SchoolTaskDetailView(store: store, task: task)
+                    } else if id == "routes05-family-task" {
+                        SchoolTaskDetailView(store: store, task: SchoolHubTask(id: "family:routes05-family-task", title: "Підготувати спортивну сумку", action: "Перевірити речі до заняття", dueAt: nil, allDay: true, importance: "normal", target: "Учнівський профіль", confidence: 1, reason: "Сімейне планування Orbit", sourceItemId: "", kind: "family", actionID: "routes05-family-task"))
+                    } else { ContentUnavailableView("Справу недоступно", systemImage: "exclamationmark.triangle") }
                     #else
                     ContentUnavailableView("Справу недоступно", systemImage: "exclamationmark.triangle")
                     #endif
