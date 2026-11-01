@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private let schoolUkrainianCalendar: Calendar = {
     var calendar = Calendar(identifier: .gregorian)
@@ -610,19 +611,47 @@ struct SchoolDetailView: View {
     @State private var calendarMessage: String?
     @State private var pendingCalendarEvent: OrbitSchoolEvent?
     @State private var showOriginal = false
+    @State private var enlargedText = false
+    @State private var copyNotice = false
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                Routes05ContextHeader(
-                    section: "school",
-                    eyebrow: "SOURCE ORIGINAL / DE",
-                    title: item.type == "letter" ? "Лист / джерело" : "Повідомлення / джерело",
-                    detail: "Оригінал, переклад і Orbit-інтерпретація залишаються окремими.",
-                    accent: Routes05Tokens.blue
-                )
-                if !displayTitle.isEmpty { Text(displayTitle).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
-                Text([item.sender.isEmpty ? nil : item.sender, item.sourceTimestamp.map { $0.formatted(date: .abbreviated, time: .omitted) }].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+        VStack(spacing: 0) {
+            Routes05Mast(section: "school")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 10) {
+                        Button { dismiss() } label: {
+                            Label("Вхідні", systemImage: "arrow.left")
+                                .font(.callout.weight(.bold))
+                                .frame(minHeight: OrbitSpacing.minTarget)
+                        }.buttonStyle(.plain)
+                        Spacer()
+                        Text(item.type == "letter" ? "ВІДКРИТИЙ ЛИСТ" : "ПОВІДОМЛЕННЯ")
+                            .font(.caption2.weight(.black).monospaced()).tracking(0.8)
+                        Menu {
+                            Button(showOriginal ? "Показати переклад" : "Показати оригінал", systemImage: "character.book.closed") { showOriginal.toggle() }
+                            Button(enlargedText ? "Зменшити текст" : "Збільшити текст", systemImage: "textformat.size") { enlargedText.toggle() }
+                        } label: {
+                            Image(systemName: "ellipsis").frame(width: 44, height: 44)
+                                .background(Routes05Tokens.surface)
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1))
+                        }.accessibilityLabel("Додаткові дії з листом")
+                    }
+                    HStack(spacing: 8) {
+                        Text(item.type == "letter" ? "ЛИСТ" : "ПОВІДОМЛЕННЯ")
+                            .font(.caption2.weight(.black).monospaced()).tracking(1)
+                            .foregroundStyle(Routes05Tokens.accentInk).padding(.horizontal, 11).padding(.vertical, 7)
+                            .background(Routes05Tokens.mint, in: Capsule())
+                        if item.unread { Text("НОВЕ В ORBIT").font(.caption2.weight(.black).monospaced()).foregroundStyle(Routes05Tokens.blue) }
+                    }
+                    if !displayTitle.isEmpty { Text(displayTitle).font(.system(size: 30, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true).textSelection(.enabled).accessibilityAddTraits(.isHeader) }
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label(item.sender.isEmpty ? "Відправника не вказано" : item.sender, systemImage: "building.2.crop.circle")
+                            .font(.callout.weight(.bold))
+                        Text([item.sourceTimestamp.map { $0.formatted(date: .abbreviated, time: .shortened) }, item.source == "schulmanager" ? "Schulmanager" : item.source].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                    }
+                    .padding(13).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
                 if let tasks = item.tasks, !tasks.isEmpty {
                     detailHeader("Що потрібно")
                     VStack(alignment: .leading, spacing: 0) {
@@ -659,20 +688,23 @@ struct SchoolDetailView: View {
                 let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian ?? "Переклад ще готується.")
                 if showOriginal {
                     Text(verbatim: body)
-                        .font(.body)
+                        .font(.system(size: enlargedText ? 19 : 16))
                         .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(Array(SchoolTranslatedBody.paragraphs(from: body).enumerated()), id: \.offset) { _, paragraph in
                             Text(verbatim: paragraph)
-                                .font(.body)
+                                .font(.system(size: enlargedText ? 19 : 16))
                                 .lineSpacing(3)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
                         }
                     }
                 }
+                Button { UIPasteboard.general.string = body; copyNotice = true } label: { Label("Копіювати вибрану версію", systemImage: "doc.on.doc") }
+                    .frame(minHeight: OrbitSpacing.minTarget)
                 detailHeader("Короткий підсумок")
                 Text(item.important ?? "Підсумок відсутній — перевірте оригінал листа.")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
@@ -703,14 +735,17 @@ struct SchoolDetailView: View {
                         }.padding(.vertical, 5)
                     }
                 }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 38)
+                }
             }
-            .padding(.horizontal, 16).padding(.bottom, 24)
-        }
         .background(Routes05Tokens.canvas)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaPadding(.bottom, 16)
+        .onAppear { Routes05DebugCapture.markReady(route: "school-detail") }
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }
+        .alert("Скопійовано", isPresented: $copyNotice) { Button("Гаразд", role: .cancel) {} } message: { Text("Текст доступний для виділення та копіювання.") }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
     }

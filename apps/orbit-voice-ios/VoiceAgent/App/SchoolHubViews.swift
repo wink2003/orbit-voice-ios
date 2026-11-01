@@ -1138,7 +1138,7 @@ final class SchoolHubV2Store {
 }
 
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, notes(String, String), v2(SchoolV2Section), letter(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, notes(String, String), v2(SchoolV2Section), letter(String), task(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -1158,6 +1158,9 @@ struct SchoolHubView: View {
         switch value {
         case "inbox": return [.inbox]
         case "letter": return [.letter("routes05-letter")]
+        case "message-detail": return [.letter("routes05-message-swim")]
+        case "source-task-detail": return [.task("prepare")]
+        case "family-task-detail": return [.task("routes05-family-task")]
         case "tasks": return [.tasks]
         case "timetable": return [.v2(.timetable)]
         case "exams": return [.v2(.exams)]
@@ -1245,6 +1248,13 @@ struct SchoolHubView: View {
                     else { SchoolDetailLoaderView(itemID: id) }
                     #else
                     SchoolDetailLoaderView(itemID: id)
+                    #endif
+                case let .task(id):
+                    #if DEBUG
+                    if let task = fixture?.tasks.first(where: { $0.id == id || $0.actionID == id }) { SchoolTaskDetailView(store: store, task: task) }
+                    else { ContentUnavailableView("Справу недоступно", systemImage: "exclamationmark.triangle") }
+                    #else
+                    ContentUnavailableView("Справу недоступно", systemImage: "exclamationmark.triangle")
                     #endif
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
@@ -2064,111 +2074,91 @@ private struct SchoolTaskDetailView: View {
     private var dueKey: String? { SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) }
 
     var body: some View {
-        List {
-            Section {
-                Routes05ContextHeader(section: "school", eyebrow: "TASK / DETAIL", title: "Справу\nпо черзі.", detail: "Стан Orbit-справи та її джерело залишаються окремими.", accent: Routes05Tokens.orange)
-            }
-            Section {
-                Text(task.title)
-                    .font(.title3.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                if let action = task.action, action != task.title {
-                    Text(action).font(.body).textSelection(.enabled)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Routes05Mast(section: "school")
+                HStack { Text("‹ Справи").font(.callout.weight(.bold)); Spacer(); Text(task.kind == "family" ? "СІМЕЙНА СПРАВА" : "ДЖЕРЕЛО ШКОЛИ").font(.caption2.weight(.black).monospaced()) }
+                HStack(spacing: 8) {
+                    detailTag(task.kind == "family" ? "ORBIT · FAMILY" : "SOURCE · SCHOOL", tint: task.kind == "family" ? Routes05Tokens.lilac : Routes05Tokens.mint)
+                    detailTag(task.status == "completed" ? "ВИКОНАНО" : "ВІДКРИТО", tint: task.status == "completed" ? Routes05Tokens.mint : Routes05Tokens.yellow)
                 }
-            }
-            Section("Термін") {
-                if let dueKey {
-                    Label("Крайній термін: \(SchoolHubFormat.long(dueKey))", systemImage: "calendar")
-                } else {
-                    Label("Термін не вказано в джерелі", systemImage: "calendar.badge.questionmark")
-                        .foregroundStyle(.secondary)
+                Text(task.title).font(.system(size: 30, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true).textSelection(.enabled).accessibilityAddTraits(.isHeader)
+                if let action = task.action, action != task.title { Text(action).font(.body).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
+                detailCard {
+                    Label(task.provenanceLabel, systemImage: task.kind == "family" ? "person.2" : "building.2.crop.circle")
+                        .font(.callout.weight(.bold))
+                    if let target = task.target, !target.isEmpty { Text("Кого стосується: \(target)").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
+                    if let importance = task.importance, !importance.isEmpty { Text("Позначка джерела: \(importance)").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
                 }
-                if task.canAddToCalendar {
-                    if task.calendarEventId != nil {
-                        Label("Додано до календаря Orbit", systemImage: "calendar.badge.checkmark").foregroundStyle(NovaTodayTokens.teal)
+                detailCard {
+                    Text("02  КОЛИ І КОГО СТОСУЄТЬСЯ").font(.caption.weight(.black).monospaced()).tracking(0.5)
+                    Label(dueKey.map { "Термін зі школи: \(SchoolHubFormat.long($0))" } ?? "Термін джерела не вказано", systemImage: dueKey == nil ? "calendar.badge.questionmark" : "calendar.badge.clock")
+                    if let planningDate = task.planningDate, !planningDate.isEmpty { Label("Сімейний план: \(planningDate)", systemImage: "calendar") }
+                    if task.canAddToCalendar {
+                        if task.calendarEventId != nil { Label("Подію вже додано до календаря Orbit", systemImage: "calendar.badge.checkmark").foregroundStyle(NovaTodayTokens.teal) }
+                        else { Button { showCalendar = true } label: { Label("Додати в календар", systemImage: "calendar.badge.plus") }.frame(minHeight: OrbitSpacing.minTarget) }
+                    }
+                }
+                if let reason = task.reason, !reason.isEmpty { detailCard { Text("КОНТЕКСТ").font(.caption.weight(.black).monospaced()); Text(reason).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) } }
+                detailCard {
+                    Text("01  СТАН ORBIT").font(.caption.weight(.black).monospaced())
+                    if store.actionTasksPhase == .loaded && task.identityStable {
+                        Button { pendingStatusChange = SchoolTaskStatusConfirmation(completed: task.status == "completed") } label: { Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle") }.frame(minHeight: OrbitSpacing.minTarget).disabled(updating)
+                        if updating { ProgressView().frame(maxWidth: .infinity) }
                     } else {
-                        Button { showCalendar = true } label: { Label("Додати до календаря", systemImage: "calendar.badge.plus") }
-                            .frame(minHeight: OrbitSpacing.minTarget)
+                        Label(task.identityStable ? "Дія тимчасово недоступна." : "Немає стабільного ідентифікатора.", systemImage: "info.circle").foregroundStyle(.secondary)
+                    }
+                    Text(task.kind == "family" ? "Сімейна справа Orbit не змінює шкільне джерело." : "Стан зберігається в Orbit окремо від Schulmanager.").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                }
+                if task.kind == "source" {
+                    detailCard {
+                        Text("03  ПОВ’ЯЗАНИЙ ЛИСТ").font(.caption.weight(.black).monospaced())
+                        if let source { NavigationLink { SchoolDetailView(item: source) } label: { Label("Відкрити лист або повідомлення", systemImage: source.type == "letter" ? "envelope.open" : "message") }.frame(minHeight: OrbitSpacing.minTarget) }
+                        else { Label("Пов’язаний лист зараз недоступний", systemImage: "exclamationmark.triangle").foregroundStyle(.secondary) }
                     }
                 }
-                if let target = task.target, !target.isEmpty {
-                    LabeledContent("Кого стосується", value: target)
-                }
-                if let importance = task.importance, !importance.isEmpty {
-                    LabeledContent("Позначка джерела", value: importance)
-                }
-            }
-            if let reason = task.reason, !reason.isEmpty {
-                Section("Контекст") { Text(reason).textSelection(.enabled) }
-            }
-            Section("Джерело") {
-                LabeledContent("Походження", value: task.provenanceLabel)
-                if task.kind == "source", let source {
-                    NavigationLink { SchoolDetailView(item: source) } label: {
-                        Label("Відкрити лист або повідомлення", systemImage: source.type == "letter" ? "envelope" : "message")
+                if store.actionCapability.canMutate {
+                    detailCard {
+                        Text("04  ПІДГОТОВКА Й НОТАТКИ").font(.caption.weight(.black).monospaced())
+                        NavigationLink { SchoolChecklistView(store: store, sourceItemId: task.sourceItemId.isEmpty ? nil : task.sourceItemId, sourceTaskId: task.actionID) } label: { Label("Чекліст підготовки", systemImage: "checklist.checked") }.frame(minHeight: OrbitSpacing.minTarget)
+                        if let noteEntityID = task.kind == "family" ? task.actionID : task.sourceNoteEntityId, !noteEntityID.isEmpty { NavigationLink { SchoolNotesView(store: store, entityType: "task", entityId: noteEntityID) } label: { Label("Мої нотатки", systemImage: "note.text") }.frame(minHeight: OrbitSpacing.minTarget) }
                     }
-                } else if task.kind == "source" {
-                    Label("Пов’язаний лист зараз недоступний", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
+                } else { detailCard { Label(store.actionCapability.message, systemImage: "lock.slash").foregroundStyle(.secondary) } }
+                HStack(spacing: 10) {
+                    futureTile(title: "Доручити", detail: "Майбутня функція")
+                    futureTile(title: "Нагадати", detail: "Майбутня функція")
                 }
+                detailCard { Label(task.provenanceLabel, systemImage: "checkmark.shield").font(.callout.weight(.semibold)); Text("Права й дані провайдера визначає авторизований Orbit, а не назва справи.").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
             }
-            Section {
-                if store.actionTasksPhase == .loaded && task.identityStable {
-                Button {
-                    guard !updating else { return }
-                    pendingStatusChange = SchoolTaskStatusConfirmation(completed: task.status == "completed")
-                } label: {
-                    Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle")
-                }
-                .disabled(updating)
-                .frame(minHeight: OrbitSpacing.minTarget)
-                if updating { ProgressView().frame(maxWidth: .infinity) }
-                } else {
-                    Label(task.identityStable ? "Позначити виконання зараз неможливо: функція недоступна." : "Стан не можна зберегти: у джерела немає стабільного ідентифікатора.", systemImage: "info.circle")
-                        .foregroundStyle(.secondary)
-                    if task.identityStable && !store.actionCapability.canMutate {
-                        Button("Перевірити знову") { Task { await store.refreshActionCapability() } }.frame(minHeight: OrbitSpacing.minTarget)
-                    }
-                }
-            } header: { Text("Стан Orbit") } footer: {
-                Text(task.kind == "family" ? "Це сімейна справа Orbit і не змінює шкільне джерело." : "Стан зберігається в Orbit окремо від Schulmanager.")
-            }
-            .confirmationDialog(
-                pendingStatusChange?.title ?? "Змінити стан справи?",
-                isPresented: Binding(get: { pendingStatusChange != nil }, set: { if !$0 { pendingStatusChange = nil } }),
-                titleVisibility: .visible
-            ) {
-                if let pendingStatusChange {
-                    Button(pendingStatusChange.actionTitle) { confirmStatusChange(pendingStatusChange) }
-                }
-                Button("Скасувати", role: .cancel) { pendingStatusChange = nil }
-            } message: {
-                Text(task.title)
-            }
-            if store.actionCapability.canMutate {
-                Section("Підготовка й нотатки") {
-                    NavigationLink { SchoolChecklistView(store: store, sourceItemId: task.sourceItemId.isEmpty ? nil : task.sourceItemId, sourceTaskId: task.actionID) } label: {
-                        Label("Чекліст підготовки", systemImage: "checklist.checked")
-                    }
-                    if let noteEntityID = task.kind == "family" ? task.actionID : task.sourceNoteEntityId, !noteEntityID.isEmpty {
-                        NavigationLink { SchoolNotesView(store: store, entityType: "task", entityId: noteEntityID) } label: {
-                            Label("Мої нотатки", systemImage: "note.text")
-                        }
-                    }
-                }
-            } else {
-                Section("Підготовка й нотатки") {
-                    Label(store.actionCapability.message, systemImage: "lock.slash")
-                        .foregroundStyle(.secondary)
-                }
-            }
+            .padding(.horizontal, 16).padding(.bottom, 38)
         }
+        .background(Routes05Tokens.canvas)
+        .confirmationDialog(pendingStatusChange?.title ?? "Змінити стан справи?", isPresented: Binding(get: { pendingStatusChange != nil }, set: { if !$0 { pendingStatusChange = nil } }), titleVisibility: .visible) {
+            if let pendingStatusChange { Button(pendingStatusChange.actionTitle) { confirmStatusChange(pendingStatusChange) } }
+            Button("Скасувати", role: .cancel) { pendingStatusChange = nil }
+        } message: { Text(task.title) }
         .navigationTitle("Справа")
         .navigationBarTitleDisplayMode(.inline)
         .novaDockAwareScrollContent()
+        .onAppear { Routes05DebugCapture.markReady(route: "school-task-detail") }
         .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
         .alert("Стан справи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+    }
+
+    @ViewBuilder private func detailCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10, content: content)
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Routes05Tokens.surface)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
+    }
+
+    private func detailTag(_ title: String, tint: Color) -> some View {
+        Text(title).font(.caption2.weight(.black).monospaced()).foregroundStyle(Routes05Tokens.accentInk).padding(.horizontal, 10).padding(.vertical, 6).background(tint, in: Capsule())
+    }
+
+    private func futureTile(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) { Image(systemName: "lock.fill"); Spacer(); Text(title).font(.callout.weight(.bold)); Text(detail).font(.caption).foregroundStyle(Routes05Tokens.secondary) }
+            .padding(13).frame(maxWidth: .infinity, minHeight: 100, alignment: .leading).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1)).opacity(0.55).accessibilityElement(children: .combine).accessibilityLabel("\(title): майбутня функція, недоступна")
     }
 
     private func confirmStatusChange(_ confirmation: SchoolTaskStatusConfirmation) {

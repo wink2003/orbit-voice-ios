@@ -14,6 +14,7 @@ on:
       - codex/routes05-batch2-school-chat
       - codex/routes05-school-tasks-timetable
       - codex/routes05-inbox-fidelity-111
+      - codex/school-detail-v2
     paths:
       - "apps/orbit-voice-ios/**"
       - ".github/workflows/visual-routes05-simulator.yml"
@@ -166,6 +167,25 @@ jobs:
               sleep 5
               perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-calendar-${appearance}-detail.png"
               test -s "$out/routes05-calendar-${appearance}-detail.png"
+            done
+          fi
+
+          if [ "${GITHUB_REF}" = "refs/heads/codex/school-detail-v2" ]; then
+            for screen in letter message-detail source-task-detail family-task-detail; do
+              for appearance in light dark; do
+                xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+                sleep 2
+                args="--routes05-$screen --routes05-capture-id ${GITHUB_RUN_ID}-school-$screen-$appearance --routes05-appearance $appearance"
+                if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
+                perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
+                if ! wait_for_ready "school-detail" "${GITHUB_RUN_ID}-school-$screen-$appearance" && ! wait_for_ready "school-task-detail" "${GITHUB_RUN_ID}-school-$screen-$appearance"; then
+                  echo "readiness timeout for $screen/$appearance" >&2
+                  exit 1
+                fi
+                file="$out/routes05-$screen-$appearance.png"
+                perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
+                test -s "$file"
+              done
             done
           fi
 

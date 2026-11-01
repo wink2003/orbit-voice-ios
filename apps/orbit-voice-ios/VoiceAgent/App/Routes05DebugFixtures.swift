@@ -20,7 +20,7 @@ struct Routes05FamilyFixture {
 
 enum Routes05DebugScreen {
     case today, orbit, school, family, familyMenu
-    case conversation, inbox, letter, tasks, timetable, exams, brain, calendar, schoolCalendar, search, timeline, briefing, notes, history
+    case conversation, inbox, letter, messageDetail, sourceTaskDetail, familyTaskDetail, tasks, timetable, exams, brain, calendar, schoolCalendar, search, timeline, briefing, notes, history
     case contacts, memory, voice, familyChat, settings, integrations, memoryDetail, contactDetail, actionConfirm, admin, profile, notifications, memoryImports, unknown
 }
 
@@ -71,6 +71,7 @@ enum Routes05DebugFixtures {
             subscriptionId: nil, tasks: [OrbitSchoolItemTask(key: "prepare", title: "Підготувати матеріали", action: "Перевірити дату в джерелі", dueAt: "2026-10-24", allDay: true, importance: "normal", target: nil, confidence: 1, reason: "Source text",)]
         )
         let task = OrbitSchoolTask(key: "prepare", stableIdentity: true, title: "Підготовка до тесту", action: "Перевірити дату в джерелі", dueAt: "2026-10-24", endsAt: nil, allDay: true, importance: "high", target: nil, confidence: 1, reason: "Source text", location: nil, sourceItemId: letter.id, sourceType: "letter", sourceExternalId: letter.externalId, bucket: nil, status: "open", completedAt: nil, actionTaskId: nil, calendarEventId: nil)
+        let familyTask = OrbitSchoolTask(key: "family", stableIdentity: true, title: "Підготувати спортивну сумку", action: "Перевірити речі до заняття", dueAt: nil, endsAt: nil, allDay: true, importance: "normal", target: "Учнівський профіль", confidence: 1, reason: "Сімейне планування Orbit", location: nil, sourceItemId: "", sourceType: "orbit_family", sourceExternalId: nil, bucket: nil, status: "open", completedAt: nil, actionTaskId: "routes05-family-task", calendarEventId: nil)
         let events = [
             OrbitSchulmanagerCalendarEvent(uid: "routes05-event-1", title: "Projektwoche", description: "Підготовка до проєктного тижня", location: "Gymnasium am Park", startsAt: "2026-10-20T09:00:00+02:00", endsAt: "2026-10-20T10:00:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "ours", audienceClass: "class", relevanceReason: "Профіль учня"),
             OrbitSchulmanagerCalendarEvent(uid: "routes05-event-2", title: "Батьківська зустріч", description: "Зустріч класу", location: "Кімната 5F", startsAt: "2026-10-22T17:30:00+02:00", endsAt: "2026-10-22T18:30:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "likely", audienceClass: "class", relevanceReason: "Класна подія")
@@ -99,7 +100,7 @@ enum Routes05DebugFixtures {
                 sourceTimestamp: now.addingTimeInterval(-259200), importedAt: now, orbitReadAt: now,
                 unread: false, attachments: [], events: [], threadId: nil, subscriptionId: nil, tasks: [])
         ]
-        return Routes05SchoolFixture(items: [letter] + demoInbox, events: events, tasks: [task], studentNames: ["Ліна"])
+        return Routes05SchoolFixture(items: [letter] + demoInbox, events: events, tasks: [task, familyTask], studentNames: ["Ліна"])
     }()
 
     static let family = Routes05FamilyFixture(

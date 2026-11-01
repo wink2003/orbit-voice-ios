@@ -485,6 +485,7 @@ enum Routes05DebugCapture {
 enum Routes05DebugCapture {
     static let scrollToBottom = false
     static let scrollHorizontal = false
+    static func markReady(route: String) {}
 }
 #endif
 
