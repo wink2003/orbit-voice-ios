@@ -12,10 +12,11 @@ struct OrbitCalendarView: View {
 
 struct OrbitCalendarV2View: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
 
-    private let referenceDate: Date
     private let calendar = ConceptCalendarDates.calendar
 
+    @State private var referenceDate: Date
     @State private var visibleMonth: Date
     @State private var selectedDate: Date?
     @State private var sources: [ConceptCalendarSource] = []
@@ -37,7 +38,7 @@ struct OrbitCalendarV2View: View {
     @State private var draftInvolvedIDs: Set<String> = []
 
     init(referenceDate: Date = .now) {
-        self.referenceDate = referenceDate
+        _referenceDate = State(initialValue: referenceDate)
         _visibleMonth = State(initialValue: ConceptCalendarDates.monthStart(referenceDate))
     }
 
@@ -100,6 +101,11 @@ struct OrbitCalendarV2View: View {
             .sheet(item: $selectedEvent) { event in eventDetail(event) }
             .task { await load() }
             .refreshable { await load() }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                referenceDate = .now
+                Task { await load() }
+            }
             .alert("Помилка календаря", isPresented: Binding(
                 get: { loadError != nil },
                 set: { if !$0 { loadError = nil } }
@@ -538,7 +544,7 @@ struct OrbitCalendarV2View: View {
 
     private func eventDetail(_ event: ConceptCalendarEvent) -> some View {
         let live = liveEvents.first(where: { $0.id == event.id })
-        NavigationStack {
+        return NavigationStack {
             List {
                 Section("Подія") {
                     Text(event.title).font(.title3.weight(.bold))

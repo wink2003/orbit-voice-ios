@@ -373,6 +373,8 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     let updatedAt: Date?
 }
 
+extension OrbitCalendarEvent: OrbitCalendarV2EventLike {}
+
 struct OrbitCalendarConnection: Decodable, Identifiable, Hashable {
     let id: String
     let provider: String

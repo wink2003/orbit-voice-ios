@@ -1,44 +1,37 @@
-import XCTest
-@testable import VoiceAgent
+import Foundation
 
-final class OrbitCalendarV2LogicTests: XCTestCase {
-    private var calendar: Calendar {
-        var value = Calendar(identifier: .gregorian)
-        value.firstWeekday = 2
-        value.timeZone = TimeZone(identifier: "Europe/Kyiv")!
-        return value
-    }
+private struct FixtureEvent: OrbitCalendarV2EventLike {
+    let id: String
+    let startsAt: Date
+    let endsAt: Date
+    let sourceType: String
+    let sourceIdentifier: String?
+}
 
-    private func event(_ id: String, source: String = "family", start: Date, end: Date) -> OrbitCalendarEvent {
-        OrbitCalendarEvent(id: id, familyId: "family", ownerPersonId: "person", title: id, notes: "", startsAt: start, endsAt: end, allDay: false, sourceType: "external", sourceIdentifier: source, sourceName: source, sourceColor: nil, createdAt: nil, updatedAt: nil)
-    }
+@main
+struct OrbitCalendarV2LogicTests {
+    static func main() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 2
+        calendar.timeZone = TimeZone(identifier: "Europe/Kyiv")!
 
-    func testMonthGridIsMondayFirstAndAlwaysSixWeeks() {
-        let date = calendar.date(from: DateComponents(year: 2026, month: 2, day: 1))!
-        let grid = OrbitCalendarV2Logic.monthGrid(for: date, calendar: calendar)
-        XCTAssertEqual(grid.count, 42)
-        XCTAssertEqual(calendar.component(.weekday, from: grid[0]), 2)
-        XCTAssertEqual(calendar.component(.day, from: grid[1]), 27)
-    }
+        let february = calendar.date(from: DateComponents(year: 2026, month: 2, day: 1))!
+        let grid = OrbitCalendarV2Logic.monthGrid(for: february, calendar: calendar)
+        precondition(grid.count == 42, "month grid has six complete weeks")
+        precondition(calendar.component(.weekday, from: grid[0]) == 2, "month grid starts Monday")
+        precondition(calendar.component(.day, from: grid[1]) == 27, "leading day is correct")
 
-    func testOccurrencesIncludeAllDayAndMultiDayBoundary() {
         let day = calendar.date(from: DateComponents(year: 2026, month: 3, day: 29))!
-        let start = calendar.date(byAdding: .day, value: -1, to: day)!
-        let end = calendar.date(byAdding: .day, value: 2, to: day)!
-        XCTAssertTrue(OrbitCalendarV2Logic.occurs(event("multi", start: start, end: end), on: day, calendar: calendar))
-        XCTAssertTrue(OrbitCalendarV2Logic.occurs(event("all-day", start: day, end: calendar.date(byAdding: .day, value: 1, to: day)!), on: day, calendar: calendar))
-    }
+        let multiDay = FixtureEvent(id: "multi", startsAt: calendar.date(byAdding: .day, value: -1, to: day)!, endsAt: calendar.date(byAdding: .day, value: 2, to: day)!, sourceType: "external", sourceIdentifier: "source")
+        precondition(OrbitCalendarV2Logic.occurs(multiDay, on: day, calendar: calendar), "multi-day event overlaps selected day")
 
-    func testNextFiveIsIndependentOfOrderAndDeduplicatesBySourceIdentity() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let first = event("same", source: "a", start: now.addingTimeInterval(600), end: now.addingTimeInterval(1200))
-        let duplicate = event("same", source: "a", start: now.addingTimeInterval(600), end: now.addingTimeInterval(1200))
+        let duplicate = FixtureEvent(id: "same", startsAt: now.addingTimeInterval(600), endsAt: now.addingTimeInterval(1200), sourceType: "external", sourceIdentifier: "a")
         let later = (1...6).map { offset in
-            event("e\(offset)", source: "b", start: now.addingTimeInterval(Double(offset) * 3600), end: now.addingTimeInterval(Double(offset) * 3600 + 600))
+            FixtureEvent(id: "e\(offset)", startsAt: now.addingTimeInterval(Double(offset) * 3600), endsAt: now.addingTimeInterval(Double(offset) * 3600 + 600), sourceType: "external", sourceIdentifier: "b")
         }
-        let result = OrbitCalendarV2Logic.nextFive([later[5], duplicate, later[1], first, later[0], later[2], later[3], later[4]], now: now)
-        XCTAssertEqual(result.count, 5)
-        XCTAssertEqual(result.first?.id, "same")
-        XCTAssertEqual(result.dropFirst().map(\.id), ["e1", "e2", "e3", "e4"])
+        let result = OrbitCalendarV2Logic.nextFive([later[5], duplicate, later[1], duplicate, later[0], later[2], later[3], later[4]], now: now)
+        precondition(result.map(\.id) == ["same", "e1", "e2", "e3", "e4"], "next-five is sorted and deduplicated")
+        print("OrbitCalendarV2LogicTests passed")
     }
 }

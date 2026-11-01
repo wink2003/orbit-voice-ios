@@ -224,6 +224,15 @@ jobs:
             -o "$RUNNER_TEMP/orbit-today-logic-tests"
           "$RUNNER_TEMP/orbit-today-logic-tests"
 
+      - name: Test Calendar v2 logic
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/App/OrbitCalendarV2Logic.swift \
+            apps/orbit-voice-ios/Tests/OrbitCalendarV2LogicTests.swift \
+            -o "$RUNNER_TEMP/orbit-calendar-v2-logic-tests"
+          "$RUNNER_TEMP/orbit-calendar-v2-logic-tests"
+
       - name: Test School Hub logic
         run: |
           set -euo pipefail
