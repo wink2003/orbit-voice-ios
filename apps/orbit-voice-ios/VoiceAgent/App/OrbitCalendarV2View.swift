@@ -837,7 +837,7 @@ private enum ConceptCalendarDates {
         let sources = [
             ConceptCalendarSource(id: "fixture-family", name: "Сімейний Orbit", accountLabel: "DEBUG · family", color: Routes05Tokens.mint, relatedPersonIDs: [], writable: true),
             ConceptCalendarSource(id: "fixture-icloud", name: "iCloud · Спільний", accountLabel: "DEBUG · iCloud", color: Routes05Tokens.blue, relatedPersonIDs: [], writable: false),
-            ConceptCalendarSource(id: "fixture-school", name: "Школа", accountLabel: "DEBUG · external", color: Routes05Tokens.purple, relatedPersonIDs: [], writable: false)
+            ConceptCalendarSource(id: "fixture-school", name: "Школа", accountLabel: "DEBUG · external", color: Routes05Tokens.orange, relatedPersonIDs: [], writable: false)
         ]
         let events = [
             ConceptCalendarEvent(id: "fixture-today", title: "Сьогодні · сімейний обід", startsAt: date(0, 12), endsAt: date(0, 13), allDay: false, sourceID: "fixture-family", involvedPersonIDs: [], notes: "Synthetic fixture"),
