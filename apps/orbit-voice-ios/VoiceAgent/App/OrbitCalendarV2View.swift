@@ -76,31 +76,40 @@ struct OrbitCalendarV2View: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 17) {
-                    Routes05Mast(section: "calendar") { showingSources = true }
-                    hero
-                    todaySummary
-                    sourcesSummary
-                    if isLoading {
-                        ProgressView("Завантаження календаря…")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 17) {
+                        Routes05Mast(section: "calendar") { showingSources = true }
+                        hero
+                        todaySummary
+                        sourcesSummary
+                        if isLoading {
+                            ProgressView("Завантаження календаря…")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                        }
+                        monthCard
+                        if let selectedDate { selectedDaySection(selectedDate) }
+                        nextFiveSection
+                        if let coverageText {
+                            Text(coverageText)
+                                .font(.caption)
+                                .foregroundStyle(Routes05Tokens.secondary)
+                                .padding(.horizontal, 16)
+                        }
+                        sourceNote
+                        Color.clear.frame(height: 1).id("routes05-bottom")
                     }
-                    monthCard
-                    if let selectedDate { selectedDaySection(selectedDate) }
-                    nextFiveSection
-                    if let coverageText {
-                        Text(coverageText)
-                            .font(.caption)
-                            .foregroundStyle(Routes05Tokens.secondary)
-                            .padding(.horizontal, 16)
-                    }
-                    sourceNote
+                    .padding(.bottom, 126) // NovaDock is supplied by NovaShell in the real app.
                 }
-                .padding(.bottom, 126) // NovaDock is supplied by NovaShell in the real app.
+                .scrollIndicators(.hidden)
+                #if DEBUG
+                .onChange(of: isLoading) { _, loading in
+                    guard !loading, Routes05DebugConfig.scrollToBottom else { return }
+                    DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
+                }
+                #endif
             }
-            .scrollIndicators(.hidden)
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .foregroundStyle(Routes05Tokens.ink)
             .toolbar(.hidden, for: .navigationBar)
