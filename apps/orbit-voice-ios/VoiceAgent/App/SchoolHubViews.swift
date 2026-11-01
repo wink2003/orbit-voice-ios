@@ -517,6 +517,7 @@ private struct SchoolHubV2View: View {
 private struct SchoolV2StateView: View {
     let title: String; let message: String; let icon: String; let retry: (() -> Void)?
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(spacing: 16) {
                 Routes05ContextHeader(
@@ -2078,6 +2079,7 @@ private struct SchoolTaskDetailView: View {
     private var dueKey: String? { SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Routes05Mast(section: "school")
@@ -2136,7 +2138,18 @@ private struct SchoolTaskDetailView: View {
                     if let planningDate = task.planningDate, !planningDate.isEmpty { Label("Сімейний план: \(planningDate)", systemImage: "calendar") }
                     if task.canAddToCalendar {
                         if task.calendarEventId != nil { Label("Подію вже додано до календаря Orbit", systemImage: "calendar.badge.checkmark").foregroundStyle(NovaTodayTokens.teal) }
-                        else { Button { showCalendar = true } label: { Label("Додати в календар", systemImage: "calendar.badge.plus") }.frame(minHeight: OrbitSpacing.minTarget) }
+                        else {
+                            Button { showCalendar = true } label: {
+                                Label("Додати в календар", systemImage: "calendar.badge.plus")
+                                    .font(.body.weight(.bold))
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                            .foregroundStyle(Routes05Tokens.accentInk)
+                            .padding(.horizontal, 10)
+                            .background(Routes05Tokens.mint, in: RoundedRectangle(cornerRadius: 4))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1))
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 if let reason = task.reason, !reason.isEmpty { detailCard { Text("КОНТЕКСТ").font(.caption.weight(.black).monospaced()); Text(reason).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) } }
@@ -2162,6 +2175,21 @@ private struct SchoolTaskDetailView: View {
                 detailCard { Label(task.provenanceLabel, systemImage: "checkmark.shield").font(.callout.weight(.semibold)); Text("Права й дані провайдера визначає авторизований Orbit, а не назва справи.").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
             }
             .padding(.horizontal, 16).padding(.bottom, 38)
+            Color.clear.frame(height: 1).id("routes05-school-task-detail-bottom")
+        }
+        .safeAreaPadding(.bottom, 96)
+        .onAppear {
+            guard Routes05DebugCapture.scrollToBottom else {
+                Routes05DebugCapture.markReady(route: "school-task-detail")
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                proxy.scrollTo("routes05-school-task-detail-bottom", anchor: .bottom)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                    Routes05DebugCapture.markReady(route: "school-task-detail")
+                }
+            }
+        }
         }
         .background(Routes05Tokens.canvas)
         .confirmationDialog(pendingStatusChange?.title ?? "Змінити стан справи?", isPresented: Binding(get: { pendingStatusChange != nil }, set: { if !$0 { pendingStatusChange = nil } }), titleVisibility: .visible) {
@@ -2171,7 +2199,8 @@ private struct SchoolTaskDetailView: View {
         .navigationTitle("Справа")
         .navigationBarTitleDisplayMode(.inline)
         .novaDockAwareScrollContent()
-        .onAppear { Routes05DebugCapture.markReady(route: "school-task-detail") }
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
         .alert("Стан справи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
     }
@@ -2187,9 +2216,12 @@ private struct SchoolTaskDetailView: View {
         VStack(alignment: .leading, spacing: 10, content: content)
             .padding(14).frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(Routes05Tokens.accentInk)
-            .background(Routes05Tokens.orange)
+            .background {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Routes05Tokens.orange)
+                    .shadow(color: Routes05Tokens.accentInk, radius: 0, x: 3, y: 3)
+            }
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.5))
-            .shadow(color: Routes05Tokens.accentInk, radius: 0, x: 3, y: 3)
     }
 
     private func detailTag(_ title: String, tint: Color) -> some View {

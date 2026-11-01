@@ -616,6 +616,7 @@ struct SchoolDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             Routes05Mast(section: "school")
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(spacing: 10) {
@@ -722,7 +723,13 @@ struct SchoolDetailView: View {
                             Label(event.title, systemImage: "calendar.badge.plus").font(.callout.weight(.bold))
                             if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)).font(.caption) }
                             if let location = event.location { Text(location).font(.caption).foregroundStyle(.secondary) }
-                            Button("Додати до календаря") { Task { await add(event) } }.buttonStyle(.bordered)
+                            Button("Додати до календаря") { Task { await add(event) } }
+                                .font(.callout.weight(.bold))
+                                .foregroundStyle(Routes05Tokens.accentInk)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .background(Routes05Tokens.mint, in: RoundedRectangle(cornerRadius: 4))
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1))
+                                .buttonStyle(.plain)
                         }.padding(13).frame(maxWidth: .infinity, alignment: .leading).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
                     }
                 }
@@ -733,14 +740,30 @@ struct SchoolDetailView: View {
                 }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 38)
+                Color.clear.frame(height: 1).id("routes05-school-detail-bottom")
                 }
+            .safeAreaPadding(.bottom, 96)
+            .onAppear {
+                guard Routes05DebugCapture.scrollToBottom else {
+                    Routes05DebugCapture.markReady(route: "school-detail")
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    proxy.scrollTo("routes05-school-detail-bottom", anchor: .bottom)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                        Routes05DebugCapture.markReady(route: "school-detail")
+                    }
+                }
+            }
+            }
             }
         .background(Routes05Tokens.canvas)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaPadding(.bottom, 16)
-        .onAppear { Routes05DebugCapture.markReady(route: "school-detail") }
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
         .alert("Скопійовано", isPresented: $copyNotice) { Button("Гаразд", role: .cancel) {} } message: { Text("Текст доступний для виділення та копіювання.") }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
