@@ -397,6 +397,20 @@ struct OrbitCalendarSource: Decodable, Identifiable, Hashable {
     let isDefaultWritable: Bool
 }
 
+struct OrbitCalendarUpcomingResult: Hashable {
+    let events: [OrbitCalendarEvent]
+    let coveredThrough: Date
+    let windowsRequested: Int
+    let reachedFive: Bool
+
+    var coverageDescription: String {
+        if reachedFive {
+            return "Показано 5 найближчих подій; пошук зупинено після достатнього покриття."
+        }
+        return "Знайдено \(events.count) подій до \(coveredThrough.formatted(date: .abbreviated, time: .omitted)). Сервер не повідомляє, що джерело повністю вичерпане; синхронізацію може бути неповною."
+    }
+}
+
 struct OrbitMemoryAssertion: Decodable, Identifiable, Hashable {
     let id: String
     let kind: String
@@ -636,6 +650,44 @@ final class MainProductAPI {
         let path = "/api/family/calendar?from=\(formatter.string(from: from).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&to=\(formatter.string(from: to).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
         let response: CalendarResponse = try await request(path: path, classifyUnavailable: classifyUnavailable)
         return response.events
+    }
+
+    /// Bounded lookahead for the independent upcoming queue. The existing
+    /// endpoint is windowed, so query four 3-month pages at most and stop once
+    /// five eligible events are known. This never changes the visible month.
+    func upcomingCalendarEvents(now: Date = .now, maxWindows: Int = 4) async throws -> OrbitCalendarUpcomingResult {
+        var from = now
+        var collected: [OrbitCalendarEvent] = []
+        var coveredThrough = now
+        var windows = 0
+
+        for _ in 0..<max(1, min(maxWindows, 4)) {
+            guard let to = Calendar.current.date(byAdding: .month, value: 3, to: from) else { break }
+            let page = try await calendarEvents(from: from, to: to, classifyUnavailable: true)
+            windows += 1
+            coveredThrough = to
+            collected.append(contentsOf: page.filter { $0.endsAt > now })
+
+            var seen = Set<String>()
+            collected = collected.filter { event in
+                let source = event.sourceIdentifier ?? event.sourceType
+                return seen.insert("\(source):\(event.id)").inserted
+            }
+            let sorted = collected.sorted {
+                if $0.startsAt != $1.startsAt { return $0.startsAt < $1.startsAt }
+                return $0.id < $1.id
+            }
+            if sorted.count >= 5 {
+                return OrbitCalendarUpcomingResult(events: Array(sorted.prefix(5)), coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: true)
+            }
+            from = to
+        }
+
+        let sorted = collected.sorted {
+            if $0.startsAt != $1.startsAt { return $0.startsAt < $1.startsAt }
+            return $0.id < $1.id
+        }
+        return OrbitCalendarUpcomingResult(events: Array(sorted.prefix(5)), coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: false)
     }
 
     func calendarConnections() async throws -> [OrbitCalendarConnection] {
