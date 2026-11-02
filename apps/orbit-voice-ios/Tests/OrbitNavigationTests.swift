@@ -8,6 +8,7 @@ struct OrbitNavigationTests {
         precondition(OrbitNavigation.defaultTab == .home, "default tab is Home")
         precondition(!OrbitNavigation.moreDestinations(isOwner: false).contains(.admin), "admin hidden for non-owner")
         precondition(OrbitNavigation.moreDestinations(isOwner: true).contains(.admin), "admin shown for owner")
+        precondition(Set(OrbitNavigation.moreDestinations(isOwner: true)) == Set(OrbitMoreDestination.allCases), "owner More routes remain complete and unique")
         precondition(OrbitNavigation.moreDestinations(isOwner: false).map(\.title) == ["Календар", "Сім’я", "Контакти", "Інтеграції", "Налаштування", "Пам’ять", "Підключення календарів"], "non-owner More entries")
         precondition(OrbitNavigation.moreDestinations(isOwner: false).map(\.routeOwner) == ["OrbitCalendarView", "FamilyHubView", "OrbitContactsView", "OrbitToolsView", "OrbitSettingsView", "MemoryCenterView", "CalendarSettingsView"], "existing More route owners")
         precondition(OrbitNavigation.moreDestinations(isOwner: true).contains { $0 == .admin && $0.routeOwner == "OrbitDashboardView" }, "admin route owner")

@@ -561,8 +561,7 @@ struct OrbitToolsView: View {
     @State private var statusUnavailable = false
 
     var body: some View {
-        NavigationStack {
-            List {
+        List {
                 Section {
                     Routes05ContextHeader(
                         section: "system",
@@ -598,7 +597,6 @@ struct OrbitToolsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
             .task { await loadStatus() }
-        }
     }
 
     @ViewBuilder
