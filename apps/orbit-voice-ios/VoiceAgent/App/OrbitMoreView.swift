@@ -4,6 +4,13 @@ import SwiftUI
 /// stores and destination views remain in their existing screens.
 struct OrbitMoreView: View {
     @EnvironmentObject private var authentication: OrbitAuthentication
+    @State private var selectedTarget: OrbitAuthentication.ImpersonationTarget?
+    @State private var impersonationTargets: [OrbitAuthentication.ImpersonationTarget] = []
+    @State private var showingTargetPicker = false
+    @State private var loadingTargets = false
+    @State private var targetsError: String?
+    @State private var testingPassword = ""
+    @State private var testingError: String?
 
     private let columns = [
         GridItem(.flexible(), spacing: OrbitSpacing.medium),
@@ -18,6 +25,7 @@ struct OrbitMoreView: View {
                     profileCard
                     quickAccess
                     management
+                    secondaryFunctions
                     helpAndInformation
                     footer
                 }
@@ -30,6 +38,12 @@ struct OrbitMoreView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("orbit.more")
+            .sheet(item: $selectedTarget) { target in
+                impersonationForm(for: target)
+            }
+            .sheet(isPresented: $showingTargetPicker) {
+                impersonationTargetPicker
+            }
         }
     }
 
@@ -112,6 +126,62 @@ struct OrbitMoreView: View {
             unavailableRow
                 .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
                 .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
+        }
+    }
+
+    private var secondaryFunctions: some View {
+        section(title: "Додатково") {
+            VStack(spacing: 0) {
+                destinationRow(.memory, icon: "brain.head.profile", detail: "Особисті та спільні факти")
+                divider
+                destinationRow(.calendarSettings, icon: "calendar.badge.clock", detail: "Підключення та джерела календаря")
+
+                if authentication.impersonating {
+                    divider
+                    Label("Тестовий профіль: \(authentication.displayName ?? "активний")", systemImage: "person.crop.circle.badge.exclamationmark")
+                        .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .accessibilityElement(children: .combine)
+                    Button("Вийти з тестового профілю") {
+                        Task { try? await authentication.endImpersonation() }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: OrbitSpacing.minTarget, alignment: .leading)
+                    .padding(.horizontal, 14)
+                }
+
+                if authentication.principalPersonId == "oleksandr" && !authentication.impersonating {
+                    divider
+                    Button {
+                        Task { await loadImpersonationTargets() }
+                    } label: {
+                        Label("Тестове перемикання профілю", systemImage: "person.crop.circle.badge.questionmark")
+                            .frame(maxWidth: .infinity, minHeight: OrbitSpacing.minTarget, alignment: .leading)
+                    }
+                    .padding(.horizontal, 14)
+                }
+                if let targetsError {
+                    Text(targetsError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 14)
+                } else if loadingTargets {
+                    ProgressView("Завантаження тестових профілів…")
+                        .frame(maxWidth: .infinity, minHeight: OrbitSpacing.minTarget, alignment: .leading)
+                        .padding(.horizontal, 14)
+                }
+                if KeychainStore.readSessionToken() != nil {
+                    divider
+                    Button("Вийти з акаунта Orbit", role: .destructive) {
+                        Task { await authentication.logout() }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: OrbitSpacing.minTarget, alignment: .leading)
+                    .padding(.horizontal, 14)
+                }
+            }
+            .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
+            .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
         }
     }
 
@@ -231,6 +301,79 @@ struct OrbitMoreView: View {
         case .integrations: OrbitToolsView()
         case .admin: OrbitDashboardView(isSelected: true)
         case .settings: OrbitSettingsView()
+        case .memory: MemoryCenterView()
+        case .calendarSettings: CalendarSettingsView()
+        }
+    }
+
+    private func loadImpersonationTargets() async {
+        loadingTargets = true
+        targetsError = nil
+        defer { loadingTargets = false }
+        do {
+            let targets = try await authentication.impersonationTargets()
+            let allowedIDs = OrbitTargetFiltering.selectableTargetIds(
+                targets.map(\.personId),
+                principalPersonId: authentication.principalPersonId
+            )
+            impersonationTargets = targets.filter { allowedIDs.contains($0.personId) }
+            showingTargetPicker = true
+        } catch {
+            targetsError = error.localizedDescription
+        }
+    }
+
+    private func impersonationForm(for target: OrbitAuthentication.ImpersonationTarget) -> some View {
+        NavigationStack {
+            Form {
+                Section("Тестовий профіль") { Text(target.displayName) }
+                SecureField("Пароль власника", text: $testingPassword)
+                if let testingError { Text(testingError).foregroundStyle(.red) }
+                Button("Увімкнути на 15 хвилин") {
+                    Task {
+                        do {
+                            try await authentication.beginImpersonation(targetPersonId: target.personId, password: testingPassword)
+                            selectedTarget = nil
+                            testingPassword = ""
+                            testingError = nil
+                        } catch {
+                            testingError = error.localizedDescription
+                        }
+                    }
+                }
+                .disabled(testingPassword.isEmpty)
+            }
+            .navigationTitle("Тестовий режим")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { selectedTarget = nil } } }
+        }
+    }
+
+    private var impersonationTargetPicker: some View {
+        NavigationStack {
+            List {
+                if impersonationTargets.isEmpty {
+                    ContentUnavailableView("Профілів немає", systemImage: "person.crop.circle.badge.xmark", description: Text("Сервер не надав доступних профілів для тестування."))
+                } else {
+                    Section("Оберіть профіль") {
+                        ForEach(impersonationTargets) { target in
+                            Button {
+                                selectedTarget = target
+                                showingTargetPicker = false
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(target.displayName).foregroundStyle(.primary)
+                                    Text(target.isMinor ? "Дитина" : "Член родини")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(minHeight: OrbitSpacing.minTarget)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Тестовий профіль")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { showingTargetPicker = false } } }
         }
     }
 

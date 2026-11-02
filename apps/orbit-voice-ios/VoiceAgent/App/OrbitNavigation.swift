@@ -36,7 +36,7 @@ nonisolated enum OrbitMainTab: String, CaseIterable, Identifiable {
 }
 
 nonisolated enum OrbitMoreDestination: String, CaseIterable, Identifiable {
-    case calendar, family, contacts, integrations, admin, settings
+    case calendar, family, contacts, integrations, admin, settings, memory, calendarSettings
 
     var id: String { rawValue }
 
@@ -48,6 +48,8 @@ nonisolated enum OrbitMoreDestination: String, CaseIterable, Identifiable {
         case .integrations: "Інтеграції"
         case .admin: "Адміністрування"
         case .settings: "Налаштування"
+        case .memory: "Пам’ять"
+        case .calendarSettings: "Підключення календарів"
         }
     }
 
@@ -60,6 +62,8 @@ nonisolated enum OrbitMoreDestination: String, CaseIterable, Identifiable {
         case .integrations: "OrbitToolsView"
         case .admin: "OrbitDashboardView"
         case .settings: "OrbitSettingsView"
+        case .memory: "MemoryCenterView"
+        case .calendarSettings: "CalendarSettingsView"
         }
     }
 }
