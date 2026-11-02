@@ -30,6 +30,9 @@ private func schoolLocalizedInstant(_ date: Date) -> String {
     formatter.dateFormat = "EEE, d MMM, HH:mm"
     return formatter.string(from: date)
 }
+private func schoolLocalizedSourceDate(_ date: Date) -> String {
+    date.formatted(.dateTime.year().month(.wide).day().hour().minute().locale(Locale(identifier: "uk_UA")).timeZone(SchoolHubLogic.schoolTimeZone))
+}
 private func schoolAllDayRange(_ event: OrbitSchoolEvent) -> String {
     guard let start = event.startsAt else { return "Дата не визначена" }
     guard let end = event.endsAt else { return schoolUkrainianDate(start) }
@@ -648,7 +651,7 @@ struct SchoolDetailView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Label(item.sender.isEmpty ? "Відправника не вказано" : item.sender, systemImage: "building.2.crop.circle")
                             .font(.callout.weight(.bold))
-                        Text([item.sourceTimestamp.map { $0.formatted(date: .abbreviated, time: .shortened) }, item.source == "schulmanager" ? "Schulmanager" : item.source].compactMap { $0 }.joined(separator: " · "))
+                        Text([item.sourceTimestamp.map(schoolLocalizedSourceDate), item.source == "schulmanager" ? "Schulmanager" : item.source].compactMap { $0 }.joined(separator: " · "))
                             .font(.caption).foregroundStyle(Routes05Tokens.secondary)
                     }
                     .padding(13).frame(maxWidth: .infinity, alignment: .leading)
@@ -808,7 +811,12 @@ struct SchoolDetailView: View {
         VStack(alignment: .leading, spacing: 7) { Image(systemName: icon); Spacer(); Text(title).font(.caption.weight(.bold)); Text(detail).font(.caption2).foregroundStyle(Routes05Tokens.secondary) }
             .padding(12).frame(maxWidth: .infinity, minHeight: 100, alignment: .leading).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1)).opacity(0.55).accessibilityElement(children: .combine).accessibilityLabel("\(title): майбутня функція, недоступна")
     }
-    private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String { guard let start = event.startsAt else { return "Дата не визначена" }; if let end = event.endsAt, end != start { return "\(start.formatted(date: .long, time: .shortened)) – \(end.formatted(date: .long, time: .shortened))" }; return start.formatted(date: .long, time: .shortened) }
+    private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String {
+        guard let start = event.startsAt else { return "Дата не визначена" }
+        let format: Date.FormatStyle = .dateTime.year().month(.wide).day().hour().minute().locale(Locale(identifier: "uk_UA")).timeZone(SchoolHubLogic.schoolTimeZone)
+        if let end = event.endsAt, end != start { return "\(start.formatted(format)) – \(end.formatted(format))" }
+        return start.formatted(format)
+    }
     private var calendarPreviewMessage: String { guard let event = pendingCalendarEvent else { return "" }; var lines = [event.title]; if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location, !location.isEmpty { lines.append(location) }; return lines.joined(separator: "\n") }
     private func add(_ event: OrbitSchoolEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false); if preview.duplicate == true { calendarMessage = "Подію вже додано." } else if preview.requiresConfirmation == true { pendingCalendarEvent = event } else { calendarMessage = "Не вдалося підготувати подію." } } catch { calendarMessage = "Не вдалося додати подію." } }
     private func confirm(_ event: OrbitSchoolEvent) async { do { let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true); calendarMessage = result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.") } catch { calendarMessage = "Не вдалося додати подію." } }

@@ -2078,10 +2078,11 @@ private struct SchoolTaskDetailView: View {
     private var dueKey: String? { SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) }
 
     var body: some View {
+        VStack(spacing: 0) {
+        Routes05Mast(section: "school")
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Routes05Mast(section: "school")
                 HStack {
                     Button { dismiss() } label: { Label("Справи", systemImage: "arrow.left").font(.callout.weight(.bold)) }
                         .buttonStyle(.plain).frame(minHeight: OrbitSpacing.minTarget)
@@ -2122,6 +2123,7 @@ private struct SchoolTaskDetailView: View {
                                 .font(.body.weight(.bold))
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                                 .padding(.horizontal, 12)
+                                .foregroundStyle(Routes05Tokens.ink)
                                 .background(Routes05Tokens.surface)
                                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.2))
                         }.buttonStyle(.plain).disabled(updating)
@@ -2161,11 +2163,6 @@ private struct SchoolTaskDetailView: View {
                 }
                 if store.actionCapability.canMutate {
                     SchoolTaskInlinePreparation(store: store, task: task)
-                    detailCard {
-                        Text("04  ПІДГОТОВКА Й НОТАТКИ").font(.caption.weight(.black).monospaced())
-                        NavigationLink { SchoolChecklistView(store: store, sourceItemId: task.sourceItemId.isEmpty ? nil : task.sourceItemId, sourceTaskId: task.actionID) } label: { Label("Чекліст підготовки", systemImage: "checklist.checked") }.frame(minHeight: OrbitSpacing.minTarget)
-                        if let noteEntityID = task.kind == "family" ? task.actionID : task.sourceNoteEntityId, !noteEntityID.isEmpty { NavigationLink { SchoolNotesView(store: store, entityType: "task", entityId: noteEntityID) } label: { Label("Мої нотатки", systemImage: "note.text") }.frame(minHeight: OrbitSpacing.minTarget) }
-                    }
                 } else { detailCard { Label(store.actionCapability.message, systemImage: "lock.slash").foregroundStyle(.secondary) } }
                 HStack(spacing: 10) {
                     futureTile(title: "Доручити", detail: "Майбутня функція")
@@ -2202,6 +2199,7 @@ private struct SchoolTaskDetailView: View {
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
         .alert("Стан справи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+        }
     }
 
     @ViewBuilder private func detailCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -2275,6 +2273,24 @@ private struct SchoolTaskInlinePreparation: View {
             } else {
                 checklistSurface
                 notesSurface
+                HStack(spacing: 12) {
+                    NavigationLink {
+                        SchoolChecklistView(store: store, sourceItemId: task.sourceItemId.isEmpty ? nil : task.sourceItemId, sourceTaskId: task.actionID)
+                    } label: {
+                        Label("Відкрити повний чекліст", systemImage: "arrow.up.right")
+                            .font(.callout.weight(.bold))
+                    }
+                    .frame(minHeight: OrbitSpacing.minTarget)
+                    if let entityID, !entityID.isEmpty {
+                        NavigationLink {
+                            SchoolNotesView(store: store, entityType: "task", entityId: entityID)
+                        } label: {
+                            Label("Усі нотатки", systemImage: "note.text")
+                                .font(.callout.weight(.bold))
+                        }
+                        .frame(minHeight: OrbitSpacing.minTarget)
+                    }
+                }
             }
         }
         .task { await load() }
@@ -2323,6 +2339,28 @@ private struct SchoolTaskInlinePreparation: View {
     private func load() async {
 #if DEBUG
         if store.scopeKey == "routes05-fixture" {
+            let timestamp = Date(timeIntervalSince1970: 1_729_555_200)
+            let checklistID = "routes05-checklist-\(task.kind)"
+            let entityID = self.entityID ?? (task.kind == "family" ? "routes05-family-task" : task.sourceNoteEntityId ?? "routes05-letter:prepare")
+            let itemTitles = task.kind == "family"
+                ? ["Купальні речі", "Рушник і змінне взуття", "Вода і квиток"]
+                : ["Перевірити новий час зустрічі", "Узгодити участь із Вікою", "Підтвердити участь у Schulmanager"]
+            let completedCount = task.kind == "family" ? 1 : 2
+            checklists = [OrbitSchoolActionChecklist(
+                id: checklistID,
+                title: "Підготовка",
+                sourceItemId: task.kind == "source" ? task.sourceItemId : nil,
+                sourceTaskId: task.kind == "family" ? task.actionID : nil,
+                sourceEventUid: nil,
+                archivedAt: nil,
+                createdAt: timestamp,
+                updatedAt: timestamp,
+                revision: 1,
+                items: itemTitles.enumerated().map { index, title in
+                    OrbitSchoolActionChecklistItem(id: "\(checklistID)-\(index)", title: title, sourceKind: task.kind == "family" ? "family" : "source", completedAt: index < completedCount ? timestamp : nil, completedByPersonId: index < completedCount ? "routes05-person" : nil, archivedAt: nil, revision: 1, position: index, createdAt: timestamp, updatedAt: timestamp)
+                }
+            )]
+            notes = [OrbitSchoolActionNote(id: "routes05-note-\(task.kind)", entityType: "task", entityId: entityID, content: task.kind == "family" ? "Рюкзак, рушник і пляшка вже підготовлені." : "Потрібно підтвердити участь до вівторка.", createdByPersonId: "routes05-person", updatedByPersonId: "routes05-person", createdAt: timestamp, updatedAt: timestamp, revision: 1, clientRequestId: nil)]
             loading = false
             return
         }
