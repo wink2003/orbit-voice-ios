@@ -466,7 +466,7 @@ enum Routes05DebugCapture {
 
     /// The simulator workflow waits for this marker before taking a screenshot.
     /// It is DEBUG-only and written only by the targeted evidence routes.
-    static func markReady(route: String, contentCount: Int? = nil) {
+    static func markReady(route: String, contentCount: Int? = nil, metadata: [String: Any] = [:]) {
         guard let captureID else { return }
         var payload: [String: Any] = [
             "route": route,
@@ -479,6 +479,7 @@ enum Routes05DebugCapture {
             "timestamp": Date().timeIntervalSince1970
         ]
         if let contentCount { payload["contentCount"] = contentCount }
+        payload.merge(metadata) { _, new in new }
         guard JSONSerialization.isValidJSONObject(payload),
               let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return }
         let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -490,7 +491,7 @@ enum Routes05DebugCapture {
 enum Routes05DebugCapture {
     static let scrollToBottom = false
     static let scrollHorizontal = false
-    static func markReady(route: String, contentCount: Int? = nil) {}
+    static func markReady(route: String, contentCount: Int? = nil, metadata: [String: Any] = [:]) {}
 }
 #endif
 

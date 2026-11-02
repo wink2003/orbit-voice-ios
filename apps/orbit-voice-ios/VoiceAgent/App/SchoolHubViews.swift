@@ -3396,6 +3396,9 @@ private struct Routes05SchoolTimetableProductionView: View {
     @State private var store = SchoolHubV2Store()
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDay: String?
+#if DEBUG
+    @State private var debugHorizontalScrollSettled = false
+#endif
 
     init(studentLabel: String?, onOpenOverview: @escaping () -> Void = {}, onOpenExams: @escaping () -> Void = {}) {
         self.studentLabel = studentLabel
@@ -3450,7 +3453,24 @@ private struct Routes05SchoolTimetableProductionView: View {
         .task(id: store.weekStart) { await store.load() }
         .onChange(of: days) { _, value in if !value.contains(selectedDay ?? "") { selectedDay = value.first } }
 #if DEBUG
-        .onAppear { Routes05DebugCapture.markReady(route: "timetable") }
+        .task(id: "timetable-\(store.phase)-\(store.timetable.count)-\(debugHorizontalScrollSettled)") {
+            guard store.phase == .ready else { return }
+            let visibleEntries = store.timetable.filter { days.contains($0.localDate) }
+            guard !visibleEntries.isEmpty, !slots.isEmpty else { return }
+            guard !Routes05DebugCapture.scrollHorizontal || debugHorizontalScrollSettled else { return }
+            await Task.yield()
+            guard !Routes05DebugCapture.scrollHorizontal || debugHorizontalScrollSettled else { return }
+            Routes05DebugCapture.markReady(
+                route: "timetable",
+                contentCount: store.timetable.count,
+                metadata: [
+                    "visibleLessonCount": visibleEntries.count,
+                    "visibleDayCount": days.count,
+                    "selectedWeek": store.weekStart,
+                    "scrollHorizontal": Routes05DebugCapture.scrollHorizontal
+                ]
+            )
+        }
 #endif
     }
 
@@ -3528,7 +3548,12 @@ private struct Routes05SchoolTimetableProductionView: View {
             }
             .onAppear {
                 guard Routes05DebugCapture.scrollHorizontal, let lastDay = days.last else { return }
-                DispatchQueue.main.async { proxy.scrollTo(lastDay, anchor: .trailing) }
+                DispatchQueue.main.async {
+                    proxy.scrollTo(lastDay, anchor: .trailing)
+#if DEBUG
+                    DispatchQueue.main.async { debugHorizontalScrollSettled = true }
+#endif
+                }
             }
             .accessibilityElement(children: .contain)
         }

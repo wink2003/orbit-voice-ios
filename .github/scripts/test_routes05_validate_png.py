@@ -42,6 +42,22 @@ def write_png(path: Path, populated: bool, palette_size: int | None = None) -> N
 
 
 class Routes05PNGValidatorTests(unittest.TestCase):
+    def write_contract(self, root: Path, **overrides: object) -> Path:
+        contract = {
+            "route": "timetable",
+            "captureID": "capture-1",
+            "contentReady": True,
+            "contentCount": 5,
+            "visibleLessonCount": 5,
+            "visibleDayCount": 5,
+            "selectedWeek": "2026-11-02",
+            "scrollHorizontal": True,
+        }
+        contract.update(overrides)
+        path = root / "ready.json"
+        path.write_text(json.dumps(contract), encoding="utf-8")
+        return path
+
     def test_populated_exams_image_with_23_colors_passes_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -69,6 +85,51 @@ class Routes05PNGValidatorTests(unittest.TestCase):
             contract.write_text(json.dumps({"route": "exams", "contentReady": True, "contentCount": 3}), encoding="utf-8")
             with self.assertRaises(ValueError):
                 VALIDATOR.validate_png(str(image), "exams", str(contract))
+
+    def test_populated_timetable_light_and_dark_pass_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for appearance in ("light", "dark"):
+                image = root / f"timetable-{appearance}.png"
+                write_png(image, populated=True, palette_size=20)
+                contract = self.write_contract(root)
+                self.assertEqual(VALIDATOR.validate_png(str(image), "timetable", str(contract), "capture-1"), 20)
+
+    def test_blank_timetable_fails_even_with_rendered_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = root / "blank.png"
+            write_png(image, populated=False)
+            contract = self.write_contract(root)
+            with self.assertRaises(ValueError):
+                VALIDATOR.validate_png(str(image), "timetable", str(contract), "capture-1")
+
+    def test_timetable_rejects_missing_stale_and_false_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = root / "timetable.png"
+            write_png(image, populated=True, palette_size=20)
+            for overrides, capture_id in (
+                ({"captureID": "old-capture"}, "capture-1"),
+                ({"contentReady": False}, "capture-1"),
+                ({"contentCount": 0}, "capture-1"),
+                ({"visibleLessonCount": 0}, "capture-1"),
+                ({"scrollHorizontal": False}, "capture-1"),
+            ):
+                contract = self.write_contract(root, **overrides)
+                with self.assertRaises(ValueError):
+                    VALIDATOR.validate_png(str(image), "timetable", str(contract), capture_id)
+            with self.assertRaises(ValueError):
+                VALIDATOR.validate_png(str(image), "timetable", None, "capture-1")
+
+    def test_timetable_rejects_wrong_route_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = root / "timetable.png"
+            write_png(image, populated=True, palette_size=20)
+            contract = self.write_contract(root, route="exams")
+            with self.assertRaises(ValueError):
+                VALIDATOR.validate_png(str(image), "timetable", str(contract), "capture-1")
 
     def test_exams_without_rendered_entries_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

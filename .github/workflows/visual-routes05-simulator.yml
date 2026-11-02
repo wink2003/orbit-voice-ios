@@ -285,7 +285,7 @@ jobs:
                 fi
                 if ! perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"; then continue; fi
                 ready_json="$out/$screen-$capture_id.ready.json"
-                if python3 .github/scripts/routes05_validate_png.py "$file" --route "$screen" --ready-json "$ready_json" > "$out/$screen-$appearance.png-check" 2>&1; then
+                if python3 .github/scripts/routes05_validate_png.py "$file" --route "$screen" --ready-json "$ready_json" --capture-id "$capture_id" > "$out/$screen-$appearance.png-check" 2>&1; then
                   captured=true
                   break
                 fi
