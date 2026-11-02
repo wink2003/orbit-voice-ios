@@ -51,12 +51,17 @@ enum OrbitCalendarV2Logic {
     }
 
     static func weekInterval(containing date: Date, calendar: Calendar) -> DateInterval? {
-        calendar.dateInterval(of: .weekOfYear, for: date)
+        let dayStart = calendar.startOfDay(for: date)
+        let weekday = calendar.component(.weekday, from: dayStart)
+        let daysFromWeekStart = (weekday - calendar.firstWeekday + 7) % 7
+        guard let start = calendar.date(byAdding: .day, value: -daysFromWeekStart, to: dayStart),
+              let end = calendar.date(byAdding: .day, value: 7, to: start) else { return nil }
+        return DateInterval(start: start, end: end)
     }
 
     static func nextWeekInterval(after week: DateInterval, calendar: Calendar) -> DateInterval? {
-        let anchor = calendar.date(byAdding: .day, value: 1, to: week.end) ?? week.end.addingTimeInterval(1)
-        return weekInterval(containing: anchor, calendar: calendar)
+        guard let end = calendar.date(byAdding: .day, value: 7, to: week.end) else { return nil }
+        return DateInterval(start: week.end, end: end)
     }
 
     static func weekDays(containing date: Date, calendar: Calendar) -> [Date] {
