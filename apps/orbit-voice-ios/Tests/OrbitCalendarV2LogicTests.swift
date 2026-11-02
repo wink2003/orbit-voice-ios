@@ -35,6 +35,7 @@ struct OrbitCalendarV2LogicTests {
         let currentWeek = OrbitCalendarV2Logic.weekInterval(containing: today, calendar: calendar)!
         let nextWeek = OrbitCalendarV2Logic.nextWeekInterval(after: currentWeek, calendar: calendar)!
         precondition(nextWeek.start == currentWeek.end, "next week starts at the exclusive current-week boundary")
+        precondition(calendar.component(.day, from: nextWeek.start) == 2 && calendar.component(.day, from: nextWeek.end) == 9, "next week spans Monday November 2 through the exclusive Monday November 9 boundary")
         precondition(!OrbitCalendarV2Logic.showsSelectedDateSection(selectedDate: nil, today: today, calendar: calendar), "default date selection creates no selected-date section")
         precondition(!OrbitCalendarV2Logic.showsSelectedDateSection(selectedDate: today, today: today, calendar: calendar), "explicitly selecting today creates no duplicate selected-date section")
         precondition(OrbitCalendarV2Logic.showsSelectedDateSection(selectedDate: today.addingTimeInterval(86_400), today: today, calendar: calendar), "explicit selection of another date shows the selected-date section")
@@ -66,14 +67,16 @@ struct OrbitCalendarV2LogicTests {
             event("after-5", at(2026, 11, 13), at(2026, 11, 13, 1)),
             event("after-6", at(2026, 11, 14), at(2026, 11, 14, 1))
         ]
-        let excluded = Set([OrbitCalendarV2Logic.eventKey(timelineEvents[5])])
-        let timeline = OrbitCalendarV2Logic.timeline(timelineEvents + [timelineEvents[1]], now: today, calendar: calendar, excluding: excluded)
+        let timeline = OrbitCalendarV2Logic.timeline(timelineEvents + [timelineEvents[1]], now: today, calendar: calendar)
         precondition(timeline.today.map(\.id) == ["today"], "today section contains today's event")
         precondition(timeline.thisWeek.map(\.id) == ["week", "spans-weeks"], "current-week section handles cross-week events once")
-        precondition(timeline.nextWeek.map(\.id) == ["next-week", "before-boundary"], "next-week section includes the full local week; got \(timeline.nextWeek.map(\.id)), current week got \(timeline.thisWeek.map(\.id))")
+        let iso = ISO8601DateFormatter()
+        precondition(timeline.nextWeek.map(\.id) == ["next-week", "before-boundary"], "next-week section includes the full local week; got \(timeline.nextWeek.map(\.id)), current week got \(timeline.thisWeek.map(\.id)), later got \(timeline.later.map(\.id)), interval \(iso.string(from: nextWeek.start))..<\(iso.string(from: nextWeek.end)), boundary event \(iso.string(from: timelineEvents[4].startsAt))..<\(iso.string(from: timelineEvents[4].endsAt))")
         precondition(timeline.later.map(\.id) == ["after-2", "after-3", "after-4", "after-5", "after-6"], "later section has five chronological events strictly after next week")
         let sectionKeys = timeline.today + timeline.thisWeek + timeline.nextWeek + timeline.later
         precondition(Set(sectionKeys.map(OrbitCalendarV2Logic.eventKey)).count == sectionKeys.count, "event identities never repeat across timeline sections")
+        let selectedExclusion = OrbitCalendarV2Logic.timeline(timelineEvents, now: today, calendar: calendar, excluding: [OrbitCalendarV2Logic.eventKey(timelineEvents[0])])
+        precondition(selectedExclusion.today.isEmpty, "selected-date event IDs are excluded from subsequent timeline sections")
         let empty = OrbitCalendarV2Logic.timeline([FixtureEvent](), now: today, calendar: calendar)
         precondition(empty.today.isEmpty && empty.thisWeek.isEmpty && empty.nextWeek.isEmpty && empty.later.isEmpty, "empty calendar preserves empty section state")
 
