@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// ROUTES 05 is an additive presentation layer. It owns visual tokens and
 /// reusable wayfinding primitives; feature stores and navigation remain in
@@ -465,15 +466,20 @@ enum Routes05DebugCapture {
 
     /// The simulator workflow waits for this marker before taking a screenshot.
     /// It is DEBUG-only and written only by the targeted evidence routes.
-    static func markReady(route: String) {
+    static func markReady(route: String, contentCount: Int? = nil, metadata: [String: Any] = [:]) {
         guard let captureID else { return }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "route": route,
             "captureID": captureID,
             "appearance": appearance,
+            "contentReady": contentCount != nil,
+            "viewportWidth": UIScreen.main.bounds.width,
+            "viewportHeight": UIScreen.main.bounds.height,
             "arguments": arguments,
             "timestamp": Date().timeIntervalSince1970
         ]
+        if let contentCount { payload["contentCount"] = contentCount }
+        payload.merge(metadata) { _, new in new }
         guard JSONSerialization.isValidJSONObject(payload),
               let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else { return }
         let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -485,6 +491,7 @@ enum Routes05DebugCapture {
 enum Routes05DebugCapture {
     static let scrollToBottom = false
     static let scrollHorizontal = false
+    static func markReady(route: String, contentCount: Int? = nil, metadata: [String: Any] = [:]) {}
 }
 #endif
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private let schoolUkrainianCalendar: Calendar = {
     var calendar = Calendar(identifier: .gregorian)
@@ -27,6 +28,13 @@ private func schoolLocalizedInstant(_ date: Date) -> String {
     formatter.locale = Locale(identifier: "uk_UA")
     formatter.timeZone = SchoolHubLogic.schoolTimeZone
     formatter.dateFormat = "EEE, d MMM, HH:mm"
+    return formatter.string(from: date)
+}
+private func schoolLocalizedSourceDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "uk_UA")
+    formatter.timeZone = SchoolHubLogic.schoolTimeZone
+    formatter.dateFormat = "d MMMM yyyy 'о' HH:mm"
     return formatter.string(from: date)
 }
 private func schoolAllDayRange(_ event: OrbitSchoolEvent) -> String {
@@ -545,7 +553,7 @@ struct SchoolTasksView: View {
 
     @ViewBuilder private func sourceLinks(for message: OrbitSchoolBrainMessage) -> some View {
         if !message.sourceRefs.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(Array(message.sourceRefs.enumerated()), id: \.offset) { _, ref in if let id = ref["id"], let type = ref["type"], ["letter", "message"].contains(type) { NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { Label(type == "letter" ? "Лист" : "Повідомлення", systemImage: type == "letter" ? "envelope" : "message") }.buttonStyle(.bordered) } } } }
+            ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(Array(message.sourceRefs.enumerated()), id: \.offset) { _, ref in if let id = ref["id"], let type = ref["type"], ["letter", "message"].contains(type) { NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { Label(type == "letter" ? "Лист" : "Повідомлення", systemImage: type == "letter" ? "envelope" : "message") }.buttonStyle(.bordered).tint(Routes05Tokens.blue) } } } }
         }
     }
 
@@ -560,7 +568,7 @@ struct SchoolTasksView: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(item.title).font(.headline)
             if !item.detail.isEmpty { Text(item.detail).fixedSize(horizontal: false, vertical: true) }
-            if !item.sourceRefs.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(item.sourceRefs, id: \.self) { source in if source.type == "calendar" { NavigationLink { SchoolCalendarView() } label: { Label("Календар", systemImage: "calendar") }.buttonStyle(.bordered) } else { NavigationLink { SchoolDetailLoaderView(itemID: source.id) } label: { Label(source.type == "message" ? "Повідомлення" : "Лист", systemImage: source.type == "message" ? "message" : "envelope") }.buttonStyle(.bordered) } } } } }
+            if !item.sourceRefs.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(item.sourceRefs, id: \.self) { source in if source.type == "calendar" { NavigationLink { SchoolCalendarView() } label: { Label("Календар", systemImage: "calendar") }.buttonStyle(.bordered).tint(Routes05Tokens.blue) } else { NavigationLink { SchoolDetailLoaderView(itemID: source.id) } label: { Label(source.type == "message" ? "Повідомлення" : "Лист", systemImage: source.type == "message" ? "message" : "envelope") }.buttonStyle(.bordered).tint(Routes05Tokens.blue) } } } } }
         }
     }
 
@@ -610,19 +618,48 @@ struct SchoolDetailView: View {
     @State private var calendarMessage: String?
     @State private var pendingCalendarEvent: OrbitSchoolEvent?
     @State private var showOriginal = false
+    @State private var enlargedText = false
+    @State private var copyNotice = false
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                Routes05ContextHeader(
-                    section: "school",
-                    eyebrow: "SOURCE ORIGINAL / DE",
-                    title: item.type == "letter" ? "Лист / джерело" : "Повідомлення / джерело",
-                    detail: "Оригінал, переклад і Orbit-інтерпретація залишаються окремими.",
-                    accent: Routes05Tokens.blue
-                )
-                if !displayTitle.isEmpty { Text(displayTitle).font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
-                Text([item.sender.isEmpty ? nil : item.sender, item.sourceTimestamp.map { $0.formatted(date: .abbreviated, time: .omitted) }].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+        VStack(spacing: 0) {
+            Routes05Mast(section: "school")
+            ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 10) {
+                        Button { dismiss() } label: {
+                            Label("Вхідні", systemImage: "arrow.left")
+                                .font(.callout.weight(.bold))
+                                .frame(minHeight: OrbitSpacing.minTarget)
+                        }.buttonStyle(.plain)
+                        Spacer()
+                        Text(item.type == "letter" ? "ВІДКРИТИЙ ЛИСТ" : "ПОВІДОМЛЕННЯ")
+                            .font(.caption2.weight(.black).monospaced()).tracking(0.8)
+                        Menu {
+                            Button(showOriginal ? "Показати переклад" : "Показати оригінал", systemImage: "character.book.closed") { showOriginal.toggle() }
+                            Button(enlargedText ? "Зменшити текст" : "Збільшити текст", systemImage: "textformat.size") { enlargedText.toggle() }
+                        } label: {
+                            Image(systemName: "ellipsis").frame(width: 44, height: 44)
+                                .background(Routes05Tokens.surface)
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1))
+                        }.accessibilityLabel("Додаткові дії з листом")
+                    }
+                    HStack(spacing: 8) {
+                        Text(item.type == "letter" ? "ЛИСТ" : "ПОВІДОМЛЕННЯ")
+                            .font(.caption2.weight(.black).monospaced()).tracking(1)
+                            .foregroundStyle(Routes05Tokens.accentInk).padding(.horizontal, 11).padding(.vertical, 7)
+                            .background(Routes05Tokens.mint, in: Capsule())
+                        if item.unread { Text("НОВЕ В ORBIT").font(.caption2.weight(.black).monospaced()).foregroundStyle(Routes05Tokens.blue) }
+                    }
+                    if !displayTitle.isEmpty { Text(displayTitle).font(.system(size: 30, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true).textSelection(.enabled).accessibilityAddTraits(.isHeader) }
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label(item.sender.isEmpty ? "Відправника не вказано" : item.sender, systemImage: "building.2.crop.circle")
+                            .font(.callout.weight(.bold))
+                        Text([item.sourceTimestamp.map(schoolLocalizedSourceDate), item.source == "schulmanager" ? "Schulmanager" : item.source].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                    }
+                    .padding(13).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
                 if let tasks = item.tasks, !tasks.isEmpty {
                     detailHeader("Що потрібно")
                     VStack(alignment: .leading, spacing: 0) {
@@ -647,37 +684,33 @@ struct SchoolDetailView: View {
                         }
                     }
                     .padding(.horizontal, 12)
-                    .background(Routes05Tokens.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
+                    .padding(.vertical, 4)
+                    .foregroundStyle(Routes05Tokens.accentInk)
+                    .background(Routes05Tokens.yellow)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.3))
                 } else {
                     detailHeader("Що потрібно")
                     Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
                 }
                 detailHeader("Текст листа")
-                Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
-                    .pickerStyle(.segmented).padding(.bottom, 8)
-                let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian ?? "Переклад ще готується.")
-                if showOriginal {
-                    Text(verbatim: body)
-                        .font(.body)
-                        .lineSpacing(3)
-                        .textSelection(.enabled)
-                } else {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(SchoolTranslatedBody.paragraphs(from: body).enumerated()), id: \.offset) { _, paragraph in
-                            Text(verbatim: paragraph)
-                                .font(.body)
-                                .lineSpacing(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
-                        }
+                let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian ?? "Переклад наразі недоступний. Перейдіть до німецького оригіналу.")
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
+                        .pickerStyle(.segmented)
+                    ForEach(Array(SchoolTranslatedBody.paragraphs(from: body).enumerated()), id: \.offset) { _, paragraph in
+                        Text(verbatim: paragraph).font(.system(size: enlargedText ? 19 : 16)).lineSpacing(enlargedText ? 7 : 4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
+                    Button { UIPasteboard.general.string = body; copyNotice = true } label: { Label("Копіювати", systemImage: "doc.on.doc") }
+                        .foregroundStyle(Routes05Tokens.blue)
+                        .frame(minHeight: OrbitSpacing.minTarget)
                 }
+                .padding(15).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.2))
                 detailHeader("Короткий підсумок")
-                Text(item.important ?? "Підсумок відсутній — перевірте оригінал листа.")
-                    .font(.callout).fixedSize(horizontal: false, vertical: true)
-                Label("Підсумок Orbit (ШІ), не слова школи. Звіряйте з оригіналом.", systemImage: "sparkles")
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("ШІ ORBIT", systemImage: "sparkles").font(.caption.weight(.black).monospaced()).foregroundStyle(Routes05Tokens.accentInk).padding(.horizontal, 9).padding(.vertical, 6).background(Routes05Tokens.lilac, in: Capsule())
+                    Text(item.important ?? "Підсумок відсутній — перевірте оригінал листа.").font(.callout).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    Text("Це інтерпретація Orbit, а не офіційні слова школи.").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                }.padding(15).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
                 if !item.attachments.isEmpty {
                     detailHeader("Вкладення")
                     VStack(alignment: .leading, spacing: 0) {
@@ -696,21 +729,51 @@ struct SchoolDetailView: View {
                     detailHeader("Дати / дедлайни")
                     ForEach(item.events) { event in
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(event.title).font(.callout.weight(.medium))
+                            Label(event.title, systemImage: "calendar.badge.plus").font(.callout.weight(.bold))
                             if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)).font(.caption) }
                             if let location = event.location { Text(location).font(.caption).foregroundStyle(.secondary) }
-                            Button("Додати до календаря") { Task { await add(event) } }.buttonStyle(.bordered)
-                        }.padding(.vertical, 5)
+                            Button("Додати до календаря") { Task { await add(event) } }
+                                .font(.callout.weight(.bold))
+                                .foregroundStyle(Routes05Tokens.accentInk)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .background(Routes05Tokens.mint, in: RoundedRectangle(cornerRadius: 4))
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1))
+                                .buttonStyle(.plain)
+                        }.padding(13).frame(maxWidth: .infinity, alignment: .leading).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
+                    }
+                }
+                detailHeader("Майбутні можливості")
+                HStack(spacing: 10) {
+                    futureFeatureTile(title: "Запитати Orbit", detail: "Потрібен окремий API", icon: "sparkles")
+                    futureFeatureTile(title: "Нагадати", detail: "Поки недоступно", icon: "bell.badge")
+                }
+                }
+                .padding(.horizontal, 16).padding(.bottom, 38)
+                Color.clear.frame(height: 1).id("routes05-school-detail-bottom")
+                }
+            .safeAreaPadding(.bottom, 96)
+            .onAppear {
+                guard Routes05DebugCapture.scrollToBottom else {
+                    Routes05DebugCapture.markReady(route: "school-detail")
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    proxy.scrollTo("routes05-school-detail-bottom", anchor: .bottom)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                        Routes05DebugCapture.markReady(route: "school-detail")
                     }
                 }
             }
-            .padding(.horizontal, 16).padding(.bottom, 24)
-        }
+            }
+            }
         .background(Routes05Tokens.canvas)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaPadding(.bottom, 16)
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
+        .alert("Скопійовано", isPresented: $copyNotice) { Button("Гаразд", role: .cancel) {} } message: { Text("Текст доступний для виділення та копіювання.") }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
     }
@@ -750,7 +813,19 @@ struct SchoolDetailView: View {
             .tracking(0.6).padding(.top, 20).padding(.bottom, 6)
             .accessibilityAddTraits(.isHeader)
     }
-    private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String { guard let start = event.startsAt else { return "Дата не визначена" }; if let end = event.endsAt, end != start { return "\(start.formatted(date: .long, time: .shortened)) – \(end.formatted(date: .long, time: .shortened))" }; return start.formatted(date: .long, time: .shortened) }
+    private func futureFeatureTile(title: String, detail: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) { Image(systemName: icon); Spacer(); Text(title).font(.caption.weight(.bold)); Text(detail).font(.caption2).foregroundStyle(Routes05Tokens.secondary) }
+            .padding(12).frame(maxWidth: .infinity, minHeight: 100, alignment: .leading).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1)).opacity(0.55).accessibilityElement(children: .combine).accessibilityLabel("\(title): майбутня функція, недоступна")
+    }
+    private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String {
+        guard let start = event.startsAt else { return "Дата не визначена" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "uk_UA")
+        formatter.timeZone = SchoolHubLogic.schoolTimeZone
+        formatter.dateFormat = "d MMMM yyyy 'о' HH:mm"
+        if let end = event.endsAt, end != start { return "\(formatter.string(from: start)) – \(formatter.string(from: end))" }
+        return formatter.string(from: start)
+    }
     private var calendarPreviewMessage: String { guard let event = pendingCalendarEvent else { return "" }; var lines = [event.title]; if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location, !location.isEmpty { lines.append(location) }; return lines.joined(separator: "\n") }
     private func add(_ event: OrbitSchoolEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false); if preview.duplicate == true { calendarMessage = "Подію вже додано." } else if preview.requiresConfirmation == true { pendingCalendarEvent = event } else { calendarMessage = "Не вдалося підготувати подію." } } catch { calendarMessage = "Не вдалося додати подію." } }
     private func confirm(_ event: OrbitSchoolEvent) async { do { let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true); calendarMessage = result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.") } catch { calendarMessage = "Не вдалося додати подію." } }

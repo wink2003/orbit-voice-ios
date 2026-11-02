@@ -20,7 +20,7 @@ struct Routes05FamilyFixture {
 
 enum Routes05DebugScreen {
     case today, orbit, school, family, familyMenu
-    case conversation, inbox, letter, tasks, timetable, exams, brain, calendar, schoolCalendar, search, timeline, briefing, notes, history
+    case conversation, inbox, letter, messageDetail, sourceTaskDetail, familyTaskDetail, tasks, timetable, exams, brain, calendar, schoolCalendar, search, timeline, briefing, notes, history
     case contacts, memory, voice, familyChat, settings, integrations, memoryDetail, contactDetail, actionConfirm, admin, profile, notifications, memoryImports, unknown
 }
 
@@ -31,6 +31,10 @@ enum Routes05DebugFixtures {
         value.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return value
     }()
+
+    private static func decodeFixture<T: Decodable>(_ type: T.Type, _ json: String) -> T {
+        try! JSONDecoder().decode(type, from: Data(json.utf8))
+    }
 
     static let today = NovaTodayFixture.demo
 
@@ -61,16 +65,17 @@ enum Routes05DebugFixtures {
     static let school: Routes05SchoolFixture = {
         let letter = OrbitSchoolItem(
             id: "routes05-letter", type: "letter", source: "schulmanager", externalId: "routes05-letter",
-            title: "Projektwoche", sender: "Gymnasium am Park",
-            originalGerman: "Die Projektwoche findet vom 24. bis 28. Oktober statt.",
-            originalPlainText: "Die Projektwoche findet vom 24. bis 28. Oktober statt.",
-            previewPlainText: "Projektwoche · wichtige Informationen", titlePlainText: "Projektwoche",
-            translationUkrainian: "Проєктний тиждень відбудеться з 24 до 28 жовтня.",
-            important: "Перевірте лист і підготуйте необхідні матеріали.", sourceTimestamp: now,
-            importedAt: now, orbitReadAt: nil, unread: true, attachments: [], events: [], threadId: nil,
-            subscriptionId: nil, tasks: [OrbitSchoolItemTask(key: "prepare", title: "Підготувати матеріали", action: "Перевірити дату в джерелі", dueAt: "2026-10-24", allDay: true, importance: "normal", target: nil, confidence: 1, reason: "Source text",)]
+            title: "Батьківський вечір: зміна часу", sender: "Секретаріат школи",
+            originalGerman: "Liebe Eltern!\n\nDer Elternabend für unsere Klasse findet am Donnerstag um 18:00 Uhr statt, nicht um 17:30 Uhr.\n\nBitte bestätigen Sie Ihre Teilnahme bis Dienstag. Das Treffen findet in Raum B12 statt.\n\nVielen Dank für Ihr Verständnis.\n\nMit freundlichen Grüßen,\nSchulverwaltung",
+            originalPlainText: "Liebe Eltern!\n\nDer Elternabend für unsere Klasse findet am Donnerstag um 18:00 Uhr statt, nicht um 17:30 Uhr.\n\nBitte bestätigen Sie Ihre Teilnahme bis Dienstag. Das Treffen findet in Raum B12 statt.\n\nVielen Dank für Ihr Verständnis.\n\nMit freundlichen Grüßen,\nSchulverwaltung",
+            previewPlainText: "Батьківський вечір · зміна часу", titlePlainText: "Батьківський вечір: зміна часу",
+            translationUkrainian: "Шановні батьки!\n\nПовідомляємо, що батьківський вечір для нашого класу відбудеться у четвер о 18:00, а не о 17:30, як повідомлялося раніше.\n\nБудь ласка, підтвердіть участь до вівторка. Зустріч відбудеться в кабінеті B12.\n\nДякуємо за розуміння.\n\nЗ повагою,\nАдміністрація школи",
+            important: "Час зустрічі змінився на 18:00. Потрібно підтвердити участь до вівторка.", sourceTimestamp: now,
+            importedAt: now, orbitReadAt: nil, unread: true, attachments: decodeFixture([OrbitSchoolAttachment].self, "[{\"id\":\"routes05-parent-pdf\",\"filename\":\"Інформація для батьків.pdf\",\"contentType\":\"PDF\",\"inline\":false}]"), events: decodeFixture([OrbitSchoolEvent].self, "[{\"key\":\"routes05-parent-event\",\"title\":\"Батьківський вечір\",\"startsAt\":\"2026-10-29T18:00:00+02:00\",\"endsAt\":\"2026-10-29T19:00:00+02:00\",\"allDay\":false,\"location\":\"Кабінет B12\"}]"), threadId: nil,
+            subscriptionId: nil, tasks: [OrbitSchoolItemTask(key: "prepare", title: "Підтвердити участь", action: "До вт, 3 листопада", dueAt: "2026-11-03", allDay: true, importance: "normal", target: nil, confidence: 1, reason: "Source text",)]
         )
-        let task = OrbitSchoolTask(key: "prepare", stableIdentity: true, title: "Підготовка до тесту", action: "Перевірити дату в джерелі", dueAt: "2026-10-24", endsAt: nil, allDay: true, importance: "high", target: nil, confidence: 1, reason: "Source text", location: nil, sourceItemId: letter.id, sourceType: "letter", sourceExternalId: letter.externalId, bucket: nil, status: "open", completedAt: nil, actionTaskId: nil, calendarEventId: nil)
+        let task = OrbitSchoolTask(key: "prepare", stableIdentity: true, title: "Підтвердити участь у батьківському вечорі", action: "Відповісти школі до вівторка. Зустріч відбудеться о 18:00 у кабінеті B12.", dueAt: "2026-11-03", endsAt: nil, allDay: true, importance: "high", target: "Батьки учня", confidence: 1, reason: "Позначка джерела: потрібна відповідь", location: "Кабінет B12", sourceItemId: letter.id, sourceType: "letter", sourceExternalId: letter.externalId, bucket: nil, status: "open", completedAt: nil, actionTaskId: nil, calendarEventId: nil)
+        let familyTask = OrbitSchoolTask(key: "family", stableIdentity: true, title: "Підготувати спортивну сумку", action: "Перевірити речі до заняття", dueAt: nil, endsAt: nil, allDay: true, importance: "normal", target: "Учнівський профіль", confidence: 1, reason: "Сімейне планування Orbit", location: nil, sourceItemId: "", sourceType: "orbit_family", sourceExternalId: "", bucket: "family", status: "open", completedAt: nil, actionTaskId: "routes05-family-task", calendarEventId: nil)
         let events = [
             OrbitSchulmanagerCalendarEvent(uid: "routes05-event-1", title: "Projektwoche", description: "Підготовка до проєктного тижня", location: "Gymnasium am Park", startsAt: "2026-10-20T09:00:00+02:00", endsAt: "2026-10-20T10:00:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "ours", audienceClass: "class", relevanceReason: "Профіль учня"),
             OrbitSchulmanagerCalendarEvent(uid: "routes05-event-2", title: "Батьківська зустріч", description: "Зустріч класу", location: "Кімната 5F", startsAt: "2026-10-22T17:30:00+02:00", endsAt: "2026-10-22T18:30:00+02:00", allDay: false, timeZone: "Europe/Berlin", recurrenceRule: nil, relevanceClass: "likely", audienceClass: "class", relevanceReason: "Класна подія")
@@ -99,7 +104,7 @@ enum Routes05DebugFixtures {
                 sourceTimestamp: now.addingTimeInterval(-259200), importedAt: now, orbitReadAt: now,
                 unread: false, attachments: [], events: [], threadId: nil, subscriptionId: nil, tasks: [])
         ]
-        return Routes05SchoolFixture(items: [letter] + demoInbox, events: events, tasks: [task], studentNames: ["Ліна"])
+        return Routes05SchoolFixture(items: [letter] + demoInbox, events: events, tasks: [task, familyTask], studentNames: ["Ліна"])
     }()
 
     static let family = Routes05FamilyFixture(

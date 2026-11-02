@@ -215,6 +215,37 @@ struct SchoolHubLogicTests {
         precondition(SchoolActionsCapability.from(error: OrbitHTTPResponseFailure(status: 404, code: "not_found")) == .unavailable)
         precondition(SchoolActionsCapability.available.canMutate)
 
+        // Checklist identity is fail-closed: absent source/task IDs must not
+        // make unrelated source-less family checklists visible.
+        precondition(SchoolChecklistMatching.matches(
+            checklistSourceItemId: nil, checklistSourceTaskId: "family-a",
+            sourceItemId: nil, sourceTaskId: "family-a"
+        ))
+        precondition(!SchoolChecklistMatching.matches(
+            checklistSourceItemId: nil, checklistSourceTaskId: "family-b",
+            sourceItemId: nil, sourceTaskId: "family-a"
+        ))
+        precondition(!SchoolChecklistMatching.matches(
+            checklistSourceItemId: nil, checklistSourceTaskId: nil,
+            sourceItemId: nil, sourceTaskId: "family-a"
+        ))
+        precondition(SchoolChecklistMatching.matches(
+            checklistSourceItemId: "school-item-a", checklistSourceTaskId: nil,
+            sourceItemId: "school-item-a", sourceTaskId: nil
+        ))
+        precondition(SchoolChecklistMatching.matches(
+            checklistSourceItemId: nil, checklistSourceTaskId: "source-task-a",
+            sourceItemId: "other-item", sourceTaskId: "source-task-a"
+        ))
+        precondition(!SchoolChecklistMatching.matches(
+            checklistSourceItemId: nil, checklistSourceTaskId: nil,
+            sourceItemId: nil, sourceTaskId: nil
+        ))
+        precondition(!SchoolChecklistMatching.matches(
+            checklistSourceItemId: "school-item-a", checklistSourceTaskId: "source-task-a",
+            sourceItemId: " ", sourceTaskId: "\t"
+        ))
+
         // Completion changes are confirmation-gated before the store mutation.
         precondition(SchoolTaskStatusConfirmation(completed: false).title == "Позначити справу виконаною?")
         precondition(SchoolTaskStatusConfirmation(completed: false).actionTitle == "Так, виконано")
