@@ -29,6 +29,24 @@ nonisolated enum SchoolTaskStatusConfirmation: Equatable {
     }
 }
 
+nonisolated enum SchoolChecklistMatching {
+    /// A checklist is visible only when at least one real task identity is
+    /// supplied and that identity matches the server record. In particular,
+    /// absent IDs must never match another absent ID (`nil == nil`).
+    static func matches(
+        checklistSourceItemId: String?,
+        checklistSourceTaskId: String?,
+        sourceItemId: String?,
+        sourceTaskId: String?
+    ) -> Bool {
+        let itemId = sourceItemId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let taskId = sourceTaskId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard itemId?.isEmpty == false || taskId?.isEmpty == false else { return false }
+        return (itemId != nil && checklistSourceItemId == itemId) ||
+            (taskId != nil && checklistSourceTaskId == taskId)
+    }
+}
+
 nonisolated enum SchoolHubSection: String, CaseIterable, Identifiable {
     case overview, letters, calendar, tasks
     var id: String { rawValue }

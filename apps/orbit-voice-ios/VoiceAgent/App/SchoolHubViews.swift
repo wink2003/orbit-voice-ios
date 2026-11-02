@@ -2259,8 +2259,12 @@ private struct SchoolTaskInlinePreparation: View {
 
     private var visibleChecklists: [OrbitSchoolActionChecklist] {
         checklists.filter { checklist in
-            (task.sourceItemId.isEmpty == false && checklist.sourceItemId == task.sourceItemId) ||
-            (task.actionID != nil && checklist.sourceTaskId == task.actionID)
+            SchoolChecklistMatching.matches(
+                checklistSourceItemId: checklist.sourceItemId,
+                checklistSourceTaskId: checklist.sourceTaskId,
+                sourceItemId: task.sourceItemId,
+                sourceTaskId: task.actionID
+            )
         }
     }
     private var entityID: String? { task.kind == "family" ? task.actionID : task.sourceNoteEntityId }
@@ -2405,7 +2409,14 @@ private struct SchoolChecklistView: View {
     @State private var error: String?
 
     private var visible: [OrbitSchoolActionChecklist] {
-        checklists.filter { $0.sourceItemId == sourceItemId || (sourceTaskId != nil && $0.sourceTaskId == sourceTaskId) }
+        checklists.filter { checklist in
+            SchoolChecklistMatching.matches(
+                checklistSourceItemId: checklist.sourceItemId,
+                checklistSourceTaskId: checklist.sourceTaskId,
+                sourceItemId: sourceItemId,
+                sourceTaskId: sourceTaskId
+            )
+        }
     }
 
     var body: some View {
