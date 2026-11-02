@@ -276,7 +276,7 @@ struct OrbitCalendarV2View: View {
                 }
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 3), count: 7), spacing: 4) {
-                ForEach(displayMode == .month ? ConceptCalendarDates.monthGrid(visibleMonth) : ConceptCalendarDates.weekDays(collapsedWeekAnchor), id: \.self) { day in
+                ForEach(displayMode == .month ? ConceptCalendarDates.monthGrid(visibleMonth) : OrbitCalendarV2Logic.weekDays(containing: collapsedWeekAnchor, calendar: calendar), id: \.self) { day in
                     dayButton(day)
                 }
             }
