@@ -92,7 +92,7 @@ struct OrbitCalendarV2View: View {
 
     private var afterNextWeekBoundary: Date {
         guard let currentWeek = OrbitCalendarV2Logic.weekInterval(containing: referenceDate, calendar: calendar),
-              let nextWeek = OrbitCalendarV2Logic.weekInterval(containing: currentWeek.end, calendar: calendar) else {
+              let nextWeek = OrbitCalendarV2Logic.nextWeekInterval(after: currentWeek, calendar: calendar) else {
             return referenceDate
         }
         return nextWeek.end

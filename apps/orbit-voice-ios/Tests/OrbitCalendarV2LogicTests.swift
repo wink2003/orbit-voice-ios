@@ -32,6 +32,9 @@ struct OrbitCalendarV2LogicTests {
         precondition(calendar.component(.day, from: dstWeek.end) == 30, "week boundary is the following Monday across DST")
 
         let today = calendar.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 12))!
+        let currentWeek = OrbitCalendarV2Logic.weekInterval(containing: today, calendar: calendar)!
+        let nextWeek = OrbitCalendarV2Logic.nextWeekInterval(after: currentWeek, calendar: calendar)!
+        precondition(nextWeek.start == currentWeek.end, "next week starts at the exclusive current-week boundary")
         precondition(!OrbitCalendarV2Logic.showsSelectedDateSection(selectedDate: nil, today: today, calendar: calendar), "default date selection creates no selected-date section")
         precondition(!OrbitCalendarV2Logic.showsSelectedDateSection(selectedDate: today, today: today, calendar: calendar), "explicitly selecting today creates no duplicate selected-date section")
         precondition(OrbitCalendarV2Logic.showsSelectedDateSection(selectedDate: today.addingTimeInterval(86_400), today: today, calendar: calendar), "explicit selection of another date shows the selected-date section")

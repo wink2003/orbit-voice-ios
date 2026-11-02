@@ -54,6 +54,11 @@ enum OrbitCalendarV2Logic {
         calendar.dateInterval(of: .weekOfYear, for: date)
     }
 
+    static func nextWeekInterval(after week: DateInterval, calendar: Calendar) -> DateInterval? {
+        let anchor = calendar.date(byAdding: .day, value: 1, to: week.end) ?? week.end.addingTimeInterval(1)
+        return weekInterval(containing: anchor, calendar: calendar)
+    }
+
     static func weekDays(containing date: Date, calendar: Calendar) -> [Date] {
         guard let interval = weekInterval(containing: date, calendar: calendar) else { return [] }
         return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: interval.start) }
@@ -81,7 +86,7 @@ enum OrbitCalendarV2Logic {
         let today = unique.filter { occurs($0, on: now, calendar: calendar) && assigned.insert(eventKey($0)).inserted }
 
         guard let currentWeek = weekInterval(containing: now, calendar: calendar),
-              let nextWeek = weekInterval(containing: currentWeek.end, calendar: calendar) else {
+              let nextWeek = nextWeekInterval(after: currentWeek, calendar: calendar) else {
             return Timeline(today: today, thisWeek: [], nextWeek: [], later: [])
         }
 
