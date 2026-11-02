@@ -67,7 +67,7 @@ struct OrbitCalendarV2LogicTests {
         let timeline = OrbitCalendarV2Logic.timeline(timelineEvents + [timelineEvents[1]], now: today, calendar: calendar, excluding: excluded)
         precondition(timeline.today.map(\.id) == ["today"], "today section contains today's event")
         precondition(timeline.thisWeek.map(\.id) == ["week", "spans-weeks"], "current-week section handles cross-week events once")
-        precondition(timeline.nextWeek.map(\.id) == ["next-week", "before-boundary"], "next-week section includes the full local week")
+        precondition(timeline.nextWeek.map(\.id) == ["next-week", "before-boundary"], "next-week section includes the full local week; got \(timeline.nextWeek.map(\.id)), current week got \(timeline.thisWeek.map(\.id))")
         precondition(timeline.later.map(\.id) == ["after-2", "after-3", "after-4", "after-5", "after-6"], "later section has five chronological events strictly after next week")
         let sectionKeys = timeline.today + timeline.thisWeek + timeline.nextWeek + timeline.later
         precondition(Set(sectionKeys.map(OrbitCalendarV2Logic.eventKey)).count == sectionKeys.count, "event identities never repeat across timeline sections")
