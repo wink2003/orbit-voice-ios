@@ -52,6 +52,7 @@ class Routes05PNGValidatorTests(unittest.TestCase):
             "visibleDayCount": 5,
             "selectedWeek": "2026-11-02",
             "scrollHorizontal": True,
+            "scrollHorizontalSettled": True,
         }
         contract.update(overrides)
         path = root / "ready.json"
@@ -114,7 +115,7 @@ class Routes05PNGValidatorTests(unittest.TestCase):
                 ({"contentReady": False}, "capture-1"),
                 ({"contentCount": 0}, "capture-1"),
                 ({"visibleLessonCount": 0}, "capture-1"),
-                ({"scrollHorizontal": False}, "capture-1"),
+                ({"scrollHorizontalSettled": False}, "capture-1"),
             ):
                 contract = self.write_contract(root, **overrides)
                 with self.assertRaises(ValueError):

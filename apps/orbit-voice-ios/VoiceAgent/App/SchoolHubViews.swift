@@ -3396,9 +3396,6 @@ private struct Routes05SchoolTimetableProductionView: View {
     @State private var store = SchoolHubV2Store()
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDay: String?
-#if DEBUG
-    @State private var debugHorizontalScrollSettled = false
-#endif
 
     init(studentLabel: String?, onOpenOverview: @escaping () -> Void = {}, onOpenExams: @escaping () -> Void = {}) {
         self.studentLabel = studentLabel
@@ -3452,26 +3449,6 @@ private struct Routes05SchoolTimetableProductionView: View {
         .foregroundStyle(Routes05Tokens.ink).background(Routes05Tokens.canvas.ignoresSafeArea()).toolbar(.hidden, for: .navigationBar)
         .task(id: store.weekStart) { await store.load() }
         .onChange(of: days) { _, value in if !value.contains(selectedDay ?? "") { selectedDay = value.first } }
-#if DEBUG
-        .task(id: "timetable-\(store.phase)-\(store.timetable.count)-\(debugHorizontalScrollSettled)") {
-            guard store.phase == .ready else { return }
-            let visibleEntries = store.timetable.filter { days.contains($0.localDate) }
-            guard !visibleEntries.isEmpty, !slots.isEmpty else { return }
-            guard !Routes05DebugCapture.scrollHorizontal || debugHorizontalScrollSettled else { return }
-            await Task.yield()
-            guard !Routes05DebugCapture.scrollHorizontal || debugHorizontalScrollSettled else { return }
-            Routes05DebugCapture.markReady(
-                route: "timetable",
-                contentCount: store.timetable.count,
-                metadata: [
-                    "visibleLessonCount": visibleEntries.count,
-                    "visibleDayCount": days.count,
-                    "selectedWeek": store.weekStart,
-                    "scrollHorizontal": Routes05DebugCapture.scrollHorizontal
-                ]
-            )
-        }
-#endif
     }
 
     private var header: some View {
@@ -3546,15 +3523,35 @@ private struct Routes05SchoolTimetableProductionView: View {
                 }
                 .padding(.horizontal, 16)
             }
+#if DEBUG
             .onAppear {
                 guard Routes05DebugCapture.scrollHorizontal, let lastDay = days.last else { return }
+                let totalLessonCount = store.timetable.count
+                let visibleLessonCount = store.timetable.filter { days.contains($0.localDate) }.count
+                let visibleDayCount = days.count
+                let selectedWeek = store.weekStart
                 DispatchQueue.main.async {
                     proxy.scrollTo(lastDay, anchor: .trailing)
-#if DEBUG
-                    DispatchQueue.main.async { debugHorizontalScrollSettled = true }
-#endif
+                    // The grid is already mounted here. Give ScrollViewReader one
+                    // main-queue turn to apply the requested horizontal position
+                    // before publishing the DEBUG capture contract.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        guard visibleLessonCount > 0, visibleDayCount == 5 else { return }
+                        Routes05DebugCapture.markReady(
+                            route: "timetable",
+                            contentCount: totalLessonCount,
+                            metadata: [
+                                "visibleLessonCount": visibleLessonCount,
+                                "visibleDayCount": visibleDayCount,
+                                "selectedWeek": selectedWeek,
+                                "scrollHorizontal": true,
+                                "scrollHorizontalSettled": true
+                            ]
+                        )
+                    }
                 }
             }
+#endif
             .accessibilityElement(children: .contain)
         }
     }

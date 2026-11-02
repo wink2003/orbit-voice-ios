@@ -32,7 +32,7 @@ def validate_png(
                 raise ValueError("timetable readiness contract has no visible lessons")
             if contract.get("selectedWeek") in (None, "") or contract.get("visibleDayCount") != 5:
                 raise ValueError("timetable readiness contract has incomplete week coverage")
-            if contract.get("scrollHorizontal") is not True:
+            if contract.get("scrollHorizontalSettled") is not True:
                 raise ValueError("timetable readiness contract did not settle horizontal capture state")
 
     with open(path, "rb") as handle:
