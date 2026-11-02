@@ -36,7 +36,7 @@ nonisolated enum OrbitMainTab: String, CaseIterable, Identifiable {
 }
 
 nonisolated enum OrbitMoreDestination: String, CaseIterable, Identifiable {
-    case calendar, family, contacts, integrations, admin, settings, security, help
+    case calendar, family, contacts, integrations, admin, settings
 
     var id: String { rawValue }
 
@@ -48,8 +48,18 @@ nonisolated enum OrbitMoreDestination: String, CaseIterable, Identifiable {
         case .integrations: "Інтеграції"
         case .admin: "Адміністрування"
         case .settings: "Налаштування"
-        case .security: "Безпека та доступ"
-        case .help: "Допомога та інформація"
+        }
+    }
+
+    /// Stable source-level ownership contract for navigation regression tests.
+    var routeOwner: String {
+        switch self {
+        case .calendar: "OrbitCalendarView"
+        case .family: "FamilyHubView"
+        case .contacts: "OrbitContactsView"
+        case .integrations: "OrbitToolsView"
+        case .admin: "OrbitDashboardView"
+        case .settings: "OrbitSettingsView"
         }
     }
 }
@@ -58,7 +68,7 @@ nonisolated enum OrbitNavigation {
     static let defaultTab: OrbitMainTab = .home
 
     // Keep the primary shell compact so UIKit never creates the system "More" controller.
-    static func visibleTabs() -> [OrbitMainTab] { [.home, .school, .orbit, .more] }
+    static func visibleTabs() -> [OrbitMainTab] { [.home, .orbit, .school, .more] }
 
     // The server stays authoritative; this only hides an entry the backend would reject.
     static func moreDestinations(isOwner: Bool) -> [OrbitMoreDestination] {

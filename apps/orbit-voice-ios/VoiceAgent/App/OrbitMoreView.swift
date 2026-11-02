@@ -13,7 +13,7 @@ struct OrbitMoreView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: OrbitSpacing.xLarge) {
+                LazyVStack(alignment: .leading, spacing: OrbitSpacing.large) {
                     header
                     profileCard
                     quickAccess
@@ -22,7 +22,7 @@ struct OrbitMoreView: View {
                     footer
                 }
                 .padding(.horizontal, OrbitSpacing.large)
-                .padding(.top, OrbitSpacing.large)
+                .padding(.top, OrbitSpacing.medium)
                 .padding(.bottom, OrbitSpacing.xLarge)
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
@@ -71,14 +71,14 @@ struct OrbitMoreView: View {
                     .foregroundStyle(Routes05Tokens.secondary)
                     .accessibilityHidden(true)
             }
-            .padding(OrbitSpacing.large)
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
             .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Профіль: \(authentication.displayName ?? "активний профіль")")
-        .accessibilityHint("Відкрити налаштування профілю та доступу")
+        .accessibilityLabel("Профіль у налаштуваннях: \(authentication.displayName ?? "активний профіль")")
+        .accessibilityHint("Відкрити профіль, акаунт і захист")
         .frame(minHeight: 76)
     }
 
@@ -100,9 +100,7 @@ struct OrbitMoreView: View {
                     destinationRow(.admin, icon: "server.rack", detail: "Огляд сервера")
                     divider
                 }
-                destinationRow(.settings, icon: "gearshape", detail: "Параметри застосунку")
-                divider
-                destinationRow(.security, icon: "lock.shield", detail: "Профіль, акаунт і захист")
+                destinationRow(.settings, icon: "gearshape", detail: "Профіль, акаунт і захист")
             }
             .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
             .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
@@ -111,10 +109,36 @@ struct OrbitMoreView: View {
 
     private var helpAndInformation: some View {
         section(title: "Допомога та інформація") {
-            destinationRow(.help, icon: "questionmark.circle", detail: "Довідка ще не підключена в цій збірці")
+            unavailableRow
                 .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
                 .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
         }
+    }
+
+    private var unavailableRow: some View {
+        HStack(spacing: OrbitSpacing.medium) {
+            Image(systemName: "questionmark.circle")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Routes05Tokens.secondary)
+                .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Допомога та інформація")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Routes05Tokens.ink)
+                Text("Довідка ще не підключена в цій збірці")
+                    .font(.footnote)
+                    .foregroundStyle(Routes05Tokens.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Text("Недоступно")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Routes05Tokens.secondary)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 64)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Допомога та інформація. Наразі недоступно")
     }
 
     private var footer: some View {
@@ -149,8 +173,8 @@ struct OrbitMoreView: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(OrbitSpacing.large)
-            .frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
             .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
             .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
         }
@@ -206,8 +230,7 @@ struct OrbitMoreView: View {
         case .contacts: OrbitContactsView()
         case .integrations: OrbitToolsView()
         case .admin: OrbitDashboardView(isSelected: true)
-        case .settings, .security: OrbitSettingsView()
-        case .help: Routes05UnavailableView(routeID: "help")
+        case .settings: OrbitSettingsView()
         }
     }
 
