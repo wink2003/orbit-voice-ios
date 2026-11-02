@@ -480,7 +480,7 @@ struct OrbitCalendarV2View: View {
                     .font(.subheadline)
                     .foregroundStyle(Routes05Tokens.secondary)
             } else {
-                ForEach(dayEvents) { event in
+                ForEach(dayEvents, id: \.identityKey) { event in
                     compactDayRow(event)
                 }
             }
@@ -544,8 +544,8 @@ struct OrbitCalendarV2View: View {
                 .padding(16)
                 .background(Routes05Tokens.surface)
             } else {
-                ForEach(nextFive) { event in
-                    upcomingRow(event, number: (nextFive.firstIndex(where: { $0.id == event.id }) ?? 0) + 1)
+                ForEach(nextFive, id: \.identityKey) { event in
+                    upcomingRow(event, number: (nextFive.firstIndex(where: { $0.identityKey == event.identityKey }) ?? 0) + 1)
                 }
             }
         }
@@ -692,7 +692,9 @@ struct OrbitCalendarV2View: View {
     }
 
     private func eventDetail(_ event: ConceptCalendarEvent) -> some View {
-        let live = liveEvents.first(where: { $0.id == event.id })
+        let live = liveEvents.first {
+            $0.id == event.id && ($0.sourceIdentifier ?? $0.sourceType) == event.sourceID
+        }
         return NavigationStack {
             List {
                 Section("Подія") {
@@ -935,6 +937,7 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
 
     var sourceType: String { sourceID }
     var sourceIdentifier: String? { nil }
+    var identityKey: String { OrbitCalendarV2Logic.eventKey(self) }
 
     init(id: String, title: String, startsAt: Date, endsAt: Date, allDay: Bool, sourceID: String, involvedPersonIDs: [String], notes: String) {
         self.id = id
