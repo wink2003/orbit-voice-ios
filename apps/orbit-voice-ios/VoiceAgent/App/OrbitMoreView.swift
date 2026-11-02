@@ -35,6 +35,7 @@ struct OrbitMoreView: View {
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .foregroundStyle(Routes05Tokens.ink)
+            .novaDockAwareScrollContent()
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("orbit.more")
@@ -48,16 +49,15 @@ struct OrbitMoreView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("ORBIT / НАВІГАЦІЯ")
-                .font(.caption.weight(.black))
-                .tracking(1.2)
-                .foregroundStyle(Routes05Tokens.secondary)
-            Text("Інше")
-                .font(.system(.largeTitle, design: .rounded).weight(.black))
-                .tracking(-1.4)
-                .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 0) {
+            Routes05Mast(section: "orbit")
+            Routes05RootHeader(
+                "ORBIT / 05",
+                title: "Інше",
+                detail: "Профіль, родина та інструменти Orbit."
+            ) { Routes05OrbitBadge() }
         }
+        .accessibilityAddTraits(.isHeader)
     }
 
     private var profileCard: some View {
@@ -67,7 +67,7 @@ struct OrbitMoreView: View {
                     .font(.headline.weight(.bold))
                     .foregroundStyle(Routes05Tokens.accentInk)
                     .frame(width: 48, height: 48)
-                    .background(Routes05Tokens.mint, in: Circle())
+                    .background(Routes05Tokens.yellow, in: Circle())
                     .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 1.5))
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -87,8 +87,10 @@ struct OrbitMoreView: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
-            .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
+            .background(Routes05Tokens.mint)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.5))
+            .shadow(color: Routes05Tokens.ink, radius: 0, x: 4, y: 4)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Профіль у налаштуваннях: \(authentication.displayName ?? "активний профіль")")
@@ -99,10 +101,10 @@ struct OrbitMoreView: View {
     private var quickAccess: some View {
         section(title: "Швидкий доступ") {
             LazyVGrid(columns: columns, spacing: OrbitSpacing.medium) {
-                quickLink(.calendar, icon: "calendar", tint: Routes05Tokens.lilac)
+                quickLink(.calendar, icon: "calendar", tint: Routes05Tokens.yellow)
                 quickLink(.family, icon: "person.3.fill", tint: Routes05Tokens.mint)
-                quickLink(.contacts, icon: "person.2.fill", tint: Routes05Tokens.yellow)
-                quickLink(.integrations, icon: "point.3.connected.trianglepath.dotted", tint: Routes05Tokens.blue)
+                quickLink(.contacts, icon: "person.2.fill", tint: Routes05Tokens.lilac)
+                quickLink(.integrations, icon: "point.3.connected.trianglepath.dotted", tint: Routes05Tokens.orange)
             }
         }
     }
@@ -116,16 +118,16 @@ struct OrbitMoreView: View {
                 }
                 destinationRow(.settings, icon: "gearshape", detail: "Профіль, акаунт і захист")
             }
-            .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
-            .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
+            .background(Routes05Tokens.surface)
+            .overlay(Rectangle().stroke(Routes05Tokens.ink, lineWidth: 1))
         }
     }
 
     private var helpAndInformation: some View {
         section(title: "Допомога та інформація") {
             unavailableRow
-                .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
-                .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
+                .background(Routes05Tokens.surface)
+                .overlay(Rectangle().stroke(Routes05Tokens.rule, lineWidth: 1))
         }
     }
 
@@ -180,8 +182,8 @@ struct OrbitMoreView: View {
                     .padding(.horizontal, 14)
                 }
             }
-            .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
-            .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
+            .background(Routes05Tokens.surface)
+            .overlay(Rectangle().stroke(Routes05Tokens.rule, lineWidth: 1))
         }
     }
 
@@ -232,21 +234,27 @@ struct OrbitMoreView: View {
     private func quickLink(_ destination: OrbitMoreDestination, icon: String, tint: Color) -> some View {
         NavigationLink { screen(for: destination) } label: {
             VStack(alignment: .leading, spacing: OrbitSpacing.medium) {
-                Image(systemName: icon)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Routes05Tokens.accentInk)
-                    .frame(width: 36, height: 36)
-                    .background(tint, in: RoundedRectangle(cornerRadius: OrbitRadius.chip))
+                HStack {
+                    Image(systemName: icon)
+                        .font(.headline.weight(.bold))
+                    Spacer(minLength: 8)
+                    Text("↗")
+                        .font(.caption.weight(.black))
+                }
+                .foregroundStyle(Routes05Tokens.accentInk)
+                Spacer(minLength: 3)
                 Text(destination.title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(Routes05Tokens.ink)
+                    .font(.headline.weight(.black))
+                    .foregroundStyle(Routes05Tokens.accentInk)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
-            .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: OrbitRadius.card))
-            .overlay(RoundedRectangle(cornerRadius: OrbitRadius.card).stroke(Routes05Tokens.rule, lineWidth: 1))
+            .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
+            .background(tint)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.5))
+            .shadow(color: Routes05Tokens.ink, radius: 0, x: 4, y: 4)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(destination.title)
