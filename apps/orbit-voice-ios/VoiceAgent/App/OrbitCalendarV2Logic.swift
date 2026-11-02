@@ -78,6 +78,23 @@ enum OrbitCalendarV2Logic {
         event.id
     }
 
+    static func eligibleLaterEventCount<Event: OrbitCalendarV2EventLike>(
+        _ events: [Event],
+        after boundary: Date,
+        now: Date,
+        sourceIDs: Set<String>,
+        excluding excludedKeys: Set<String> = []
+    ) -> Int {
+        Set(events.compactMap { event -> String? in
+            let sourceID = event.sourceIdentifier ?? event.sourceType
+            guard sourceIDs.contains(sourceID),
+                  event.startsAt >= boundary,
+                  event.endsAt > now,
+                  !excludedKeys.contains(eventKey(event)) else { return nil }
+            return eventKey(event)
+        }).count
+    }
+
     /// Partitions the timeline by local calendar periods. A spanning event is
     /// assigned to its first visible section, so no event identity repeats.
     static func timeline<Event: OrbitCalendarV2EventLike>(

@@ -665,23 +665,14 @@ final class MainProductAPI {
         excludingEventKeys: Set<String> = [],
         maxWindows: Int = 4
     ) async throws -> OrbitCalendarUpcomingResult {
+        guard !eligibleSourceIDs.isEmpty else {
+            return OrbitCalendarUpcomingResult(events: [], coveredThrough: now, windowsRequested: 0, reachedFive: false, eligibleEventCount: 0)
+        }
+
         var from = now
         var collected: [OrbitCalendarEvent] = []
         var coveredThrough = now
         var windows = 0
-
-        func eligibleCount(in events: [OrbitCalendarEvent]) -> Int {
-            let ids = events.compactMap { event -> String? in
-                let sourceID = event.sourceIdentifier ?? event.sourceType
-                let sourceIsEligible = eligibleSourceIDs.isEmpty || eligibleSourceIDs.contains(sourceID)
-                guard event.startsAt >= boundary,
-                      event.endsAt > now,
-                      sourceIsEligible,
-                      !excludingEventKeys.contains(event.id) else { return nil }
-                return event.id
-            }
-            return Set(ids).count
-        }
 
         for _ in 0..<max(1, min(maxWindows, 4)) {
             guard let to = Calendar.current.date(byAdding: .month, value: 3, to: from) else { break }
@@ -699,7 +690,13 @@ final class MainProductAPI {
                 if $0.startsAt != $1.startsAt { return $0.startsAt < $1.startsAt }
                 return $0.id < $1.id
             }
-            let eligibleEvents = eligibleCount(in: sorted)
+            let eligibleEvents = OrbitCalendarV2Logic.eligibleLaterEventCount(
+                sorted,
+                after: boundary,
+                now: now,
+                sourceIDs: eligibleSourceIDs,
+                excluding: excludingEventKeys
+            )
             if eligibleEvents >= 5 {
                 return OrbitCalendarUpcomingResult(events: sorted, coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: true, eligibleEventCount: eligibleEvents)
             }
@@ -710,7 +707,19 @@ final class MainProductAPI {
             if $0.startsAt != $1.startsAt { return $0.startsAt < $1.startsAt }
             return $0.id < $1.id
         }
-        return OrbitCalendarUpcomingResult(events: sorted, coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: false, eligibleEventCount: eligibleCount(in: sorted))
+        return OrbitCalendarUpcomingResult(
+            events: sorted,
+            coveredThrough: coveredThrough,
+            windowsRequested: windows,
+            reachedFive: false,
+            eligibleEventCount: OrbitCalendarV2Logic.eligibleLaterEventCount(
+                sorted,
+                after: boundary,
+                now: now,
+                sourceIDs: eligibleSourceIDs,
+                excluding: excludingEventKeys
+            )
+        )
     }
 
     func calendarConnections() async throws -> [OrbitCalendarConnection] {

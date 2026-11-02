@@ -73,6 +73,10 @@ struct OrbitCalendarV2LogicTests {
         let iso = ISO8601DateFormatter()
         precondition(timeline.nextWeek.map(\.id) == ["next-week", "before-boundary"], "next-week section includes the full local week; got \(timeline.nextWeek.map(\.id)), current week got \(timeline.thisWeek.map(\.id)), later got \(timeline.later.map(\.id)), interval \(iso.string(from: nextWeek.start))..<\(iso.string(from: nextWeek.end)), boundary event \(iso.string(from: timelineEvents[4].startsAt))..<\(iso.string(from: timelineEvents[4].endsAt))")
         precondition(timeline.later.map(\.id) == ["after-1", "after-2", "after-3", "after-4", "after-5"], "later section has five chronological events starting at the exclusive next-week boundary")
+        precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: []).isZero, "no selected sources produce no eligible later events")
+        precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["family"]) == 6, "later-event coverage counts selected sources only")
+        precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["family"], excluding: ["after-1"]) == 5, "selected-date event IDs are excluded from later-event coverage")
+        precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["unknown"]) == 0, "unselected sources do not inflate later-event coverage")
         let sectionKeys = timeline.today + timeline.thisWeek + timeline.nextWeek + timeline.later
         precondition(Set(sectionKeys.map(OrbitCalendarV2Logic.eventKey)).count == sectionKeys.count, "event identities never repeat across timeline sections")
         let selectedExclusion = OrbitCalendarV2Logic.timeline(timelineEvents, now: today, calendar: calendar, excluding: [OrbitCalendarV2Logic.eventKey(timelineEvents[0])])
