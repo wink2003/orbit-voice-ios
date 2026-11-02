@@ -553,7 +553,7 @@ struct SchoolTasksView: View {
 
     @ViewBuilder private func sourceLinks(for message: OrbitSchoolBrainMessage) -> some View {
         if !message.sourceRefs.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(Array(message.sourceRefs.enumerated()), id: \.offset) { _, ref in if let id = ref["id"], let type = ref["type"], ["letter", "message"].contains(type) { NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { Label(type == "letter" ? "Лист" : "Повідомлення", systemImage: type == "letter" ? "envelope" : "message") }.buttonStyle(.bordered) } } } }
+            ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(Array(message.sourceRefs.enumerated()), id: \.offset) { _, ref in if let id = ref["id"], let type = ref["type"], ["letter", "message"].contains(type) { NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { Label(type == "letter" ? "Лист" : "Повідомлення", systemImage: type == "letter" ? "envelope" : "message") }.buttonStyle(.bordered).tint(Routes05Tokens.blue) } } } }
         }
     }
 
@@ -568,7 +568,7 @@ struct SchoolTasksView: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(item.title).font(.headline)
             if !item.detail.isEmpty { Text(item.detail).fixedSize(horizontal: false, vertical: true) }
-            if !item.sourceRefs.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(item.sourceRefs, id: \.self) { source in if source.type == "calendar" { NavigationLink { SchoolCalendarView() } label: { Label("Календар", systemImage: "calendar") }.buttonStyle(.bordered) } else { NavigationLink { SchoolDetailLoaderView(itemID: source.id) } label: { Label(source.type == "message" ? "Повідомлення" : "Лист", systemImage: source.type == "message" ? "message" : "envelope") }.buttonStyle(.bordered) } } } } }
+            if !item.sourceRefs.isEmpty { ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(item.sourceRefs, id: \.self) { source in if source.type == "calendar" { NavigationLink { SchoolCalendarView() } label: { Label("Календар", systemImage: "calendar") }.buttonStyle(.bordered).tint(Routes05Tokens.blue) } else { NavigationLink { SchoolDetailLoaderView(itemID: source.id) } label: { Label(source.type == "message" ? "Повідомлення" : "Лист", systemImage: source.type == "message" ? "message" : "envelope") }.buttonStyle(.bordered).tint(Routes05Tokens.blue) } } } } }
         }
     }
 
@@ -700,7 +700,9 @@ struct SchoolDetailView: View {
                     ForEach(Array(SchoolTranslatedBody.paragraphs(from: body).enumerated()), id: \.offset) { _, paragraph in
                         Text(verbatim: paragraph).font(.system(size: enlargedText ? 19 : 16)).lineSpacing(enlargedText ? 7 : 4).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
-                    Button { UIPasteboard.general.string = body; copyNotice = true } label: { Label("Копіювати", systemImage: "doc.on.doc") }.frame(minHeight: OrbitSpacing.minTarget)
+                    Button { UIPasteboard.general.string = body; copyNotice = true } label: { Label("Копіювати", systemImage: "doc.on.doc") }
+                        .foregroundStyle(Routes05Tokens.blue)
+                        .frame(minHeight: OrbitSpacing.minTarget)
                 }
                 .padding(15).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.2))
                 detailHeader("Короткий підсумок")

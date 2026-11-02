@@ -1070,12 +1070,14 @@ final class SchoolHubV2Store {
     init(fixture: Routes05SchoolFixture) {
         let observed = Date(timeIntervalSince1970: 1_729_555_200)
         let freshness = OrbitSchoolHubV2Freshness(state: "READY_WITH_DATA", sourceStates: ["schulmanager": "READY"], observedAt: observed, source: "schulmanager", fingerprint: "routes05")
-        let coverage = OrbitSchoolHubV2Coverage(state: "READY_WITH_DATA", rowCount: 2, sourceStatus: "READY", sourceFingerprint: "routes05", successfulSyncAt: observed, observedAt: observed, errorCode: nil, startDayKey: "2026-10-19", endDayKey: "2026-10-25")
+        let fixtureWeekStart = SchoolHubV2Store.currentWeekStart()
+        let fixtureWeekEnd = SchoolHubLogic.addDays(7, to: fixtureWeekStart) ?? fixtureWeekStart
+        let coverage = OrbitSchoolHubV2Coverage(state: "READY_WITH_DATA", rowCount: 2, sourceStatus: "READY", sourceFingerprint: "routes05", successfulSyncAt: observed, observedAt: observed, errorCode: nil, startDayKey: fixtureWeekStart, endDayKey: fixtureWeekEnd)
         let exam = OrbitSchoolHubV2Exam(id: "routes05-exam", subject: "Deutsch", dayKey: "2026-10-24", lessonStart: 3, lessonEnd: 4, startsAt: "2026-10-24T10:00:00+02:00", room: "5F", teacher: "M. Bauer", group: nil, groupName: nil, startClassHourNumber: 3, typeName: "Klassenarbeit", typeColor: "#C9B8FF", typeVisibleForStudents: true, comment: "Projektwoche", status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
         let examNextWeek = OrbitSchoolHubV2Exam(id: "routes05-exam-next", subject: "Mathematik", dayKey: "2026-10-30", lessonStart: nil, lessonEnd: nil, startsAt: nil, room: nil, teacher: "M. Bauer", group: nil, groupName: nil, startClassHourNumber: nil, typeName: "Test", typeColor: "#C9B8FF", typeVisibleForStudents: true, comment: nil, status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
         let examFollowingWeek = OrbitSchoolHubV2Exam(id: "routes05-exam-following", subject: "Englisch", dayKey: "2026-11-05", lessonStart: nil, lessonEnd: nil, startsAt: nil, room: "B12", teacher: nil, group: nil, groupName: nil, startClassHourNumber: nil, typeName: nil, typeColor: nil, typeVisibleForStudents: true, comment: nil, status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
         let fixtureExams = [exam, examNextWeek, examFollowingWeek]
-        let lessonDays = ["2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23"]
+        let lessonDays = (0..<5).compactMap { SchoolHubLogic.addDays($0, to: fixtureWeekStart) }
         let subjects = ["Deutsch", "Mathematik", "Sport", "Englisch", "Biologie"]
         let lessons = lessonDays.enumerated().map { index, day in
             OrbitSchoolHubV2TimetableEntry(id: "routes05-lesson-\(index)", dayKey: day, localDate: day, lessonIndex: index + 1, subject: subjects[index], teacher: "M. Bauer", room: "5F", group: nil, groupName: nil, startsAt: "\(day)T08:00:00+02:00", endsAt: "\(day)T08:45:00+02:00", startsAtLocal: String(format: "%02d:00", 8 + index), endsAtLocal: String(format: "%02d:45", 8 + index), classHourNumber: index + 1, isCancelled: false, originalLessonCount: 1, teachers: [OrbitSchoolHubV2Teacher(abbreviation: "MB")], groups: [OrbitSchoolHubV2Group(name: "5F")], status: "scheduled", kind: "lesson", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
@@ -1129,7 +1131,7 @@ final class SchoolHubV2Store {
 
     func shiftWeek(_ days: Int) { weekStart = SchoolHubLogic.addDays(days, to: weekStart) ?? weekStart }
 
-    private static func currentWeekStart() -> String {
+    static func currentWeekStart() -> String {
         let calendar = Calendar(identifier: .iso8601)
         let today = SchoolHubLogic.dayKey(of: Date())
         guard let date = SchoolHubLogic.date(fromDayKey: today), let monday = calendar.dateInterval(of: .weekOfYear, for: date)?.start else { return today }
@@ -2157,7 +2159,7 @@ private struct SchoolTaskDetailView: View {
                 if task.kind == "source" {
                     detailCard {
                         Text("03  ПОВ’ЯЗАНИЙ ЛИСТ").font(.caption.weight(.black).monospaced())
-                        if let source { NavigationLink { SchoolDetailView(item: source) } label: { Label("Відкрити лист або повідомлення", systemImage: source.type == "letter" ? "envelope.open" : "message") }.frame(minHeight: OrbitSpacing.minTarget) }
+                        if let source { NavigationLink { SchoolDetailView(item: source) } label: { Label("Відкрити лист або повідомлення", systemImage: source.type == "letter" ? "envelope.open" : "message") }.foregroundStyle(Routes05Tokens.blue).frame(minHeight: OrbitSpacing.minTarget) }
                         else { Label("Пов’язаний лист зараз недоступний", systemImage: "exclamationmark.triangle").foregroundStyle(.secondary) }
                     }
                 }
@@ -2280,6 +2282,7 @@ private struct SchoolTaskInlinePreparation: View {
                         Label("Відкрити повний чекліст", systemImage: "arrow.up.right")
                             .font(.callout.weight(.bold))
                     }
+                    .foregroundStyle(Routes05Tokens.blue)
                     .frame(minHeight: OrbitSpacing.minTarget)
                     if let entityID, !entityID.isEmpty {
                         NavigationLink {
@@ -2288,6 +2291,7 @@ private struct SchoolTaskInlinePreparation: View {
                             Label("Усі нотатки", systemImage: "note.text")
                                 .font(.callout.weight(.bold))
                         }
+                        .foregroundStyle(Routes05Tokens.blue)
                         .frame(minHeight: OrbitSpacing.minTarget)
                     }
                 }
@@ -2321,6 +2325,7 @@ private struct SchoolTaskInlinePreparation: View {
                 else { Text("Нотаток ще немає").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
                 TextField("Додати нотатку…", text: $draft, axis: .vertical).lineLimit(1...3)
                 Button { createNote(entityID: entityID) } label: { HStack { Text("Зберегти нотатку"); if saving { Spacer(); ProgressView() } } }
+                    .foregroundStyle(Routes05Tokens.blue)
                     .disabled(saving || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .frame(minHeight: OrbitSpacing.minTarget)
             }
