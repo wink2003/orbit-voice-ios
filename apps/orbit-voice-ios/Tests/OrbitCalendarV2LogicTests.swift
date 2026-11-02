@@ -72,7 +72,7 @@ struct OrbitCalendarV2LogicTests {
         precondition(timeline.thisWeek.map(\.id) == ["week", "spans-weeks"], "current-week section handles cross-week events once")
         let iso = ISO8601DateFormatter()
         precondition(timeline.nextWeek.map(\.id) == ["next-week", "before-boundary"], "next-week section includes the full local week; got \(timeline.nextWeek.map(\.id)), current week got \(timeline.thisWeek.map(\.id)), later got \(timeline.later.map(\.id)), interval \(iso.string(from: nextWeek.start))..<\(iso.string(from: nextWeek.end)), boundary event \(iso.string(from: timelineEvents[4].startsAt))..<\(iso.string(from: timelineEvents[4].endsAt))")
-        precondition(timeline.later.map(\.id) == ["after-2", "after-3", "after-4", "after-5", "after-6"], "later section has five chronological events strictly after next week")
+        precondition(timeline.later.map(\.id) == ["after-1", "after-2", "after-3", "after-4", "after-5"], "later section has five chronological events starting at the exclusive next-week boundary")
         let sectionKeys = timeline.today + timeline.thisWeek + timeline.nextWeek + timeline.later
         precondition(Set(sectionKeys.map(OrbitCalendarV2Logic.eventKey)).count == sectionKeys.count, "event identities never repeat across timeline sections")
         let selectedExclusion = OrbitCalendarV2Logic.timeline(timelineEvents, now: today, calendar: calendar, excluding: [OrbitCalendarV2Logic.eventKey(timelineEvents[0])])
