@@ -404,12 +404,13 @@ struct OrbitCalendarUpcomingResult: Hashable {
     let coveredThrough: Date
     let windowsRequested: Int
     let reachedFive: Bool
+    let eligibleEventCount: Int
 
     var coverageDescription: String {
         if reachedFive {
-            return "Показано 5 найближчих подій; пошук зупинено після достатнього покриття."
+            return "Охоплено до \(coveredThrough.formatted(date: .abbreviated, time: .omitted)); для «Далі» знайдено щонайменше 5 подій."
         }
-        return "Знайдено \(events.count) подій до \(coveredThrough.formatted(date: .abbreviated, time: .omitted)). Сервер не повідомляє, що джерело повністю вичерпане; синхронізацію може бути неповною."
+        return "Знайдено \(eligibleEventCount) подій для «Далі» до \(coveredThrough.formatted(date: .abbreviated, time: .omitted)). Сервер не повідомляє, що джерело повністю вичерпане; синхронізацію може бути неповною."
     }
 }
 
@@ -654,14 +655,33 @@ final class MainProductAPI {
         return response.events
     }
 
-    /// Bounded lookahead for the independent upcoming queue. The existing
-    /// endpoint is windowed, so query four 3-month pages at most and stop once
-    /// five eligible events are known. This never changes the visible month.
-    func upcomingCalendarEvents(now: Date = .now, maxWindows: Int = 4) async throws -> OrbitCalendarUpcomingResult {
+    /// Bounded lookahead for the timeline queue. Pages remain three months
+    /// wide; retain all nearer events for the week sections and continue until
+    /// five events at or after the requested boundary are known.
+    func upcomingCalendarEvents(
+        now: Date = .now,
+        after boundary: Date,
+        eligibleSourceIDs: Set<String>,
+        excludingEventKeys: Set<String> = [],
+        maxWindows: Int = 4
+    ) async throws -> OrbitCalendarUpcomingResult {
         var from = now
         var collected: [OrbitCalendarEvent] = []
         var coveredThrough = now
         var windows = 0
+
+        func eligibleCount(in events: [OrbitCalendarEvent]) -> Int {
+            let ids = events.compactMap { event -> String? in
+                let sourceID = event.sourceIdentifier ?? event.sourceType
+                let sourceIsEligible = eligibleSourceIDs.isEmpty || eligibleSourceIDs.contains(sourceID)
+                guard event.startsAt >= boundary,
+                      event.endsAt > now,
+                      sourceIsEligible,
+                      !excludingEventKeys.contains(event.id) else { return nil }
+                return event.id
+            }
+            return Set(ids).count
+        }
 
         for _ in 0..<max(1, min(maxWindows, 4)) {
             guard let to = Calendar.current.date(byAdding: .month, value: 3, to: from) else { break }
@@ -679,8 +699,9 @@ final class MainProductAPI {
                 if $0.startsAt != $1.startsAt { return $0.startsAt < $1.startsAt }
                 return $0.id < $1.id
             }
-            if sorted.count >= 5 {
-                return OrbitCalendarUpcomingResult(events: Array(sorted.prefix(5)), coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: true)
+            let eligibleEvents = eligibleCount(in: sorted)
+            if eligibleEvents >= 5 {
+                return OrbitCalendarUpcomingResult(events: sorted, coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: true, eligibleEventCount: eligibleEvents)
             }
             from = to
         }
@@ -689,7 +710,7 @@ final class MainProductAPI {
             if $0.startsAt != $1.startsAt { return $0.startsAt < $1.startsAt }
             return $0.id < $1.id
         }
-        return OrbitCalendarUpcomingResult(events: Array(sorted.prefix(5)), coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: false)
+        return OrbitCalendarUpcomingResult(events: sorted, coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: false, eligibleEventCount: eligibleCount(in: sorted))
     }
 
     func calendarConnections() async throws -> [OrbitCalendarConnection] {

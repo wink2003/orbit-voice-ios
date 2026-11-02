@@ -303,7 +303,7 @@ struct OrbitMoreView: View {
     @ViewBuilder
     private func screen(for destination: OrbitMoreDestination) -> some View {
         switch destination {
-        case .calendar: OrbitCalendarView()
+        case .calendar: OrbitCalendarView(origin: .more)
         case .family: FamilyHubView()
         case .contacts: OrbitContactsView()
         case .integrations: OrbitToolsView()

@@ -6,6 +6,8 @@ struct OrbitNavigationTests {
         precondition(OrbitNavigation.visibleTabs().map(\.title) == ["Головна", "Orbit", "Школа", "Інше"], "four daily destinations in production order")
         precondition(OrbitNavigation.visibleTabs().count == 4, "four primary destinations")
         precondition(OrbitNavigation.defaultTab == .home, "default tab is Home")
+        precondition(OrbitCalendarRouteOrigin.more.showsBackControl, "Calendar opened from More has a Back control")
+        precondition(!OrbitCalendarRouteOrigin.root.showsBackControl, "Calendar at a root tab has no redundant Back control")
         precondition(!OrbitNavigation.moreDestinations(isOwner: false).contains(.admin), "admin hidden for non-owner")
         precondition(OrbitNavigation.moreDestinations(isOwner: true).contains(.admin), "admin shown for owner")
         precondition(Set(OrbitNavigation.moreDestinations(isOwner: true)) == Set(OrbitMoreDestination.allCases), "owner More routes remain complete and unique")
