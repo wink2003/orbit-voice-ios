@@ -31,7 +31,11 @@ private func schoolLocalizedInstant(_ date: Date) -> String {
     return formatter.string(from: date)
 }
 private func schoolLocalizedSourceDate(_ date: Date) -> String {
-    date.formatted(.dateTime.year().month(.wide).day().hour().minute().locale(Locale(identifier: "uk_UA")).timeZone(SchoolHubLogic.schoolTimeZone))
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "uk_UA")
+    formatter.timeZone = SchoolHubLogic.schoolTimeZone
+    formatter.dateFormat = "d MMMM yyyy 'о' HH:mm"
+    return formatter.string(from: date)
 }
 private func schoolAllDayRange(_ event: OrbitSchoolEvent) -> String {
     guard let start = event.startsAt else { return "Дата не визначена" }
@@ -813,9 +817,12 @@ struct SchoolDetailView: View {
     }
     private func schoolTimedDateRange(_ event: OrbitSchoolEvent) -> String {
         guard let start = event.startsAt else { return "Дата не визначена" }
-        let format: Date.FormatStyle = .dateTime.year().month(.wide).day().hour().minute().locale(Locale(identifier: "uk_UA")).timeZone(SchoolHubLogic.schoolTimeZone)
-        if let end = event.endsAt, end != start { return "\(start.formatted(format)) – \(end.formatted(format))" }
-        return start.formatted(format)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "uk_UA")
+        formatter.timeZone = SchoolHubLogic.schoolTimeZone
+        formatter.dateFormat = "d MMMM yyyy 'о' HH:mm"
+        if let end = event.endsAt, end != start { return "\(formatter.string(from: start)) – \(formatter.string(from: end))" }
+        return formatter.string(from: start)
     }
     private var calendarPreviewMessage: String { guard let event = pendingCalendarEvent else { return "" }; var lines = [event.title]; if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location, !location.isEmpty { lines.append(location) }; return lines.joined(separator: "\n") }
     private func add(_ event: OrbitSchoolEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false); if preview.duplicate == true { calendarMessage = "Подію вже додано." } else if preview.requiresConfirmation == true { pendingCalendarEvent = event } else { calendarMessage = "Не вдалося підготувати подію." } } catch { calendarMessage = "Не вдалося додати подію." } }
