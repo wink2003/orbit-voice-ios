@@ -92,7 +92,8 @@ struct NovaShellView: View {
         case .home, .today: OrbitTodayView(open: select, displayName: nil)
         case .school: SchoolHubView()
         case .orbit, .chats: OrbitChatsView()
-        case .family, .more: MainOrbit3FamilyView()
+        case .family: MainOrbit3FamilyView()
+        case .more: OrbitMoreView()
         case .calendar: OrbitCalendarView()
         }
     }
@@ -113,7 +114,7 @@ private struct DockMetrics: Equatable, Sendable {
 
 private struct NovaDock: View {
     @Binding var selection: OrbitMainTab
-    private let items: [OrbitMainTab] = [.home, .orbit, .school, .family]
+    private let items: [OrbitMainTab] = [.home, .orbit, .school, .more]
 
     var body: some View {
         HStack(spacing: 6) {
