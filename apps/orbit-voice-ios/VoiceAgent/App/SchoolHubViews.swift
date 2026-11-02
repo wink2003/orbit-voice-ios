@@ -336,8 +336,10 @@ private struct SchoolHubV2View: View {
         }
         .refreshable { await store.load() }
 #if DEBUG
-        .onAppear {
-            if initialSection == .exams { Routes05DebugCapture.markReady(route: "exams") }
+        .task(id: "exams-\(store.phase)-\(store.exams.count)") {
+            guard initialSection == .exams, store.phase == .ready, !store.exams.isEmpty else { return }
+            await Task.yield()
+            Routes05DebugCapture.markReady(route: "exams", contentCount: store.exams.count)
         }
 #endif
     }

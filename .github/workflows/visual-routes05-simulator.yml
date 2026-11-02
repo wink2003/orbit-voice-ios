@@ -8,6 +8,16 @@ on:
         required: false
         default: false
         type: boolean
+      simulator_model:
+        description: 'Requested simulator model; iPhone 12 creates an isolated instance when needed'
+        required: false
+        default: ''
+        type: string
+      require_390:
+        description: 'Require DEBUG viewport metadata of exactly 390 x 844 points'
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - codex/routes05-batch1
@@ -34,7 +44,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          device_line=$(xcrun simctl list devices available | awk '/iPhone 12[^()]*\(/ { print; exit }')
+          requested_model="${{ inputs.simulator_model }}"
+          device_line=""
+          if [ -n "$requested_model" ]; then
+            device_line=$(xcrun simctl list devices available | awk -v model="$requested_model" '$0 ~ model && $0 ~ /\(/ { print; exit }')
+          else
+            device_line=$(xcrun simctl list devices available | awk '/iPhone 12[^()]*\(/ { print; exit }')
+          fi
+          created=false
+          if [ -z "$device_line" ] && [ "$requested_model" = "iPhone 12" ]; then
+            device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-12"
+            runtime_id=$(xcrun simctl list runtimes available | sed -nE 's/.* - (com.apple.CoreSimulator.SimRuntime.[^ ]+).*/\1/p' | awk '/iOS/ { print; exit }')
+            test -n "$runtime_id"
+            name="Orbit Acceptance iPhone 12"
+            udid=$(xcrun simctl create "$name" "$device_type" "$runtime_id")
+            created=true
+            echo "udid=$udid" >> "$GITHUB_OUTPUT"
+            echo "name=$name" >> "$GITHUB_OUTPUT"
+            echo "created=$created" >> "$GITHUB_OUTPUT"
+            printf 'Created isolated simulator: %s (%s) runtime=%s\n' "$name" "$udid" "$runtime_id"
+            exit 0
+          fi
           if [ -z "$device_line" ]; then
             device_line=$(xcrun simctl list devices available | awk '/iPhone [^()]*\(/ { print; exit }')
           fi
@@ -44,6 +74,7 @@ jobs:
           runtime=$(xcrun simctl list devices available | sed -n '1p' | tr -d '\r')
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
           echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "created=$created" >> "$GITHUB_OUTPUT"
           printf 'Selected simulator: %s (%s)\n' "$name" "$udid"
           printf 'Available runtimes:\n%s\n' "$runtime"
 
@@ -110,6 +141,22 @@ jobs:
               sleep 1
             done
             return 1
+          }
+
+          verify_required_viewport() {
+            local ready_json="$1"
+            if [ "${{ inputs.require_390 }}" = "true" ]; then
+              python3 - "$ready_json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              payload = json.load(handle)
+          width = payload.get("viewportWidth")
+          height = payload.get("viewportHeight")
+          if width != 390.0 or height != 844.0:
+              raise SystemExit(f"required 390x844 viewport, got {width}x{height}")
+          print(f"verified viewport={width}x{height}")
+          PY
+            fi
           }
 
           if [ "${{ inputs.targeted_only }}" != "true" ]; then
@@ -184,6 +231,9 @@ jobs:
                   echo "readiness timeout for $screen/$appearance" >&2
                   exit 1
                 fi
+                ready_json="$out/school-detail-${GITHUB_RUN_ID}-school-$screen-$appearance.ready.json"
+                if [ ! -f "$ready_json" ]; then ready_json="$out/school-task-detail-${GITHUB_RUN_ID}-school-$screen-$appearance.ready.json"; fi
+                verify_required_viewport "$ready_json"
                 file="$out/routes05-$screen-$appearance.png"
                 perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"
                 test -s "$file"
@@ -201,6 +251,9 @@ jobs:
                   echo "bottom readiness timeout for $screen/$appearance" >&2
                   exit 1
                 fi
+                ready_json="$out/school-detail-${GITHUB_RUN_ID}-school-$screen-$appearance-bottom.ready.json"
+                if [ ! -f "$ready_json" ]; then ready_json="$out/school-task-detail-${GITHUB_RUN_ID}-school-$screen-$appearance-bottom.ready.json"; fi
+                verify_required_viewport "$ready_json"
                 bottom_file="$out/routes05-$screen-$appearance-bottom.png"
                 perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$bottom_file"
                 test -s "$bottom_file"
@@ -231,7 +284,8 @@ jobs:
                   continue
                 fi
                 if ! perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$file"; then continue; fi
-                if python3 .github/scripts/routes05_validate_png.py "$file" > "$out/$screen-$appearance.png-check" 2>&1; then
+                ready_json="$out/$screen-$capture_id.ready.json"
+                if python3 .github/scripts/routes05_validate_png.py "$file" --route "$screen" --ready-json "$ready_json" > "$out/$screen-$appearance.png-check" 2>&1; then
                   captured=true
                   break
                 fi
@@ -363,3 +417,9 @@ jobs:
           path: ${{ runner.temp }}/orbit-routes05-screenshots/school-detail/
           retention-days: 14
           if-no-files-found: error
+
+      - name: Delete isolated simulator
+        if: always() && steps.simulator.outputs.created == 'true'
+        env:
+          DEVICE_UDID: ${{ steps.simulator.outputs.udid }}
+        run: xcrun simctl delete "$DEVICE_UDID"
