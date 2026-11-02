@@ -69,13 +69,14 @@ struct OrbitCalendarV2LogicTests {
         ]
         let timeline = OrbitCalendarV2Logic.timeline(timelineEvents + [timelineEvents[1]], now: today, calendar: calendar)
         precondition(timeline.today.map(\.id) == ["today"], "today section contains today's event")
-        precondition(timeline.thisWeek.map(\.id) == ["week", "spans-weeks"], "current-week section handles cross-week events once")
+        precondition(timeline.thisWeek.map(OrbitCalendarV2Logic.eventKey) == ["family:week", "family:spans-weeks"], "family event remains in the current-week section")
         let iso = ISO8601DateFormatter()
-        precondition(timeline.nextWeek.map(\.id) == ["next-week", "before-boundary"], "next-week section includes the full local week; got \(timeline.nextWeek.map(\.id)), current week got \(timeline.thisWeek.map(\.id)), later got \(timeline.later.map(\.id)), interval \(iso.string(from: nextWeek.start))..<\(iso.string(from: nextWeek.end)), boundary event \(iso.string(from: timelineEvents[4].startsAt))..<\(iso.string(from: timelineEvents[4].endsAt))")
+        precondition(timeline.nextWeek.map(OrbitCalendarV2Logic.eventKey) == ["icloud:week", "family:next-week", "family:before-boundary"], "iCloud event with a colliding raw ID remains in next week; got \(timeline.nextWeek.map(OrbitCalendarV2Logic.eventKey)), current week got \(timeline.thisWeek.map(OrbitCalendarV2Logic.eventKey)), later got \(timeline.later.map(\.id)), interval \(iso.string(from: nextWeek.start))..<\(iso.string(from: nextWeek.end)), boundary event \(iso.string(from: timelineEvents[4].startsAt))..<\(iso.string(from: timelineEvents[4].endsAt))")
         precondition(timeline.later.map(\.id) == ["after-1", "after-2", "after-3", "after-4", "after-5"], "later section has five chronological events starting at the exclusive next-week boundary")
+        precondition(timeline.thisWeek.filter { OrbitCalendarV2Logic.eventKey($0) == "family:week" }.count == 1, "duplicate instances of one canonical event are assigned only once")
         precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: []) == 0, "no selected sources produce no eligible later events")
         precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["family"]) == 6, "later-event coverage counts selected sources only")
-        precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["family"], excluding: ["after-1"]) == 5, "selected-date event IDs are excluded from later-event coverage")
+        precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["family"], excluding: ["family:after-1"]) == 5, "selected-date canonical event identities are excluded from later-event coverage")
         precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["unknown"]) == 0, "unselected sources do not inflate later-event coverage")
         let sectionKeys = timeline.today + timeline.thisWeek + timeline.nextWeek + timeline.later
         precondition(Set(sectionKeys.map(OrbitCalendarV2Logic.eventKey)).count == sectionKeys.count, "event identities never repeat across timeline sections")
@@ -83,6 +84,18 @@ struct OrbitCalendarV2LogicTests {
         precondition(selectedExclusion.today.isEmpty, "selected-date event IDs are excluded from subsequent timeline sections")
         let empty = OrbitCalendarV2Logic.timeline([FixtureEvent](), now: today, calendar: calendar)
         precondition(empty.today.isEmpty && empty.thisWeek.isEmpty && empty.nextWeek.isEmpty && empty.later.isEmpty, "empty calendar preserves empty section state")
+        precondition(OrbitCalendarV2Logic.nextEvent([FixtureEvent](), now: today).map(\.id) == nil, "empty sources keep the established no-upcoming-event preview")
+
+        let previewEarlier = event("next-week-preview", at(2026, 11, 3, 9), at(2026, 11, 3, 10))
+        let previewLater = event("later-preview", at(2026, 11, 9, 9), at(2026, 11, 9, 10))
+        let previewExpired = event("expired-preview", at(2026, 10, 27, 9), at(2026, 10, 28, 12))
+        let previewQueue = OrbitCalendarV2Logic.timeline([previewEarlier, previewLater, previewExpired], now: today, calendar: calendar)
+        let preview = OrbitCalendarV2Logic.nextEvent(
+            previewQueue.today + previewQueue.thisWeek + previewQueue.nextWeek + previewQueue.later,
+            now: today
+        )
+        precondition(preview?.id == "next-week-preview", "Today preview chooses the nearer Next Week event instead of Later[0]")
+        precondition(OrbitCalendarV2Logic.nextEvent([previewExpired], now: today).map(\.id) == nil, "event ending at local now is not presented as upcoming")
 
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let duplicate = FixtureEvent(id: "same", startsAt: now.addingTimeInterval(600), endsAt: now.addingTimeInterval(1200), sourceType: "external", sourceIdentifier: "a")

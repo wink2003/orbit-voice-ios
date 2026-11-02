@@ -75,7 +75,16 @@ enum OrbitCalendarV2Logic {
     }
 
     static func eventKey<Event: OrbitCalendarV2EventLike>(_ event: Event) -> String {
-        event.id
+        sourceEventKey(event)
+    }
+
+    /// Returns the earliest event that is still in progress or upcoming.
+    /// Callers choose the eligible sections/sources before passing events.
+    static func nextEvent<Event: OrbitCalendarV2EventLike>(_ events: [Event], now: Date) -> Event? {
+        deduplicated(events)
+            .filter { $0.endsAt > now }
+            .sorted(by: eventOrder)
+            .first
     }
 
     static func eligibleLaterEventCount<Event: OrbitCalendarV2EventLike>(

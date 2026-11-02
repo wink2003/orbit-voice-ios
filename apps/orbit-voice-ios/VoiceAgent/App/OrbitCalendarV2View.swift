@@ -88,6 +88,13 @@ struct OrbitCalendarV2View: View {
 
     private var nextFive: [ConceptCalendarEvent] { timeline.later }
 
+    private var nextPreviewEvent: ConceptCalendarEvent? {
+        OrbitCalendarV2Logic.nextEvent(
+            timeline.today + timeline.thisWeek + timeline.nextWeek + timeline.later,
+            now: referenceDate
+        )
+    }
+
     private var collapsedWeekAnchor: Date { selectedDate ?? weekAnchor }
 
     private var afterNextWeekBoundary: Date {
@@ -208,7 +215,7 @@ struct OrbitCalendarV2View: View {
                          ? "На сьогодні подій немає"
                          : "Подій на сьогодні: \(todaysEvents.count)")
                         .font(.caption)
-                    Text(nextFive.first.map { "Далі: \($0.title)" } ?? "Попереду немає подій")
+                    Text(nextPreviewEvent.map { "Далі: \($0.title)" } ?? "Попереду немає подій")
                         .font(.caption.weight(.medium))
                         .lineLimit(1)
                 }
