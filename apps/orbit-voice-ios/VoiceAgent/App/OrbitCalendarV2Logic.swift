@@ -6,6 +6,11 @@ protocol OrbitCalendarV2EventLike {
     var endsAt: Date { get }
     var sourceType: String { get }
     var sourceIdentifier: String? { get }
+    var occurrenceId: String? { get }
+}
+
+extension OrbitCalendarV2EventLike {
+    var occurrenceId: String? { nil }
 }
 
 enum OrbitCalendarV2Logic {
@@ -74,8 +79,16 @@ enum OrbitCalendarV2Logic {
         return !calendar.isDate(selectedDate, inSameDayAs: today)
     }
 
+    static func laterInterval(now: Date, calendar: Calendar) -> DateInterval? {
+        guard let currentWeek = weekInterval(containing: now, calendar: calendar),
+              let nextWeek = nextWeekInterval(after: currentWeek, calendar: calendar),
+              let horizonEnd = calendar.date(byAdding: .month, value: 1, to: calendar.startOfDay(for: now)),
+              horizonEnd >= nextWeek.end else { return nil }
+        return DateInterval(start: nextWeek.end, end: horizonEnd)
+    }
+
     static func eventKey<Event: OrbitCalendarV2EventLike>(_ event: Event) -> String {
-        sourceEventKey(event)
+        event.occurrenceId ?? sourceEventKey(event)
     }
 
     /// Returns the earliest event that is still in progress or upcoming.
@@ -110,7 +123,8 @@ enum OrbitCalendarV2Logic {
         _ events: [Event],
         now: Date,
         calendar: Calendar,
-        excluding excludedKeys: Set<String> = []
+        excluding excludedKeys: Set<String> = [],
+        laterInterval: DateInterval? = nil
     ) -> Timeline<Event> {
         let unique = deduplicated(events).filter { !excludedKeys.contains(eventKey($0)) }
         var assigned = Set<String>()
@@ -128,7 +142,10 @@ enum OrbitCalendarV2Logic {
         let thisWeek = unique.filter { intersects($0, currentWeek) && assigned.insert(eventKey($0)).inserted }
         let nextWeekEvents = unique.filter { intersects($0, nextWeek) && assigned.insert(eventKey($0)).inserted }
         let laterCandidates = unique
-            .filter { $0.startsAt >= nextWeek.end && $0.endsAt > now && !assigned.contains(eventKey($0)) }
+            .filter { event in
+                event.startsAt >= nextWeek.end && event.endsAt > now && !assigned.contains(eventKey(event)) &&
+                (laterInterval.map { interval in interval.start <= event.startsAt && event.startsAt < interval.end } ?? true)
+            }
             .sorted(by: eventOrder)
         let later = Array(laterCandidates.filter { assigned.insert(eventKey($0)).inserted }.prefix(5))
         return Timeline(today: today.sorted(by: eventOrder), thisWeek: thisWeek.sorted(by: eventOrder), nextWeek: nextWeekEvents.sorted(by: eventOrder), later: later)
@@ -137,7 +154,7 @@ enum OrbitCalendarV2Logic {
     static func deduplicated<Event: OrbitCalendarV2EventLike>(_ events: [Event]) -> [Event] {
         var seen = Set<String>()
         return events.filter { event in
-            seen.insert(sourceEventKey(event)).inserted
+            seen.insert(eventKey(event)).inserted
         }
     }
 
@@ -151,7 +168,7 @@ enum OrbitCalendarV2Logic {
     private static func eventOrder<Event: OrbitCalendarV2EventLike>(_ lhs: Event, _ rhs: Event) -> Bool {
         if lhs.startsAt != rhs.startsAt { return lhs.startsAt < rhs.startsAt }
         if lhs.id != rhs.id { return lhs.id < rhs.id }
-        return sourceEventKey(lhs) < sourceEventKey(rhs)
+        return eventKey(lhs) < eventKey(rhs)
     }
 
     private static func sourceEventKey<Event: OrbitCalendarV2EventLike>(_ event: Event) -> String {

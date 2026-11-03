@@ -34,6 +34,7 @@ struct OrbitCalendarV2View: View {
     @State private var liveEvents: [OrbitCalendarEvent] = []
     @State private var people: [ConceptCalendarPerson] = []
     @State private var coverageText: String?
+    @State private var coverageComplete = false
     @State private var isLoading = true
     @State private var loadError: Error?
     @State private var showingSources = false
@@ -79,7 +80,7 @@ struct OrbitCalendarV2View: View {
         if let selectedDate, selectedDateSectionVisible {
             excluded = Set(occurrences(on: selectedDate).map(OrbitCalendarV2Logic.eventKey))
         }
-        return OrbitCalendarV2Logic.timeline(activeEvents, now: referenceDate, calendar: calendar, excluding: excluded)
+        return OrbitCalendarV2Logic.timeline(activeEvents, now: referenceDate, calendar: calendar, excluding: excluded, laterInterval: laterInterval)
     }
 
     private var todaysEvents: [ConceptCalendarEvent] {
@@ -87,6 +88,11 @@ struct OrbitCalendarV2View: View {
     }
 
     private var nextFive: [ConceptCalendarEvent] { timeline.later }
+
+    private var laterInterval: DateInterval {
+        OrbitCalendarV2Logic.laterInterval(now: referenceDate, calendar: calendar)
+            ?? DateInterval(start: afterNextWeekBoundary, end: afterNextWeekBoundary)
+    }
 
     private var nextPreviewEvent: ConceptCalendarEvent? {
         OrbitCalendarV2Logic.nextEvent(
@@ -526,15 +532,15 @@ struct OrbitCalendarV2View: View {
                     .font(.headline.weight(.bold))
                     .foregroundStyle(Routes05Tokens.blue)
             }
-            Text("П’ять найближчих подій після наступного тижня.")
+            Text("До п’яти найраніших подій у межах одного календарного місяця.")
                 .font(.footnote)
                 .foregroundStyle(Routes05Tokens.secondary)
             if nextFive.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Image(systemName: "calendar.badge.checkmark").font(.title2)
-                    Text("Майбутніх подій немає")
+                    Text(coverageComplete ? "Майбутніх подій немає" : "Не вдалося підтвердити повний список")
                         .font(.headline)
-                    Text("Перевірте, які календарі увімкнені.")
+                    Text(coverageComplete ? "Перевірте, які календарі увімкнені." : "Деякі календарі не повернули повні дані.")
                         .font(.subheadline)
                         .foregroundStyle(Routes05Tokens.secondary)
                     Button("Показати календарі") { showingSources = true }
@@ -693,7 +699,8 @@ struct OrbitCalendarV2View: View {
 
     private func eventDetail(_ event: ConceptCalendarEvent) -> some View {
         let live = liveEvents.first {
-            $0.id == event.id && ($0.sourceIdentifier ?? $0.sourceType) == event.sourceID
+            if let occurrenceId = event.occurrenceId { return $0.occurrenceId == occurrenceId }
+            return $0.id == event.id && ($0.sourceIdentifier ?? $0.sourceType) == event.sourceID
         }
         return NavigationStack {
             List {
@@ -738,6 +745,7 @@ struct OrbitCalendarV2View: View {
             liveEvents = []
             people = fixture.people
             coverageText = "DEBUG fixture · synthetic data · API не викликався"
+            coverageComplete = true
             loadError = nil
             isLoading = false
             if debugDetailMode {
@@ -758,10 +766,11 @@ struct OrbitCalendarV2View: View {
             } else {
                 selectedKeys = []
             }
-            let upcoming = try await MainProductAPI.shared.upcomingCalendarEvents(
-                now: referenceDate,
-                after: afterNextWeekBoundary,
-                eligibleSourceIDs: Set(apiSources.filter(\.selected).map(\.id)),
+            let interval = laterInterval
+            let upcoming = try await MainProductAPI.shared.laterCalendarEvents(
+                from: interval.start,
+                to: interval.end,
+                timeZone: calendar.timeZone,
                 excludingEventKeys: selectedKeys
             )
             let profiles = (try? await MainProductAPI.shared.familyProfiles()) ?? []
@@ -780,6 +789,7 @@ struct OrbitCalendarV2View: View {
             events = allAPIEvents.map { ConceptCalendarEvent(apiEvent: $0) }
             liveEvents = allAPIEvents
             coverageText = upcoming.coverageDescription
+            coverageComplete = upcoming.complete
             loadError = nil
         } catch {
             loadError = error
@@ -795,16 +805,18 @@ struct OrbitCalendarV2View: View {
             selectedKeys = []
         }
         do {
-            let upcoming = try await MainProductAPI.shared.upcomingCalendarEvents(
-                now: referenceDate,
-                after: afterNextWeekBoundary,
-                eligibleSourceIDs: enabledSourceIDs,
+            let interval = laterInterval
+            let upcoming = try await MainProductAPI.shared.laterCalendarEvents(
+                from: interval.start,
+                to: interval.end,
+                timeZone: calendar.timeZone,
                 excludingEventKeys: selectedKeys
             )
             let combined = deduplicated(liveEvents + upcoming.events)
             liveEvents = combined
             events = combined.map { ConceptCalendarEvent(apiEvent: $0) }
             coverageText = upcoming.coverageDescription
+            coverageComplete = upcoming.complete
         } catch {
             loadError = error
         }
@@ -839,7 +851,7 @@ struct OrbitCalendarV2View: View {
         var seen = Set<String>()
         return values.filter { event in
             let source = event.sourceIdentifier ?? event.sourceType
-            let key = "\(source):\(event.id)"
+            let key = event.occurrenceId ?? "\(source):\(event.id)"
             guard seen.insert(key).inserted else { return false }
             return true
         }
@@ -934,6 +946,7 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
     let sourceID: String
     let involvedPersonIDs: [String]
     let notes: String
+    let occurrenceId: String?
 
     var sourceType: String { sourceID }
     var sourceIdentifier: String? { nil }
@@ -948,6 +961,7 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
         self.sourceID = sourceID
         self.involvedPersonIDs = involvedPersonIDs
         self.notes = notes
+        self.occurrenceId = nil
     }
 
     init(apiEvent: OrbitCalendarEvent) {
@@ -959,6 +973,7 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
         sourceID = apiEvent.sourceIdentifier ?? apiEvent.sourceType
         involvedPersonIDs = []
         notes = apiEvent.notes
+        occurrenceId = apiEvent.occurrenceId
     }
 }
 
