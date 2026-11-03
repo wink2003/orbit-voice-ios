@@ -87,6 +87,19 @@ enum OrbitCalendarV2Logic {
         return DateInterval(start: nextWeek.end, end: horizonEnd)
     }
 
+    static func localCalendarDate(_ value: String, timeZone: TimeZone) -> Date? {
+        let parts = value.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let components = DateComponents(year: parts[0], month: parts[1], day: parts[2])
+        guard let date = calendar.date(from: components),
+              calendar.component(.year, from: date) == parts[0],
+              calendar.component(.month, from: date) == parts[1],
+              calendar.component(.day, from: date) == parts[2] else { return nil }
+        return date
+    }
+
     static func eventKey<Event: OrbitCalendarV2EventLike>(_ event: Event) -> String {
         event.occurrenceId ?? sourceEventKey(event)
     }

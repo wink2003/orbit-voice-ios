@@ -442,25 +442,18 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
         timeZone = try values.decodeIfPresent(String.self, forKey: .timeZone)
 
         let eventCalendarTimeZone = timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
-        if allDay, let startDate, let localStart = Self.localDay(startDate, timeZone: eventCalendarTimeZone) {
+        if allDay, let startDate, let localStart = OrbitCalendarV2Logic.localCalendarDate(startDate, timeZone: eventCalendarTimeZone) {
             startsAt = localStart
         } else {
             startsAt = try values.decode(Date.self, forKey: .startsAt)
         }
-        if allDay, let endDate, let localEnd = Self.localDay(endDate, timeZone: eventCalendarTimeZone) {
+        if allDay, let endDate, let localEnd = OrbitCalendarV2Logic.localCalendarDate(endDate, timeZone: eventCalendarTimeZone) {
             endsAt = localEnd
         } else {
             endsAt = try values.decode(Date.self, forKey: .endsAt)
         }
     }
 
-    private static func localDay(_ value: String, timeZone: TimeZone) -> Date? {
-        let parts = value.split(separator: "-").compactMap { Int($0) }
-        guard parts.count == 3 else { return nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
-        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
-    }
 }
 
 extension OrbitCalendarEvent: OrbitCalendarV2EventLike {}

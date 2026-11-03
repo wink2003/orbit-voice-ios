@@ -114,6 +114,14 @@ struct OrbitCalendarV2LogicTests {
         precondition(calendar.component(.month, from: leapInterval.end) == 2 && calendar.component(.day, from: leapInterval.end) == 29, "month horizon preserves leap-day calendar arithmetic")
         let monthEndInterval = OrbitCalendarV2Logic.laterInterval(now: at(2026, 10, 31, 12), calendar: calendar)
         precondition(monthEndInterval != nil && monthEndInterval!.end > monthEndInterval!.start, "month-end interval remains ordered across the year/month boundary")
+        for zoneName in ["Europe/Kyiv", "America/Los_Angeles"] {
+            let zone = TimeZone(identifier: zoneName)!
+            let allDayStart = OrbitCalendarV2Logic.localCalendarDate("2026-03-29", timeZone: zone)!
+            var localCalendar = Calendar(identifier: .gregorian)
+            localCalendar.timeZone = zone
+            precondition(localCalendar.component(.day, from: allDayStart) == 29, "date-only all-day start stays on its local day in \(zoneName)")
+        }
+        precondition(OrbitCalendarV2Logic.localCalendarDate("2026-02-31", timeZone: calendar.timeZone) == nil, "invalid date-only values do not normalize into another month")
 
         let previewEarlier = event("next-week-preview", at(2026, 11, 3, 9), at(2026, 11, 3, 10))
         let previewLater = event("later-preview", at(2026, 11, 9, 9), at(2026, 11, 9, 10))
