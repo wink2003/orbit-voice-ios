@@ -777,7 +777,9 @@ struct OrbitCalendarV2View: View {
 
             people = profiles.map { ConceptCalendarPerson(id: $0.personId, name: $0.displayName) }
             let mappedSources = apiSources.map(ConceptCalendarSource.init)
-            let allAPIEvents = deduplicated(monthEvents + weekEvents + upcoming.events)
+            // Later-mode rows carry recurrence identity and local all-day dates;
+            // keep those richer values when the same occurrence is also in a legacy window.
+            let allAPIEvents = deduplicated(upcoming.events + monthEvents + weekEvents)
             let missingSources = allAPIEvents.compactMap { event -> ConceptCalendarSource? in
                 let sourceID = event.sourceIdentifier ?? event.sourceType
                 guard !mappedSources.contains(where: { $0.id == sourceID }) else { return nil }
@@ -812,7 +814,7 @@ struct OrbitCalendarV2View: View {
                 timeZone: calendar.timeZone,
                 excludingEventKeys: selectedKeys
             )
-            let combined = deduplicated(liveEvents + upcoming.events)
+            let combined = deduplicated(upcoming.events + liveEvents)
             liveEvents = combined
             events = combined.map { ConceptCalendarEvent(apiEvent: $0) }
             coverageText = upcoming.coverageDescription

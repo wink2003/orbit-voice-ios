@@ -382,6 +382,46 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
         case occurrenceId, startDate, endDate, timeZone
     }
 
+    init(
+        id: String,
+        familyId: String,
+        ownerPersonId: String,
+        title: String,
+        notes: String,
+        startsAt: Date,
+        endsAt: Date,
+        allDay: Bool,
+        sourceType: String,
+        sourceIdentifier: String?,
+        sourceName: String?,
+        sourceColor: String?,
+        createdAt: Date?,
+        updatedAt: Date?,
+        occurrenceId: String? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil,
+        timeZone: String? = nil
+    ) {
+        self.id = id
+        self.familyId = familyId
+        self.ownerPersonId = ownerPersonId
+        self.title = title
+        self.notes = notes
+        self.startsAt = startsAt
+        self.endsAt = endsAt
+        self.allDay = allDay
+        self.sourceType = sourceType
+        self.sourceIdentifier = sourceIdentifier
+        self.sourceName = sourceName
+        self.sourceColor = sourceColor
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.occurrenceId = occurrenceId
+        self.startDate = startDate
+        self.endDate = endDate
+        self.timeZone = timeZone
+    }
+
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
