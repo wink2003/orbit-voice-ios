@@ -226,6 +226,19 @@ struct OrbitCalendarV2View: View {
                 Spacer()
                 monthArrow("chevron.left", shift: -1, label: displayMode == .month ? "Попередній місяць" : "Попередній тиждень")
                 monthArrow("chevron.right", shift: 1, label: displayMode == .month ? "Наступний місяць" : "Наступний тиждень")
+                if displayMode == .week {
+                    Button(action: toggleMonthDisplay) {
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 44, height: 44)
+                            .foregroundStyle(Routes05Tokens.ink)
+                            .background(Routes05Tokens.canvas)
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.rule, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Розгорнути до повного місяця")
+                    .accessibilityValue("Поточний тиждень")
+                }
             }
             if displayMode == .month {
                 HStack(spacing: 0) {
@@ -242,24 +255,20 @@ struct OrbitCalendarV2View: View {
                     dayButton(day)
                 }
             }
-            Button {
-                if displayMode == .week {
-                    visibleMonth = ConceptCalendarDates.monthStart(collapsedWeekAnchor)
+            if displayMode == .month {
+                Button(action: toggleMonthDisplay) {
+                    HStack(spacing: 6) {
+                        Text("Показати тиждень")
+                        Image(systemName: "chevron.up").font(.caption.weight(.bold))
+                    }
+                    .font(.caption.weight(.bold))
+                    .frame(minHeight: 44)
+                    .foregroundStyle(Routes05Tokens.ink)
                 }
-                displayMode.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    Text(displayMode == .month ? "Показати тиждень" : "Показати повний місяць")
-                    Image(systemName: displayMode == .month ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.bold))
-                }
-                .font(.caption.weight(.bold))
-                .frame(minHeight: 44)
-                .foregroundStyle(Routes05Tokens.ink)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Згорнути до тижня")
+                .accessibilityValue("Повний місяць")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(displayMode == .month ? "Згорнути до тижня" : "Розгорнути до повного місяця")
-            .accessibilityValue(displayMode == .month ? "Повний місяць" : "Поточний тиждень")
             if displayMode == .month {
                 HStack(spacing: 7) {
                     Image(systemName: "circle.fill")
@@ -282,6 +291,13 @@ struct OrbitCalendarV2View: View {
         .background(Routes05Tokens.surface)
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1.3))
         .padding(.horizontal, 16)
+    }
+
+    private func toggleMonthDisplay() {
+        if displayMode == .week {
+            visibleMonth = ConceptCalendarDates.monthStart(collapsedWeekAnchor)
+        }
+        displayMode.toggle()
     }
 
     private func monthArrow(_ symbol: String, shift: Int, label: String) -> some View {
