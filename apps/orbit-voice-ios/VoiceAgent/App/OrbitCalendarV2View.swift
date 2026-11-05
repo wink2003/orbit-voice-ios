@@ -104,7 +104,7 @@ struct OrbitCalendarV2View: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 17) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Routes05Mast(section: "calendar", action: { showingSources = true }, backAction: onBack, backLabel: "Назад до Інше")
                         hero
                         ForEach(OrbitCalendarV2Logic.sectionOrder, id: \.self) { section in
@@ -214,7 +214,7 @@ struct OrbitCalendarV2View: View {
     // MARK: — Current week, expandable to a complete month
 
     private var monthCard: some View {
-        VStack(alignment: .leading, spacing: displayMode == .week ? 4 : 11) {
+        VStack(alignment: .leading, spacing: displayMode == .week ? 0 : 11) {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
                     if displayMode == .month { eyebrow("MONTH / OVERVIEW") }
@@ -227,12 +227,14 @@ struct OrbitCalendarV2View: View {
                 monthArrow("chevron.left", shift: -1, label: displayMode == .month ? "Попередній місяць" : "Попередній тиждень")
                 monthArrow("chevron.right", shift: 1, label: displayMode == .month ? "Наступний місяць" : "Наступний тиждень")
             }
-            HStack(spacing: 0) {
-                ForEach(["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "НД"], id: \.self) { label in
-                    Text(label)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Routes05Tokens.secondary)
-                        .frame(maxWidth: .infinity)
+            if displayMode == .month {
+                HStack(spacing: 0) {
+                    ForEach(["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "НД"], id: \.self) { label in
+                        Text(label)
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Routes05Tokens.secondary)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 3), count: 7), spacing: 4) {
@@ -258,23 +260,25 @@ struct OrbitCalendarV2View: View {
             .buttonStyle(.plain)
             .accessibilityLabel(displayMode == .month ? "Згорнути до тижня" : "Розгорнути до повного місяця")
             .accessibilityValue(displayMode == .month ? "Повний місяць" : "Поточний тиждень")
-            HStack(spacing: 7) {
-                Image(systemName: "circle.fill")
-                    .font(.system(size: 8))
-                    .foregroundStyle(Routes05Tokens.yellow)
-                Text("Жовтий — сьогодні")
-                Spacer()
-                Text("Крапки — події календарів")
+            if displayMode == .month {
+                HStack(spacing: 7) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Routes05Tokens.yellow)
+                    Text("Жовтий — сьогодні")
+                    Spacer()
+                    Text("Крапки — події календарів")
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(Routes05Tokens.secondary)
             }
-            .font(.system(size: 10))
-            .foregroundStyle(Routes05Tokens.secondary)
             if isLoading {
                 ProgressView("Завантаження календаря…")
                     .font(.caption)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(displayMode == .month ? 13 : 8)
+        .padding(displayMode == .month ? 13 : 6)
         .background(Routes05Tokens.surface)
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1.3))
         .padding(.horizontal, 16)
@@ -322,7 +326,12 @@ struct OrbitCalendarV2View: View {
                 Task { await refreshTimelineCoverage() }
             }
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: displayMode == .week ? 0 : 4) {
+                if displayMode == .week {
+                    Text(ConceptCalendarDates.weekdayInitial(day))
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Routes05Tokens.secondary)
+                }
                 Text(day.formatted(.dateTime.day()))
                     .font(.system(size: 15, weight: isToday || isSelected ? .black : .semibold, design: .rounded))
                     .frame(maxWidth: .infinity)
@@ -982,6 +991,7 @@ private enum ConceptCalendarDates {
     static func monthYear(_ date: Date) -> String { formatter("LLLL yyyy").string(from: date).capitalized }
     static func shortMonth(_ date: Date) -> String { formatter("LLL").string(from: date) }
     static func weekdayLong(_ date: Date) -> String { formatter("EEEE").string(from: date) }
+    static func weekdayInitial(_ date: Date) -> String { formatter("EEEEE").string(from: date).uppercased() }
     static func compactWeekRange(_ date: Date) -> String {
         guard let interval = OrbitCalendarV2Logic.weekInterval(containing: date, calendar: calendar),
               let last = calendar.date(byAdding: .day, value: -1, to: interval.end) else { return monthYear(date) }
