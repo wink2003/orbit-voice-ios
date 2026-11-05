@@ -1279,27 +1279,20 @@ final class SchoolHubV2Store {
     }
 
     func load() async {
-#if DEBUG
-        await loadInternal(receiptScreen: nil)
-#else
         await loadInternal(receiptScreenName: nil)
-#endif
     }
 
 #if DEBUG
     func load(forScreen screen: SchoolAPIReceiptScreen?) async {
-        await loadInternal(receiptScreen: screen)
+        await loadInternal(receiptScreenName: screen?.rawValue)
     }
 #endif
 
-#if DEBUG
-    private func loadInternal(receiptScreen: SchoolAPIReceiptScreen?) async {
-#else
     private func loadInternal(receiptScreenName: String?) async {
-#endif
         phase = .loading; errorText = nil; timetableFailure = nil; examsFailure = nil; overviewFailure = nil
         let start = weekStart, end = weekEnd
 #if DEBUG
+        let receiptScreen = receiptScreenName.flatMap(SchoolAPIReceiptScreen.init(rawValue:))
         var decodedTimetable: [OrbitSchoolHubV2TimetableEntry]?
         var decodedExamsCount: Int?
         var completion: SchoolAPIReceiptScreenTrace.Result = .complete
