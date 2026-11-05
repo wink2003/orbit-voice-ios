@@ -439,8 +439,8 @@ struct SchoolHubLogicTests {
         let overviewReceipt = SchoolAPIReceiptRecord(endpoint: .overview, range: "2026-11-02 – 2026-11-09", status: 200, outcome: .decoded, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])
         let unauthorizedReceipt = SchoolAPIReceiptRecord(endpoint: .exams, range: "2026-11-02 – 2026-11-30", status: 401, outcome: .httpFailure, refresh: .succeeded, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])
         let decodeFailureReceipt = SchoolAPIReceiptRecord(endpoint: .timetable, range: "2026-11-02 – 2026-11-09", status: 200, outcome: .decodeFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])
-        let firstExamChunk = SchoolAPIReceiptRecord(endpoint: .exams, range: "2026-11-02 – 2026-11-30", status: 200, outcome: .decodedNonempty, refresh: .notAttempted, count: 2, minimumDate: "2026-11-05", maximumDate: "2026-11-20", coverage: [])
-        let secondExamChunk = SchoolAPIReceiptRecord(endpoint: .exams, range: "2026-11-30 – 2026-12-28", status: 200, outcome: .decodedNonempty, refresh: .notAttempted, count: 3, minimumDate: "2026-12-01", maximumDate: "2026-12-07", coverage: [])
+        let firstExamChunk = SchoolAPIReceiptRecord(endpoint: .exams, range: "2026-11-02 – 2026-11-30", status: 200, outcome: .decodedNonempty, refresh: .notAttempted, count: 2, minimumDate: "2026-11-05", maximumDate: "2026-11-20", coverage: [SchoolAPIReceiptCoverage(state: "NOT_SYNCED", count: 0, start: "2026-11-02", end: "2026-11-30")])
+        let secondExamChunk = SchoolAPIReceiptRecord(endpoint: .exams, range: "2026-11-30 – 2026-12-28", status: 200, outcome: .decodedNonempty, refresh: .notAttempted, count: 3, minimumDate: "2026-12-01", maximumDate: "2026-12-07", coverage: [SchoolAPIReceiptCoverage(state: "READY_WITH_DATA", count: 3, start: "2026-11-30", end: "2026-12-28")])
         precondition(emptyReceipt.outcome == .decodedEmpty && emptyReceipt.count == 0)
         precondition(nonemptyReceipt.outcome == .decodedNonempty && nonemptyReceipt.count == 2)
         precondition(overviewReceipt.outcome == .decoded && overviewReceipt.count == nil)
@@ -465,6 +465,37 @@ struct SchoolHubLogicTests {
         precondition(SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: true, succeeded: true) == .succeeded)
         precondition(SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: true, succeeded: false) == .failed)
         precondition(SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: false, succeeded: false) == .unavailable)
+
+        let screenDates = (0..<5).flatMap { offset -> [String] in
+            let day = SchoolHubLogic.addDays(offset, to: "2026-11-02")!
+            return Array(repeating: day, count: 6)
+        } + ["2026-11-09", "invalid", "2026-02-31"]
+        let screenCounts = SchoolAPIReceiptLogic.timetableCounts(dates: screenDates, weekStart: "2026-11-02")
+        precondition(screenCounts.validDateCount == 31 && screenCounts.matchingCount == 30, "screen trace counts valid decoded local dates and only the selected Monday-Friday")
+        precondition(SchoolAPIReceiptLogic.timetableCounts(dates: screenDates, weekStart: "2026-11-09").matchingCount == 1, "week changes are measured against the currently selected civil dates")
+
+        precondition(SchoolHubLogic.examsCoverageSuppressesRows("NOT_SYNCED"), "the existing Exams gate suppresses rows for NOT_SYNCED coverage")
+        precondition(SchoolAPIReceiptLogic.visibleExamRowCount(groupedCount: 5, coverageState: "NOT_SYNCED", hasFailure: false) == 0, "trace reports nonempty grouped exams hidden by the current coverage gate")
+        precondition(SchoolAPIReceiptLogic.visibleExamRowCount(groupedCount: 5, coverageState: "READY_WITH_DATA", hasFailure: false) == 5)
+        precondition(SchoolAPIReceiptLogic.visibleExamRowCount(groupedCount: 5, coverageState: "READY_WITH_DATA", hasFailure: true) == 0)
+        precondition(SchoolAPIReceiptLogic.visibleTimetableRowCount(lessonIndexes: [1, 1, 2, 3, 3, 3]) == 3, "visible timetable rows count the rendered lesson-index rows, not lesson cells")
+
+        receiptSession.end()
+        precondition(receiptSession.beginLoad(screen: .timetable, range: "2026-11-02 – 2026-11-09", loadNumber: 1, overlappingLoads: 0) == nil, "screen capture is opt-in")
+        receiptSession.begin()
+        let timetableLoad = receiptSession.beginLoad(screen: .timetable, range: "2026-11-02 – 2026-11-09", loadNumber: 1, overlappingLoads: 0)!
+        let examsLoad = receiptSession.beginLoad(screen: .exams, range: "2026-11-02 – 2026-12-28", loadNumber: 1, overlappingLoads: 0)!
+        receiptSession.append(nonemptyReceipt, to: timetableLoad)
+        receiptSession.append(firstExamChunk, to: examsLoad)
+        receiptSession.append(secondExamChunk, to: examsLoad)
+        precondition(timetableLoad.requests == [nonemptyReceipt], "the timetable trace contains only requests from its screen-owned load")
+        precondition(examsLoad.requests == [firstExamChunk, secondExamChunk], "exam chunks remain correlated to their own screen load")
+        precondition(examsLoad.requests.first?.coverage.first?.state == "NOT_SYNCED" && receiptSession.examCountTotal(in: examsLoad.requests) == 5, "nonempty exam chunks remain visible in the trace even when an early chunk is NOT_SYNCED")
+        receiptSession.end()
+        receiptSession.begin()
+        receiptSession.append(overviewReceipt, to: timetableLoad)
+        precondition(timetableLoad.requests == [nonemptyReceipt] && receiptSession.records.isEmpty, "ending capture clears records and rejects late responses from a prior session")
+        receiptSession.end()
 #endif
 
         print("school hub logic tests passed")

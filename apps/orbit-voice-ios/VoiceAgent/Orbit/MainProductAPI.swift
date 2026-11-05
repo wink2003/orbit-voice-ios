@@ -664,12 +664,27 @@ final class MainProductAPI {
     func schoolOverview(start: String? = nil, end: String? = nil) async throws -> OrbitSchoolHubV2OverviewResponse {
         try await request(path: schoolV2Path("/api/school/overview", start: start, end: end), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true)
     }
+#if DEBUG
+    func schoolOverview(start: String? = nil, end: String? = nil, receiptCapture: SchoolAPIReceiptLoadCapture?) async throws -> OrbitSchoolHubV2OverviewResponse {
+        try await request(path: schoolV2Path("/api/school/overview", start: start, end: end), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true, receiptCapture: receiptCapture)
+    }
+#endif
     func schoolExams(from: String, to: String) async throws -> OrbitSchoolHubV2ExamsResponse {
         try await request(path: schoolV2Path("/api/school/exams", start: from, end: to), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true)
     }
+#if DEBUG
+    func schoolExams(from: String, to: String, receiptCapture: SchoolAPIReceiptLoadCapture?) async throws -> OrbitSchoolHubV2ExamsResponse {
+        try await request(path: schoolV2Path("/api/school/exams", start: from, end: to), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true, receiptCapture: receiptCapture)
+    }
+#endif
     func schoolTimetable(from: String, to: String) async throws -> OrbitSchoolHubV2TimetableResponse {
         try await request(path: schoolV2Path("/api/school/timetable", start: from, end: to), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true)
     }
+#if DEBUG
+    func schoolTimetable(from: String, to: String, receiptCapture: SchoolAPIReceiptLoadCapture?) async throws -> OrbitSchoolHubV2TimetableResponse {
+        try await request(path: schoolV2Path("/api/school/timetable", start: from, end: to), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true, receiptCapture: receiptCapture)
+    }
+#endif
     func schoolActionTasks(preserveHTTPStatus: Bool = false) async throws -> OrbitSchoolActionTasksResponse {
         try await request(
             path: "/api/school/actions/tasks",
@@ -909,13 +924,26 @@ final class MainProductAPI {
     }
 
     func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy, classifyUnavailable: Bool = false, allowRefresh: Bool = true, preserveHTTPStatus: Bool = false, as: T.Type = T.self) async throws -> T {
+        try await requestImpl(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: allowRefresh, preserveHTTPStatus: preserveHTTPStatus, receiptCapture: nil, as: T.self)
+    }
+
 #if DEBUG
+    func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy, classifyUnavailable: Bool = false, allowRefresh: Bool = true, preserveHTTPStatus: Bool = false, receiptCapture: SchoolAPIReceiptLoadCapture?, as: T.Type = T.self) async throws -> T {
+        try await requestImpl(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: allowRefresh, preserveHTTPStatus: preserveHTTPStatus, receiptCapture: receiptCapture, as: T.self)
+    }
+#endif
+
+    private func requestImpl<T: Decodable>(path: String, method: String, body: Data?, cachePolicy: URLRequest.CachePolicy, classifyUnavailable: Bool, allowRefresh: Bool, preserveHTTPStatus: Bool, receiptCapture: AnyObject?, as: T.Type) async throws -> T {
+#if DEBUG
+        let screenCapture = receiptCapture as? SchoolAPIReceiptLoadCapture
         let receiptEndpoint = SchoolAPIReceiptEndpoint.allowed(method: method, path: path)
         let receiptRange = receiptEndpoint.flatMap { _ in Self.schoolReceiptRange(path: path) }
+#else
+        _ = receiptCapture
 #endif
         guard let token = KeychainStore.readMainBearerToken() else {
 #if DEBUG
-            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: nil, outcome: .notSent, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+            if let receiptEndpoint { appendSchoolReceipt(.init(endpoint: receiptEndpoint, range: receiptRange, status: nil, outcome: .notSent, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: []), capture: screenCapture) }
 #endif
             throw OrbitChatAPIError.notPaired
         }
@@ -931,13 +959,13 @@ final class MainProductAPI {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
 #if DEBUG
-            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: nil, outcome: .transportFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+            if let receiptEndpoint { appendSchoolReceipt(.init(endpoint: receiptEndpoint, range: receiptRange, status: nil, outcome: .transportFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: []), capture: screenCapture) }
 #endif
             throw error
         }
         guard let http = response as? HTTPURLResponse else {
 #if DEBUG
-            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: nil, outcome: .invalidResponse, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+            if let receiptEndpoint { appendSchoolReceipt(.init(endpoint: receiptEndpoint, range: receiptRange, status: nil, outcome: .invalidResponse, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: []), capture: screenCapture) }
 #endif
             throw OrbitChatAPIError.invalidResponse
         }
@@ -949,16 +977,16 @@ final class MainProductAPI {
             let refreshed = sessionAvailable ? await OrbitAuthentication.refreshStoredSession() : false
 #if DEBUG
             let refresh = SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: sessionAvailable, succeeded: refreshed)
-            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: refresh, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+            if let receiptEndpoint { appendSchoolReceipt(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: refresh, count: nil, minimumDate: nil, maximumDate: nil, coverage: []), capture: screenCapture) }
             recordedUnauthorized = true
 #endif
             if refreshed {
-                return try await self.request(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, preserveHTTPStatus: preserveHTTPStatus, as: T.self)
+                return try await self.requestImpl(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, preserveHTTPStatus: preserveHTTPStatus, receiptCapture: screenCapture, as: T.self)
             }
         }
         guard (200 ..< 300).contains(http.statusCode) else {
 #if DEBUG
-            if !recordedUnauthorized, let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+            if !recordedUnauthorized, let receiptEndpoint { appendSchoolReceipt(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: []), capture: screenCapture) }
 #endif
             let code = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
             if preserveHTTPStatus { throw OrbitHTTPResponseFailure(status: http.statusCode, code: code) }
@@ -968,12 +996,12 @@ final class MainProductAPI {
         do {
             let value = try decoder.decode(T.self, from: data)
 #if DEBUG
-            if let receiptEndpoint { recordSchoolReceipt(value, endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode) }
+            if let receiptEndpoint { recordSchoolReceipt(value, endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, capture: screenCapture) }
 #endif
             return value
         } catch {
 #if DEBUG
-            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .decodeFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+            if let receiptEndpoint { appendSchoolReceipt(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .decodeFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: []), capture: screenCapture) }
 #endif
             throw OrbitChatAPIError.invalidResponse
         }
@@ -987,7 +1015,11 @@ final class MainProductAPI {
         return "\(start) – \(end)"
     }
 
-    private func recordSchoolReceipt<T>(_ value: T, endpoint: SchoolAPIReceiptEndpoint, range: String?, status: Int) {
+    private func appendSchoolReceipt(_ record: SchoolAPIReceiptRecord, capture: SchoolAPIReceiptLoadCapture?) {
+        SchoolAPIReceiptSession.shared.append(record, to: capture)
+    }
+
+    private func recordSchoolReceipt<T>(_ value: T, endpoint: SchoolAPIReceiptEndpoint, range: String?, status: Int, capture: SchoolAPIReceiptLoadCapture?) {
         var count: Int?
         var dates: [String] = []
         var coverage: [SchoolAPIReceiptCoverage] = []
@@ -1014,7 +1046,7 @@ final class MainProductAPI {
         }
         let bounds = SchoolAPIReceiptRecord.isoDateBounds(dates)
         let outcome = SchoolAPIReceiptRecord.decodedOutcome(count: count)
-        SchoolAPIReceiptSession.shared.append(.init(endpoint: endpoint, range: range, status: status, outcome: outcome, refresh: .notAttempted, count: count, minimumDate: bounds.minimum, maximumDate: bounds.maximum, coverage: coverage))
+        appendSchoolReceipt(.init(endpoint: endpoint, range: range, status: status, outcome: outcome, refresh: .notAttempted, count: count, minimumDate: bounds.minimum, maximumDate: bounds.maximum, coverage: coverage), capture: capture)
     }
 #endif
 
