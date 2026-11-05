@@ -588,7 +588,7 @@ struct OrbitCalendarV2View: View {
             }
             .padding(13)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(inTodaySection ? Routes05Tokens.yellow.opacity(colorScheme == .dark ? 0.18 : 0.30) : Routes05Tokens.surface)
+            .background(inTodaySection && colorScheme == .dark ? Routes05Tokens.darkSurface : (inTodaySection ? Routes05Tokens.yellow.opacity(0.30) : Routes05Tokens.surface))
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
             .foregroundStyle(Routes05Tokens.ink)
         }
