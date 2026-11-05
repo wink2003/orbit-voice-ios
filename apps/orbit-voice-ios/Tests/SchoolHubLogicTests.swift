@@ -341,6 +341,16 @@ struct SchoolHubLogicTests {
         """.utf8)
         let exams = try! decoder.decode(OrbitSchoolHubV2ExamsResponse.self, from: examJSON)
         precondition(exams.from == "2026-11-02" && exams.to == "2026-11-09" && exams.exams.count == 1)
+        let laterExamJSON = Data(String(data: examJSON, encoding: .utf8)!.replacingOccurrences(of: "\"id\":\"e1\"", with: "\"id\":\"e2\"").replacingOccurrences(of: "2026-11-05", with: "2026-11-07").utf8)
+        let laterExam = try! decoder.decode(OrbitSchoolHubV2ExamsResponse.self, from: laterExamJSON).exams[0]
+        precondition(SchoolHubLogic.chronologicalExams([laterExam, exams.exams[0]]).map(\.dayKey) == ["2026-11-05", "2026-11-07"], "exam sorting follows the authoritative ISO day key regardless of response order")
+        precondition(SchoolHubLogic.localizedLongDay("2026-11-02", locale: Locale(identifier: "uk_UA"))?.contains("листопада") == true)
+        precondition(SchoolHubLogic.localizedLongDay("2026-11-02", locale: Locale(identifier: "en_US"))?.contains("November") == true)
+        precondition(SchoolHubLogic.schoolDayPrecedes("2026-12-31", "2027-01-01") && !SchoolHubLogic.schoolDayPrecedes("2027-01-01", "2026-12-31"), "exam chronology follows civil dates across New Year")
+        precondition(SchoolHubLogic.timetableCoverageState("READY", responseState: "READY", entryCount: 2) == "READY_WITH_DATA")
+        precondition(SchoolHubLogic.timetableCoverageState("READY", responseState: "READY", entryCount: 0) == "READY_EMPTY")
+        precondition(SchoolHubLogic.timetableCoverageState("READY_EMPTY", responseState: "READY", entryCount: 1) == "PARTIAL", "contradictory empty coverage and actual rows is reported as partial")
+        precondition(SchoolHubLogic.timetableCoverageState("READY_WITH_DATA", responseState: "READY", entryCount: 0) == "READY_WITH_DATA", "server-reported data with no matching client rows remains a mismatch, not a false empty success")
         let populatedOverviewJSON = Data("""
         {"overview":{"state":"READY","freshness":{"state":"READY","sourceStates":{"exams":"READY","timetable":"READY"},"observedAt":"2026-10-19T21:00:48.207Z","source":"schulmanager","fingerprint":"abc"},"sourceStates":{"exams":"READY","timetable":"READY"},"profileTitle":"Олександр","todayDayKey":"2026-10-19","upcomingExams":[{"id":"exam-1","subject":"Mathematik","dayKey":"2026-11-05","lessonStart":2,"lessonEnd":3,"startsAt":"2026-11-05T09:45:00.000Z","room":null,"teacher":null,"group":null,"groupName":null,"startClassHourNumber":"2","typeName":"Klassenarbeit","typeColor":null,"typeVisibleForStudents":true,"comment":null,"status":null,"source":"schulmanager","sourceFingerprint":"exam-fp","observedAt":"2026-10-19T21:00:48.207Z"}],"projects":[]}}
         """.utf8)
@@ -394,6 +404,12 @@ struct SchoolHubLogicTests {
         """.utf8)
         let doubleSlot = try! decoder.decode(OrbitSchoolHubV2TimetableResponse.self, from: doubleSlotJSON).timetable
         precondition(doubleSlot.entries.filter { $0.localDate == "2026-11-02" && $0.lessonIndex == 2 }.count == 2 && doubleSlot.coverage?.state == "READY_WITH_DATA")
+        precondition(SchoolHubLogic.timetableEntries(doubleSlot.entries, weekStart: "2026-11-02").count == 2, "genuine decoded Monday rows map into the selected Mon-Fri week")
+        precondition(SchoolHubLogic.timetableEntries(doubleSlot.entries, weekStart: "2026-11-09").isEmpty, "rows from another week do not create a blank selected-week grid")
+        let fiveDayWidth = SchoolHubLogic.timetableColumnWidth(totalWidth: 390, axisWidth: 38, gap: 3)
+        precondition(32 + 38 + 5 * 3 + 5 * fiveDayWidth <= 390, "all five weekday columns fit an iPhone 12 width without horizontal scrolling")
+        precondition(SchoolHubLogic.timetableGridHeight(rowHeights: [48, 90]) == 190, "grid container includes its header, both row bodies and row spacing")
+        precondition(SchoolHubLogic.date(fromDayKey: "2026-02-31") == nil, "invalid exam civil dates cannot normalize into another month")
 
         // Independent loading: one failed endpoint must not fail the whole hub
         precondition(!SchoolHubLogic.isHubWideFailure(overview: nil, exams: nil, timetable: nil))

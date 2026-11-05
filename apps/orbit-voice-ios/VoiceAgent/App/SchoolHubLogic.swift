@@ -405,7 +405,58 @@ nonisolated enum SchoolHubLogic {
     static func date(fromDayKey key: String, zone: TimeZone = schoolTimeZone) -> Date? {
         let parts = key.prefix(10).split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3 else { return nil }
-        return calendar(zone).date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12))
+        let value = calendar(zone)
+        guard let date = value.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)),
+              value.component(.year, from: date) == parts[0],
+              value.component(.month, from: date) == parts[1],
+              value.component(.day, from: date) == parts[2] else { return nil }
+        return date
+    }
+
+    static func localizedLongDay(_ key: String, locale: Locale = .autoupdatingCurrent) -> String? {
+        guard let date = date(fromDayKey: key) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = schoolTimeZone
+        formatter.dateFormat = "EEEE, d MMMM"
+        return formatter.string(from: date)
+    }
+
+    static func schoolDayPrecedes(_ lhs: String, _ rhs: String) -> Bool {
+        switch (date(fromDayKey: lhs), date(fromDayKey: rhs)) {
+        case let (left?, right?) where left != right: return left < right
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: return lhs < rhs
+        }
+    }
+
+    static func timetableGridHeight(rowHeights: [CGFloat], headerHeight: CGFloat = 40, rowSpacing: CGFloat = 6) -> CGFloat {
+        headerHeight + rowHeights.reduce(0) { $0 + $1 + rowSpacing }
+    }
+
+    static func timetableColumnWidth(totalWidth: CGFloat, axisWidth: CGFloat = 22, gap: CGFloat = 3, horizontalInset: CGFloat = 16, columns: Int = 5) -> CGFloat {
+        guard columns > 0 else { return 0 }
+        return max(0, floor((totalWidth - horizontalInset * 2 - axisWidth - gap * CGFloat(columns)) / CGFloat(columns)))
+    }
+
+    static func timetableEntries(_ entries: [OrbitSchoolHubV2TimetableEntry], weekStart: String) -> [OrbitSchoolHubV2TimetableEntry] {
+        let weekdays = Set((0..<5).compactMap { addDays($0, to: weekStart) })
+        return entries.filter { weekdays.contains($0.localDate) }
+    }
+
+    static func timetableCoverageState(_ coverageState: String?, responseState: String, entryCount: Int) -> String {
+        if coverageState == "READY_EMPTY", entryCount > 0 { return "PARTIAL" }
+        if let coverageState, coverageState != "READY" { return coverageState }
+        guard coverageState == "READY" || responseState == "READY" else { return coverageState ?? responseState }
+        return entryCount == 0 ? "READY_EMPTY" : "READY_WITH_DATA"
+    }
+
+    static func chronologicalExams(_ exams: [OrbitSchoolHubV2Exam]) -> [OrbitSchoolHubV2Exam] {
+        exams.sorted {
+            if $0.dayKey != $1.dayKey { return schoolDayPrecedes($0.dayKey, $1.dayKey) }
+            return $0.id < $1.id
+        }
     }
 
     static func addDays(_ days: Int, to key: String) -> String? {
