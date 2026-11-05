@@ -440,9 +440,9 @@ nonisolated enum SchoolHubLogic {
         return max(0, floor((totalWidth - horizontalInset * 2 - axisWidth - gap * CGFloat(columns)) / CGFloat(columns)))
     }
 
-    static func timetableEntries(_ entries: [OrbitSchoolHubV2TimetableEntry], weekStart: String) -> [OrbitSchoolHubV2TimetableEntry] {
+    static func timetableEntries<Entry>(_ entries: [Entry], weekStart: String, localDate: (Entry) -> String) -> [Entry] {
         let weekdays = Set((0..<5).compactMap { addDays($0, to: weekStart) })
-        return entries.filter { weekdays.contains($0.localDate) }
+        return entries.filter { weekdays.contains(localDate($0)) }
     }
 
     static func timetableCoverageState(_ coverageState: String?, responseState: String, entryCount: Int) -> String {
@@ -452,10 +452,12 @@ nonisolated enum SchoolHubLogic {
         return entryCount == 0 ? "READY_EMPTY" : "READY_WITH_DATA"
     }
 
-    static func chronologicalExams(_ exams: [OrbitSchoolHubV2Exam]) -> [OrbitSchoolHubV2Exam] {
+    static func chronologicalExams<Exam>(_ exams: [Exam], dayKey: (Exam) -> String, id: (Exam) -> String) -> [Exam] {
         exams.sorted {
-            if $0.dayKey != $1.dayKey { return schoolDayPrecedes($0.dayKey, $1.dayKey) }
-            return $0.id < $1.id
+            let leftDay = dayKey($0)
+            let rightDay = dayKey($1)
+            if leftDay != rightDay { return schoolDayPrecedes(leftDay, rightDay) }
+            return id($0) < id($1)
         }
     }
 

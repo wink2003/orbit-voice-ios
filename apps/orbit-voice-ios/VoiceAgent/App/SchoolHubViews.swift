@@ -1071,7 +1071,7 @@ final class SchoolHubV2Store {
         return timetable.filter { !days.contains($0.localDate) }.count
     }
     var visibleTimetable: [OrbitSchoolHubV2TimetableEntry] {
-        SchoolHubLogic.timetableEntries(timetable, weekStart: weekStart)
+        SchoolHubLogic.timetableEntries(timetable, weekStart: weekStart, localDate: { $0.localDate })
     }
     var examWeeks: [ExamWeek] {
         Dictionary(grouping: exams.filter { SchoolHubLogic.date(fromDayKey: $0.dayKey) != nil }, by: { SchoolHubLogic.isoWeek(of: $0.dayKey) })
@@ -1151,7 +1151,7 @@ final class SchoolHubV2Store {
         catch { overviewFailure = Self.failurePhase(for: error); overviewError = error; firstError = error }
         do {
             let response = try await examsResult
-            exams = SchoolHubLogic.chronologicalExams(Dictionary(grouping: response.exams, by: \.id).compactMap { $0.value.first })
+            exams = SchoolHubLogic.chronologicalExams(Dictionary(grouping: response.exams, by: \.id).compactMap { $0.value.first }, dayKey: { $0.dayKey }, id: { $0.id })
             examCoverageEnd = response.to; states += response.states
         } catch is CancellationError { if phase == .loading { phase = .idle }; return }
         catch { examsFailure = Self.failurePhase(for: error); examsError = error; firstError = firstError ?? error }
