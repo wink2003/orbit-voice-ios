@@ -122,7 +122,8 @@ struct SchoolAPIReceiptScreenTrace: Equatable {
 }
 
 @MainActor
-final class SchoolAPIReceiptLoadCapture: @unchecked Sendable {
+final class SchoolAPIReceiptLoadCapture {
+    let id = UUID()
     let screen: SchoolAPIReceiptScreen
     let range: String
     let loadNumber: Int
@@ -177,21 +178,30 @@ final class SchoolAPIReceiptSession {
     private(set) var records: [SchoolAPIReceiptRecord] = []
     private let capacity = 24
     private var generation = 0
+    private var captures: [UUID: SchoolAPIReceiptLoadCapture] = [:]
 
-    func begin() { generation += 1; records.removeAll(keepingCapacity: true); isActive = true }
-    func end() { generation += 1; isActive = false; records.removeAll(keepingCapacity: false) }
+    func begin() { generation += 1; records.removeAll(keepingCapacity: true); captures.removeAll(keepingCapacity: true); isActive = true }
+    func end() { generation += 1; isActive = false; records.removeAll(keepingCapacity: false); captures.removeAll(keepingCapacity: false) }
     func beginLoad(screen: SchoolAPIReceiptScreen, range: String, loadNumber: Int, overlappingLoads: Int) -> SchoolAPIReceiptLoadCapture? {
         guard isActive else { return nil }
-        return SchoolAPIReceiptLoadCapture(screen: screen, range: range, loadNumber: loadNumber, overlappingAtStart: overlappingLoads, sessionGeneration: generation)
+        let capture = SchoolAPIReceiptLoadCapture(screen: screen, range: range, loadNumber: loadNumber, overlappingAtStart: overlappingLoads, sessionGeneration: generation)
+        captures[capture.id] = capture
+        return capture
     }
 
     func isCurrent(_ capture: SchoolAPIReceiptLoadCapture) -> Bool {
         isActive && capture.sessionGeneration == generation
     }
 
-    func append(_ record: SchoolAPIReceiptRecord, to capture: SchoolAPIReceiptLoadCapture? = nil) {
+    func append(_ record: SchoolAPIReceiptRecord, to captureID: UUID? = nil) {
         guard isActive else { return }
-        if let capture, capture.sessionGeneration != generation { return }
+        let capture: SchoolAPIReceiptLoadCapture?
+        if let captureID {
+            guard let current = captures[captureID], current.sessionGeneration == generation else { return }
+            capture = current
+        } else {
+            capture = nil
+        }
         if records.count == capacity { records.removeFirst() }
         records.append(record)
         capture?.append(record)

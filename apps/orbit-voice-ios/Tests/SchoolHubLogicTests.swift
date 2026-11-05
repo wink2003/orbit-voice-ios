@@ -485,15 +485,15 @@ struct SchoolHubLogicTests {
         receiptSession.begin()
         let timetableLoad = receiptSession.beginLoad(screen: .timetable, range: "2026-11-02 – 2026-11-09", loadNumber: 1, overlappingLoads: 0)!
         let examsLoad = receiptSession.beginLoad(screen: .exams, range: "2026-11-02 – 2026-12-28", loadNumber: 1, overlappingLoads: 0)!
-        receiptSession.append(nonemptyReceipt, to: timetableLoad)
-        receiptSession.append(firstExamChunk, to: examsLoad)
-        receiptSession.append(secondExamChunk, to: examsLoad)
+        receiptSession.append(nonemptyReceipt, to: timetableLoad.id)
+        receiptSession.append(firstExamChunk, to: examsLoad.id)
+        receiptSession.append(secondExamChunk, to: examsLoad.id)
         precondition(timetableLoad.requests == [nonemptyReceipt], "the timetable trace contains only requests from its screen-owned load")
         precondition(examsLoad.requests == [firstExamChunk, secondExamChunk], "exam chunks remain correlated to their own screen load")
         precondition(examsLoad.requests.first?.coverage.first?.state == "NOT_SYNCED" && receiptSession.examCountTotal(in: examsLoad.requests) == 5, "nonempty exam chunks remain visible in the trace even when an early chunk is NOT_SYNCED")
         receiptSession.end()
         receiptSession.begin()
-        receiptSession.append(overviewReceipt, to: timetableLoad)
+        receiptSession.append(overviewReceipt, to: timetableLoad.id)
         precondition(timetableLoad.requests == [nonemptyReceipt] && receiptSession.records.isEmpty, "ending capture clears records and rejects late responses from a prior session")
         receiptSession.end()
 #endif

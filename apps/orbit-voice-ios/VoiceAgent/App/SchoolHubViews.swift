@@ -1260,16 +1260,11 @@ final class SchoolHubV2Store {
         switch failure.status { case 401: return .unauthorized; case 403: return .forbidden; case 503: return .unavailable; default: return .failed }
     }
 
-    private func fetchExams(receiptCapture: AnyObject? = nil) async throws -> (exams: [OrbitSchoolHubV2Exam], to: String, states: [String], decodedCount: Int) {
-#if DEBUG
-        let screenCapture = receiptCapture as? SchoolAPIReceiptLoadCapture
-#else
-        _ = receiptCapture
-#endif
+    private func fetchExams(receiptCaptureID: UUID? = nil) async throws -> (exams: [OrbitSchoolHubV2Exam], to: String, states: [String], decodedCount: Int) {
         var exams: [OrbitSchoolHubV2Exam] = []; var to = weekEnd; var states: [String] = []; var decodedCount = 0
         for window in SchoolHubLogic.windows(from: weekStart, days: 56) {
 #if DEBUG
-            let response = try await MainProductAPI.shared.schoolExams(from: window.from, to: window.to, receiptCapture: screenCapture)
+            let response = try await MainProductAPI.shared.schoolExams(from: window.from, to: window.to, receiptCaptureID: receiptCaptureID)
 #else
             let response = try await MainProductAPI.shared.schoolExams(from: window.from, to: window.to)
 #endif
@@ -1320,9 +1315,10 @@ final class SchoolHubV2Store {
                 screenReceiptTraces.append(trace)
             }
         }
-        async let overviewResult = MainProductAPI.shared.schoolOverview(start: start, end: end, receiptCapture: receiptCapture)
-        async let examsResult = fetchExams(receiptCapture: receiptCapture)
-        async let timetableResult = MainProductAPI.shared.schoolTimetable(from: start, to: end, receiptCapture: receiptCapture)
+        let receiptCaptureID = receiptCapture?.id
+        async let overviewResult = MainProductAPI.shared.schoolOverview(start: start, end: end, receiptCaptureID: receiptCaptureID)
+        async let examsResult = fetchExams(receiptCaptureID: receiptCaptureID)
+        async let timetableResult = MainProductAPI.shared.schoolTimetable(from: start, to: end, receiptCaptureID: receiptCaptureID)
 #else
         _ = receiptScreenName
         async let overviewResult = MainProductAPI.shared.schoolOverview(start: start, end: end)
