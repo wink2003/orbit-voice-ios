@@ -1093,41 +1093,69 @@ final class SchoolHubV2Store {
     }
 #endif
 
+    var timetableFailure: Phase?
+    var examsFailure: Phase?
+
+    static func failurePhase(for error: Error) -> Phase {
+        guard let failure = error as? OrbitHTTPResponseFailure else { return .failed }
+        switch failure.status { case 401: return .unauthorized; case 403: return .forbidden; case 503: return .unavailable; default: return .failed }
+    }
+
+    private func fetchExams() async throws -> (exams: [OrbitSchoolHubV2Exam], to: String, states: [String]) {
+        var exams: [OrbitSchoolHubV2Exam] = []; var to = weekEnd; var states: [String] = []
+        for window in SchoolHubLogic.windows(from: weekStart, days: 56) {
+            let response = try await MainProductAPI.shared.schoolExams(from: window.from, to: window.to)
+            exams += response.exams; to = response.to
+            if let state = response.coverage?.state { states.append(state) }
+        }
+        return (exams, to, states)
+    }
+
     func load() async {
-        phase = .loading; errorText = nil
+        phase = .loading; errorText = nil; timetableFailure = nil; examsFailure = nil
+        let start = weekStart, end = weekEnd
+        async let overviewResult = MainProductAPI.shared.schoolOverview(start: start, end: end)
+        async let examsResult = fetchExams()
+        async let timetableResult = MainProductAPI.shared.schoolTimetable(from: start, to: end)
+        var firstError: Error?
+        var states: [String] = []
         do {
-            async let overviewResult = MainProductAPI.shared.schoolOverview(start: weekStart, end: weekEnd)
-            let examEnd = SchoolHubLogic.addDays(56, to: weekStart) ?? weekEnd
-            async let examsResult = MainProductAPI.shared.schoolExams(from: weekStart, to: examEnd)
-            async let timetableResult = MainProductAPI.shared.schoolTimetable(from: weekStart, to: weekEnd)
-            let (overviewResponse, examsResponse, timetableResponse) = try await (overviewResult, examsResult, timetableResult)
-            overview = overviewResponse.overview
-            exams = Dictionary(grouping: examsResponse.exams, by: \.id).compactMap { $0.value.first }.sorted {
+            let response = try await overviewResult
+            overview = response.overview; freshness = response.overview.freshness
+        } catch is CancellationError { if phase == .loading { phase = .idle }; return }
+        catch { firstError = error }
+        do {
+            let response = try await examsResult
+            exams = Dictionary(grouping: response.exams, by: \.id).compactMap { $0.value.first }.sorted {
                 if $0.dayKey != $1.dayKey { return $0.dayKey < $1.dayKey }
                 return $0.id < $1.id
             }
-            examCoverageEnd = examsResponse.to
-            timetable = timetableResponse.timetable.entries.sorted { lhs, rhs in
+            examCoverageEnd = response.to; states += response.states
+        } catch is CancellationError { if phase == .loading { phase = .idle }; return }
+        catch { examsFailure = Self.failurePhase(for: error); firstError = firstError ?? error }
+        do {
+            let response = try await timetableResult
+            timetable = response.timetable.entries.sorted { lhs, rhs in
                 if lhs.dayKey != rhs.dayKey { return lhs.dayKey < rhs.dayKey }
                 if lhs.lessonIndex != rhs.lessonIndex { return lhs.lessonIndex < rhs.lessonIndex }
                 return lhs.id < rhs.id
             }
-            freshness = overviewResponse.overview.freshness
-            let states = [examsResponse.coverage?.state, timetableResponse.timetable.coverage?.state].compactMap { $0 }
+            if let state = response.timetable.coverage?.state { states.append(state) }
+        } catch is CancellationError { if phase == .loading { phase = .idle }; return }
+        catch { timetable = []; timetableFailure = Self.failurePhase(for: error); firstError = firstError ?? error }
+        if !states.isEmpty || firstError == nil {
             coverageState = states.first(where: { ["PARTIAL", "UNAVAILABLE", "ERROR"].contains($0) }) ?? (states.contains("STALE") ? "STALE" : states.contains("READY_WITH_DATA") ? "READY_WITH_DATA" : states.contains("READY_EMPTY") ? "READY_EMPTY" : "NOT_SYNCED")
-            switch coverageState {
-            case "NOT_SYNCED": phase = .notSynced
-            case "STALE": phase = .stale
-            case "READY_EMPTY": phase = .empty
-            default: phase = .ready
-            }
-        } catch is CancellationError {
-            if phase == .loading { phase = .idle }
-        } catch let failure as OrbitHTTPResponseFailure {
-            switch failure.status { case 401: phase = .unauthorized; case 403: phase = .forbidden; case 503: phase = .unavailable; default: phase = .failed }
-            errorText = failure.code
-        } catch {
-            phase = .failed; errorText = error.localizedDescription
+        }
+        if let firstError {
+            phase = Self.failurePhase(for: firstError)
+            errorText = (firstError as? OrbitHTTPResponseFailure)?.code ?? firstError.localizedDescription
+            return
+        }
+        switch coverageState {
+        case "NOT_SYNCED": phase = .notSynced
+        case "STALE": phase = .stale
+        case "READY_EMPTY": phase = .empty
+        default: phase = .ready
         }
     }
 
@@ -3407,6 +3435,7 @@ private struct Routes05SchoolTimetableProductionView: View {
     @State private var store = SchoolHubV2Store()
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDay: String?
+    @State private var detail: LessonSelection?
 
     init(studentLabel: String?, onOpenOverview: @escaping () -> Void = {}, onOpenExams: @escaping () -> Void = {}) {
         self.studentLabel = studentLabel
@@ -3493,82 +3522,126 @@ private struct Routes05SchoolTimetableProductionView: View {
     private var coverage: some View {
         Label(coverageText, systemImage: store.coverageState == "READY_WITH_DATA" ? "checkmark.circle" : "info.circle").font(.caption).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 16)
     }
+    private var failure: SchoolHubV2Store.Phase? {
+        if let failure = store.timetableFailure { return failure }
+        guard store.overview == nil else { return nil }
+        switch store.phase { case .unauthorized, .forbidden, .unavailable, .failed: return store.phase; default: return nil }
+    }
     private var coverageText: String {
+        switch failure {
+        case .unauthorized?: return "Потрібна авторизація"
+        case .forbidden?: return "Доступ до розкладу обмежено"
+        case .unavailable?, .failed?: return "Не вдалося завантажити розклад"
+        default: break
+        }
         switch store.coverageState { case "READY_WITH_DATA": return "Дані за тиждень оновлено"; case "READY_EMPTY": return "Тиждень перевірено: даних немає"; case "STALE": return "Дані можуть бути застарілими"; case "NOT_SYNCED": return "Тиждень ще не синхронізовано"; case "PARTIAL": return "Дані неповні"; default: return store.phase == .loading ? "Завантаження розкладу…" : "Дані тимчасово недоступні" }
     }
     @ViewBuilder private var content: some View {
         if store.phase == .loading && store.timetable.isEmpty { ProgressView("Завантаження розкладу…").frame(maxWidth: .infinity, minHeight: 150) }
+        else if let failure, store.timetable.isEmpty {
+            ContentUnavailableView {
+                Label(failure == .unauthorized ? "Потрібна авторизація" : failure == .forbidden ? "Доступ обмежено" : "Не вдалося завантажити розклад", systemImage: failure == .unauthorized ? "lock" : failure == .forbidden ? "hand.raised" : "exclamationmark.triangle")
+            } description: { Text(failure == .unauthorized || failure == .forbidden ? coverageText : "Це помилка запиту, а не відсутність розкладу. Перевірте з’єднання й повторіть спробу.") } actions: {
+                if failure != .unauthorized && failure != .forbidden { Button("Повторити") { Task { await store.load() } }.buttonStyle(.bordered) }
+            }.padding(.vertical, 24)
+        }
         else if store.timetable.isEmpty { ContentUnavailableView("Немає підтвердженого розкладу", systemImage: "calendar.badge.exclamationmark", description: Text(coverageText)).padding(.vertical, 24) }
         else { GeometryReader { proxy in timetableGrid(width: proxy.size.width) }.frame(height: slots.map { slotHeight($0) }.reduce(CGFloat(40)) { $0 + $1 + 6 }) }
     }
     private func slotHeight(_ slot: Int) -> CGFloat {
         let maximumEntries = days.map { day in store.timetable.filter { $0.localDate == day && $0.lessonIndex == slot }.count }.max() ?? 0
-        return max(104, CGFloat(maximumEntries) * 52 + 14)
+        return max(48, CGFloat(maximumEntries) * 38 + 10)
     }
     private func timetableGrid(width: CGFloat) -> some View {
-        let axis: CGFloat = 50; let gap: CGFloat = 5; let dayWidth = max(76, floor((width - 32 - axis - gap * 4) / 4))
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: gap) {
-                        Text("УРОК").font(.system(size: 10, weight: .bold, design: .monospaced)).frame(width: axis, alignment: .leading)
-                        ForEach(days, id: \.self) { day in
-                            Text("\(SchoolHubFormat.weekdayShort(day).uppercased()) / \(SchoolHubFormat.dayNumber(day))")
-                                .font(.system(size: 10, weight: .black, design: .monospaced))
-                                .lineLimit(1).minimumScaleFactor(0.7).frame(width: dayWidth).id(day)
-                        }
+        let axis: CGFloat = 22; let gap: CGFloat = 3
+        let dayWidth = max(40, floor((width - 32 - axis - gap * 5) / 5))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: gap) {
+                Text("№").font(.system(size: 10, weight: .bold, design: .monospaced)).frame(width: axis, alignment: .leading).accessibilityHidden(true)
+                ForEach(days, id: \.self) { day in
+                    VStack(spacing: 0) {
+                        Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(size: 10, weight: .black, design: .monospaced))
+                        Text(SchoolHubFormat.dayNumber(day)).font(.system(size: 13, weight: .black, design: .rounded))
                     }
-                    .frame(height: 40)
-                    .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
-                    ForEach(slots, id: \.self) { slot in
-                        let height = slotHeight(slot)
-                        HStack(alignment: .top, spacing: gap) {
-                            Text(String(format: "%02d", slot)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Routes05Tokens.secondary).frame(width: axis, height: height, alignment: .topLeading)
-                            ForEach(Array(days.enumerated()), id: \.element) { index, day in
-                                cell(day: day, slot: slot, dayIndex: index, width: dayWidth, height: height)
-                            }
-                        }
-                        .padding(.vertical, 3)
-                        .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
-                    }
-                }
-                .padding(.horizontal, 16)
-            }
-#if DEBUG
-            .onAppear {
-                guard Routes05DebugCapture.scrollHorizontal, let lastDay = days.last else { return }
-                let totalLessonCount = store.timetable.count
-                let visibleLessonCount = store.timetable.filter { days.contains($0.localDate) }.count
-                let visibleDayCount = days.count
-                let selectedWeek = store.weekStart
-                DispatchQueue.main.async {
-                    proxy.scrollTo(lastDay, anchor: .trailing)
-                    // The grid is already mounted here. Give ScrollViewReader one
-                    // main-queue turn to apply the requested horizontal position
-                    // before publishing the DEBUG capture contract.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                        guard visibleLessonCount > 0, visibleDayCount == 5 else { return }
-                        Routes05DebugCapture.markReady(
-                            route: "timetable",
-                            contentCount: totalLessonCount,
-                            metadata: [
-                                "visibleLessonCount": visibleLessonCount,
-                                "visibleDayCount": visibleDayCount,
-                                "selectedWeek": selectedWeek,
-                                "scrollHorizontal": true,
-                                "scrollHorizontalSettled": true
-                            ]
-                        )
-                    }
+                    .lineLimit(1).minimumScaleFactor(0.7).frame(width: dayWidth)
+                    .accessibilityElement(children: .ignore).accessibilityLabel(SchoolHubFormat.long(day))
                 }
             }
-#endif
-            .accessibilityElement(children: .contain)
+            .frame(height: 40)
+            .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
+            ForEach(slots, id: \.self) { slot in
+                let height = slotHeight(slot)
+                HStack(alignment: .top, spacing: gap) {
+                    Text("\(slot)").font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Routes05Tokens.secondary).frame(width: axis, height: height, alignment: .topLeading).accessibilityHidden(true)
+                    ForEach(Array(days.enumerated()), id: \.element) { index, day in
+                        cell(day: day, slot: slot, dayIndex: index, width: dayWidth, height: height)
+                    }
+                }
+                .padding(.vertical, 3)
+                .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
+            }
         }
+        .padding(.horizontal, 16)
+        .dynamicTypeSize(...DynamicTypeSize.large)
+        .sheet(item: $detail) { selection in lessonDetail(selection) }
+#if DEBUG
+        .onAppear {
+            guard Routes05DebugCapture.scrollHorizontal else { return }
+            let totalLessonCount = store.timetable.count
+            let visibleLessonCount = store.timetable.filter { days.contains($0.localDate) }.count
+            let visibleDayCount = days.count
+            let selectedWeek = store.weekStart
+            DispatchQueue.main.async {
+                guard visibleLessonCount > 0, visibleDayCount == 5 else { return }
+                // All five columns are laid out without horizontal scrolling, so the
+                // capture contract is satisfied as soon as the grid is mounted.
+                Routes05DebugCapture.markReady(route: "timetable", contentCount: totalLessonCount, metadata: ["visibleLessonCount": visibleLessonCount, "visibleDayCount": visibleDayCount, "selectedWeek": selectedWeek, "scrollHorizontal": true, "scrollHorizontalSettled": true])
+            }
+        }
+#endif
+    }
+    private struct LessonSelection: Identifiable { let day: String; let slot: Int; var id: String { "\(day)#\(slot)" } }
+    private func lessonLines(_ entry: OrbitSchoolHubV2TimetableEntry) -> String {
+        let time = [entry.startsAtLocal, entry.endsAtLocal].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "–")
+        return [entry.subject, time.isEmpty ? nil : time, entry.room.map { "каб. \($0)" }, entry.teacher, entry.isCancelled ? "скасовано" : nil].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+    private func lessonDetail(_ selection: LessonSelection) -> some View {
+        let entries = store.timetable.filter { $0.localDate == selection.day && $0.lessonIndex == selection.slot }
+        return NavigationStack {
+            List(entries) { entry in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.subject).font(.headline).strikethrough(entry.isCancelled)
+                    Text([entry.startsAtLocal, entry.endsAtLocal].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "–")).font(.subheadline.monospacedDigit())
+                    if let room = entry.room, !room.isEmpty { Text("Кабінет: \(room)").font(.subheadline) }
+                    if let teacher = entry.teacher, !teacher.isEmpty { Text(teacher).font(.subheadline) }
+                    if entry.isCancelled { Text("Скасовано").font(.subheadline.weight(.bold)) }
+                }.accessibilityElement(children: .combine)
+            }
+            .navigationTitle("\(SchoolHubFormat.long(selection.day)) · урок \(selection.slot)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { detail = nil } } }
+        }.presentationDetents([.medium])
     }
     @ViewBuilder private func cell(day: String, slot: Int, dayIndex: Int, width: CGFloat, height: CGFloat) -> some View {
         let entries = store.timetable.filter { $0.localDate == day && $0.lessonIndex == slot }
-        if entries.isEmpty { Rectangle().fill(Routes05Tokens.surface).overlay(Rectangle().stroke(Routes05Tokens.rule.opacity(0.55), lineWidth: 1)).overlay(Text("—").foregroundStyle(Routes05Tokens.secondary)).frame(width: width, height: height) }
-        else { VStack(alignment: .leading, spacing: 3) { ForEach(entries) { entry in VStack(alignment: .leading, spacing: 3) { Text(entry.subject).font(.system(.subheadline, design: .rounded).weight(.black)).strikethrough(entry.isCancelled).lineLimit(2).minimumScaleFactor(0.76); if let room = entry.room, !room.isEmpty { Text(room).font(.system(size: 10)).lineLimit(1) }; Text([entry.startsAtLocal, entry.teacher].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 9)).lineLimit(2); if entry.isCancelled { Text("Скасовано").font(.system(size: 9, weight: .bold)) } }.foregroundStyle(Routes05Tokens.accentInk) } }.padding(7).frame(width: width, height: height, alignment: .topLeading).background([Routes05Tokens.lilac, Routes05Tokens.mint, Routes05Tokens.orange, Routes05Tokens.yellow, Routes05Tokens.blue][(dayIndex + slot - 1) % 5]).overlay(Rectangle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 1)).accessibilityElement(children: .combine).accessibilityLabel("Урок \(slot), \(entries.map(\.subject).joined(separator: ", "))") }
+        if entries.isEmpty { Rectangle().fill(Routes05Tokens.surface).overlay(Rectangle().stroke(Routes05Tokens.rule.opacity(0.55), lineWidth: 1)).overlay(Text("—").font(.caption2).foregroundStyle(Routes05Tokens.secondary)).frame(width: width, height: height).accessibilityHidden(true) }
+        else {
+            Button { detail = LessonSelection(day: day, slot: slot) } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(entries) { entry in
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(SchoolHubLogic.subjectAbbreviation(entry.subject)).font(.system(size: 12, weight: .black, design: .rounded)).strikethrough(entry.isCancelled).lineLimit(1).minimumScaleFactor(0.7)
+                            if let room = entry.room, !room.isEmpty { Text(room).font(.system(size: 9)).lineLimit(1).minimumScaleFactor(0.7) }
+                        }
+                    }
+                }
+                .foregroundStyle(Routes05Tokens.accentInk).padding(3).frame(width: width, height: height, alignment: .topLeading)
+                .background([Routes05Tokens.lilac, Routes05Tokens.mint, Routes05Tokens.orange, Routes05Tokens.yellow, Routes05Tokens.blue][(dayIndex + slot - 1) % 5])
+                .overlay(Rectangle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Урок \(slot), \(SchoolHubFormat.long(day)): \(entries.map(lessonLines).joined(separator: "; "))")
+            .accessibilityHint("Показати деталі")
+        }
     }
 }
