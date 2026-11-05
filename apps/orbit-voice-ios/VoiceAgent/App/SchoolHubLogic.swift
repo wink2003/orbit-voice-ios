@@ -91,19 +91,120 @@ struct SchoolAPIReceiptRecord: Equatable {
     }
 }
 
+enum SchoolAPIReceiptScreen: String, Equatable {
+    case timetable, timetableHub, exams
+
+    var title: String { self == .exams ? "Іспити" : "Розклад" }
+    var isTimetable: Bool { self != .exams }
+}
+
+struct SchoolAPIReceiptScreenTrace: Equatable {
+    enum Result: String { case complete, cancelled }
+
+    let screen: SchoolAPIReceiptScreen
+    let range: String
+    let requests: [SchoolAPIReceiptRecord]
+    let result: Result
+    let loadNumber: Int
+    let overlappingLoads: Int
+    let latestAtCompletion: Bool
+    let phase: String
+    let decodedCount: Int?
+    let validDateCount: Int?
+    let selectedStart: String?
+    let selectedEnd: String?
+    let matchingCount: Int?
+    let storeCount: Int
+    let groupedCount: Int?
+    let visibleRowCount: Int
+    let coverageState: String?
+    let coverageSuppressed: Bool?
+}
+
+@MainActor
+final class SchoolAPIReceiptLoadCapture {
+    let id = UUID()
+    let screen: SchoolAPIReceiptScreen
+    let range: String
+    let loadNumber: Int
+    let overlappingAtStart: Int
+    fileprivate let sessionGeneration: Int
+    private(set) var requests: [SchoolAPIReceiptRecord] = []
+    private let capacity = 8
+
+    fileprivate init(screen: SchoolAPIReceiptScreen, range: String, loadNumber: Int, overlappingAtStart: Int, sessionGeneration: Int) {
+        self.screen = screen
+        self.range = range
+        self.loadNumber = loadNumber
+        self.overlappingAtStart = overlappingAtStart
+        self.sessionGeneration = sessionGeneration
+    }
+
+    fileprivate func append(_ record: SchoolAPIReceiptRecord) {
+        if requests.count == capacity { requests.removeFirst() }
+        requests.append(record)
+    }
+}
+
+nonisolated struct SchoolAPIReceiptTimetableCounts: Equatable {
+    let validDateCount: Int
+    let matchingCount: Int
+}
+
+nonisolated enum SchoolAPIReceiptLogic {
+    static func timetableCounts(dates: [String], weekStart: String) -> SchoolAPIReceiptTimetableCounts {
+        let validDates = dates.filter { SchoolHubLogic.date(fromDayKey: $0) != nil }
+        let weekdays = Set((0..<5).compactMap { SchoolHubLogic.addDays($0, to: weekStart) })
+        return SchoolAPIReceiptTimetableCounts(validDateCount: validDates.count, matchingCount: validDates.filter(weekdays.contains).count)
+    }
+
+    static func examsCoverageSuppressesRows(_ state: String) -> Bool {
+        SchoolHubLogic.examsCoverageSuppressesRows(state)
+    }
+
+    static func visibleExamRowCount(groupedCount: Int, coverageState: String, hasFailure: Bool) -> Int {
+        hasFailure || examsCoverageSuppressesRows(coverageState) ? 0 : max(0, groupedCount)
+    }
+
+    static func visibleTimetableRowCount(lessonIndexes: [Int]) -> Int {
+        Set(lessonIndexes).count
+    }
+}
+
 @MainActor
 final class SchoolAPIReceiptSession {
     static let shared = SchoolAPIReceiptSession()
     private(set) var isActive = false
     private(set) var records: [SchoolAPIReceiptRecord] = []
     private let capacity = 24
+    private var generation = 0
+    private var captures: [UUID: SchoolAPIReceiptLoadCapture] = [:]
 
-    func begin() { records.removeAll(keepingCapacity: true); isActive = true }
-    func end() { isActive = false; records.removeAll(keepingCapacity: false) }
-    func append(_ record: SchoolAPIReceiptRecord) {
+    func begin() { generation += 1; records.removeAll(keepingCapacity: true); captures.removeAll(keepingCapacity: true); isActive = true }
+    func end() { generation += 1; isActive = false; records.removeAll(keepingCapacity: false); captures.removeAll(keepingCapacity: false) }
+    func beginLoad(screen: SchoolAPIReceiptScreen, range: String, loadNumber: Int, overlappingLoads: Int) -> SchoolAPIReceiptLoadCapture? {
+        guard isActive else { return nil }
+        let capture = SchoolAPIReceiptLoadCapture(screen: screen, range: range, loadNumber: loadNumber, overlappingAtStart: overlappingLoads, sessionGeneration: generation)
+        captures[capture.id] = capture
+        return capture
+    }
+
+    func isCurrent(_ capture: SchoolAPIReceiptLoadCapture) -> Bool {
+        isActive && capture.sessionGeneration == generation
+    }
+
+    func append(_ record: SchoolAPIReceiptRecord, to captureID: UUID? = nil) {
         guard isActive else { return }
+        let capture: SchoolAPIReceiptLoadCapture?
+        if let captureID {
+            guard let current = captures[captureID], current.sessionGeneration == generation else { return }
+            capture = current
+        } else {
+            capture = nil
+        }
         if records.count == capacity { records.removeFirst() }
         records.append(record)
+        capture?.append(record)
     }
 
     func examCountTotal(in records: [SchoolAPIReceiptRecord]? = nil) -> Int {
@@ -564,6 +665,10 @@ nonisolated enum SchoolHubLogic {
         if let coverageState, coverageState != "READY" { return coverageState }
         guard coverageState == "READY" || responseState == "READY" else { return coverageState ?? responseState }
         return entryCount == 0 ? "READY_EMPTY" : "READY_WITH_DATA"
+    }
+
+    static func examsCoverageSuppressesRows(_ state: String) -> Bool {
+        ["NOT_SYNCED", "PARTIAL", "UNAVAILABLE", "ERROR"].contains(state)
     }
 
     static func chronologicalExams<Exam>(_ exams: [Exam], dayKey: (Exam) -> String, id: (Exam) -> String) -> [Exam] {

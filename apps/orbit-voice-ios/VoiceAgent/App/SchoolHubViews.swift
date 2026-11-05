@@ -293,6 +293,7 @@ private struct SchoolHubV2View: View {
     @State private var tab = 0
 #if DEBUG
     @State private var showingAPIReceipt = false
+    @State private var apiReceiptCaptureEnabled = false
 #endif
 
     init(studentLabel: String?, initialSection: SchoolV2Section = .overview) {
@@ -332,12 +333,12 @@ private struct SchoolHubV2View: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: store.weekStart) {
 #if DEBUG
-            if debugFixture == nil { await store.load() }
+            if debugFixture == nil { await loadScreenStore() }
 #else
-            await store.load()
+            await loadScreenStore()
 #endif
         }
-        .refreshable { await store.load() }
+        .refreshable { await loadScreenStore() }
 #if DEBUG
         .task(id: "exams-\(store.phase)-\(store.exams.count)") {
             guard initialSection == .exams, store.phase == .ready, !store.exams.isEmpty else { return }
@@ -388,14 +389,21 @@ private struct SchoolHubV2View: View {
         .toolbar {
             if debugFixture == nil {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("API receipt", systemImage: "waveform.path.ecg") { showingAPIReceipt = true }
-                        .accessibilityHint("Відкрити локальну діагностику шкільних запитів")
+                    Menu {
+                        Button(apiReceiptCaptureEnabled ? "Зупинити запис" : "Почати запис", systemImage: apiReceiptCaptureEnabled ? "stop.circle" : "record.circle") {
+                            if apiReceiptCaptureEnabled { stopReceiptCapture() } else { startReceiptCapture() }
+                        }
+                        Button("Відкрити receipt", systemImage: "waveform.path.ecg") { showingAPIReceipt = true }
+                            .disabled(!apiReceiptCaptureEnabled)
+                    } label: { Label("API receipt", systemImage: "waveform.path.ecg") }
+                        .accessibilityHint("Записує лише санітизований результат наступного оновлення цього екрана")
                 }
             }
         }
-        .sheet(isPresented: $showingAPIReceipt) {
-            if debugFixture == nil { SchoolAPIReceiptView(store: store) }
+        .sheet(isPresented: $showingAPIReceipt, onDismiss: stopReceiptCapture) {
+            if debugFixture == nil, let receiptScreen { SchoolAPIReceiptView(store: store, screen: receiptScreen) }
         }
+        .onDisappear(perform: stopReceiptCapture)
 #endif
     }
 
@@ -448,9 +456,9 @@ private struct SchoolHubV2View: View {
     private var examsView: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-            if let failure = store.examsFailure { ContentUnavailableView { Label("Не вдалося завантажити іспити", systemImage: "exclamationmark.triangle") } description: { Text("Це помилка запиту, а не відсутність іспитів.") } actions: { if failure != .unauthorized && failure != .forbidden { Button("Повторити") { Task { await store.load() } }.buttonStyle(.bordered) } } }
-            else if store.coverageState == "NOT_SYNCED" { ContentUnavailableView("Дані за цей тиждень ще не завантажені", systemImage: "clock.badge.exclamationmark", description: Text("Для вибраного тижня ще немає підтвердженої синхронізації.")) }
-            else if ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState) { ContentUnavailableView("Дані тимчасово недоступні", systemImage: "cloud.slash", description: Text("Стан синхронізації не підтверджено для цього тижня.")) }
+            if let failure = store.examsFailure { ContentUnavailableView { Label("Не вдалося завантажити іспити", systemImage: "exclamationmark.triangle") } description: { Text("Це помилка запиту, а не відсутність іспитів.") } actions: { if failure != .unauthorized && failure != .forbidden { Button("Повторити") { reload() }.buttonStyle(.bordered) } } }
+            else if SchoolHubLogic.examsCoverageSuppressesRows(store.coverageState) && store.coverageState == "NOT_SYNCED" { ContentUnavailableView("Дані за цей тиждень ще не завантажені", systemImage: "clock.badge.exclamationmark", description: Text("Для вибраного тижня ще немає підтвердженої синхронізації.")) }
+            else if SchoolHubLogic.examsCoverageSuppressesRows(store.coverageState) { ContentUnavailableView("Дані тимчасово недоступні", systemImage: "cloud.slash", description: Text("Стан синхронізації не підтверджено для цього тижня.")) }
             else if store.exams.isEmpty { ContentUnavailableView("Іспитів немає", systemImage: "checkmark.circle", description: Text("За вибраний період іспитів не знайдено.")) }
             else { ForEach(store.examWeeks, id: \.week) { week in
                 Text("ТИЖДЕНЬ \(week.week)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.3).foregroundStyle(Routes05Tokens.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
@@ -475,7 +483,7 @@ private struct SchoolHubV2View: View {
 
     private var timetableView: some View {
         if store.timetableFailure != nil {
-            return AnyView(ContentUnavailableView { Label("Не вдалося завантажити розклад", systemImage: "exclamationmark.triangle") } description: { Text("Це помилка запиту, а не відсутність розкладу.") } actions: { Button("Повторити") { Task { await store.load() } }.buttonStyle(.bordered) })
+            return AnyView(ContentUnavailableView { Label("Не вдалося завантажити розклад", systemImage: "exclamationmark.triangle") } description: { Text("Це помилка запиту, а не відсутність розкладу.") } actions: { Button("Повторити") { reload() }.buttonStyle(.bordered) })
         }
         let days = (0..<5).compactMap { SchoolHubLogic.addDays($0, to: store.weekStart) }
         let entries = store.visibleTimetable
@@ -551,41 +559,56 @@ private struct SchoolHubV2View: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func reload() { Task { await store.load() } }
+#if DEBUG
+    private var receiptScreen: SchoolAPIReceiptScreen? {
+        switch tab { case 1: .exams; case 2: .timetableHub; default: nil }
+    }
+#endif
+
+    private func loadScreenStore() async {
+#if DEBUG
+        await store.load(forScreen: receiptScreen)
+#else
+        await store.load()
+#endif
+    }
+
+    private func reload() { Task { await loadScreenStore() } }
+
+#if DEBUG
+    private func startReceiptCapture() {
+        guard receiptScreen != nil else { return }
+        store.clearScreenReceiptTraces()
+        SchoolAPIReceiptSession.shared.begin()
+        apiReceiptCaptureEnabled = true
+    }
+
+    private func stopReceiptCapture() {
+        SchoolAPIReceiptSession.shared.end()
+        store.clearScreenReceiptTraces()
+        apiReceiptCaptureEnabled = false
+    }
+#endif
 }
 
 #if DEBUG
 private struct SchoolAPIReceiptView: View {
     let store: SchoolHubV2Store
+    let screen: SchoolAPIReceiptScreen
     @Environment(\.dismiss) private var dismiss
-    @State private var records: [SchoolAPIReceiptRecord] = []
-    @State private var isLoading = false
-    private let session = SchoolAPIReceiptSession.shared
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    Text("Локальний DEBUG receipt. У пам’яті зберігаються лише статус, категорія результату, кількість і дати; вміст відповідей не записується та не експортується.")
+                    Text("Локальний DEBUG trace поточного екрана. Тут показано результат того самого оновлення, яке передало стан у цей екран; нові запити не запускаються.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    ForEach(SchoolAPIReceiptEndpoint.allCases, id: \.rawValue) { endpoint in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(endpoint.title).font(.headline)
-                            let matching = Array(records.filter { $0.endpoint == endpoint }.enumerated())
-                            if matching.isEmpty {
-                                Text("Не запитувався у цій сесії").font(.subheadline).foregroundStyle(.secondary)
-                            } else {
-                                ForEach(matching, id: \.offset) { item in receiptRow(item.element) }
-                            }
-                            if endpoint == .exams, !matching.isEmpty {
-                                Text("Разом за декодованими частинами: \(session.examCountTotal(in: records))")
-                                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Routes05Tokens.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    let traces = store.screenReceiptTraces.filter { $0.screen == screen }
+                    if traces.isEmpty {
+                        ContentUnavailableView("Екранний trace ще відсутній", systemImage: "waveform.path.ecg", description: Text("Закрийте цей перегляд, оновіть \(screen.title) звичайним жестом потягування, потім знову відкрийте API receipt."))
+                    }
+                    ForEach(Array(traces.enumerated()), id: \.offset) { item in
+                        traceCard(item.element)
                     }
                 }
                 .padding(16)
@@ -594,49 +617,50 @@ private struct SchoolAPIReceiptView: View {
             .navigationTitle("School API receipt")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Оновити") { Task { await reload() } }.disabled(isLoading) }
                 ToolbarItem(placement: .topBarTrailing) { Button("Закрити") { dismiss() } }
             }
         }
-        .task {
-            await reload()
-        }
-        .onDisappear {
-            session.end()
-            records.removeAll(keepingCapacity: false)
-        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
-    @ViewBuilder
-    private func receiptRow(_ record: SchoolAPIReceiptRecord) -> some View {
+    private func traceCard(_ trace: SchoolAPIReceiptScreenTrace) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let range = record.range { Text(range).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
-            Text("HTTP \(record.status.map(String.init) ?? "—") · \(record.outcome.rawValue) · refresh: \(record.refresh.rawValue)")
-                .font(.caption.monospaced()).textSelection(.enabled)
-            if let count = record.count { Text("Кількість: \(count)").font(.caption) }
-            if record.minimumDate != nil || record.maximumDate != nil {
-                Text("Дати: \(record.minimumDate ?? "—") – \(record.maximumDate ?? "—")").font(.caption.monospacedDigit())
-            }
-            if record.coverage.isEmpty {
-                Text("Покриття: відсутнє у відповіді").font(.caption).foregroundStyle(.secondary)
+            Text("\(trace.screen.title) · оновлення \(trace.loadNumber)").font(.headline)
+            Text("Запитаний період: \(trace.range)").font(.caption.monospacedDigit())
+            Text("Завершення: \(trace.result.rawValue) · стан: \(trace.phase)").font(.caption.monospaced())
+            Text("Одночасні оновлення: \(trace.overlappingLoads) · останнє запущене: \(trace.latestAtCompletion ? "так" : "ні")").font(.caption)
+            if trace.screen.isTimetable {
+                Text("Decode: \(trace.decodedCount.map(String.init) ?? "—"); валідні дати: \(trace.validDateCount.map(String.init) ?? "—")").font(.caption)
+                Text("Вибраний тиждень: \(trace.selectedStart ?? "—") – \(trace.selectedEnd ?? "—")").font(.caption.monospacedDigit())
+                Text("Збіг із пн–пт: \(trace.matchingCount.map(String.init) ?? "—"); store: \(trace.storeCount); видимі уроки: \(trace.visibleRowCount)").font(.caption)
             } else {
-                ForEach(Array(record.coverage.enumerated()), id: \.offset) { item in
-                    let coverage = item.element
-                    Text("Покриття \(coverage.state) · рядків \(coverage.count.map(String.init) ?? "—") · \(coverage.start ?? "—") – \(coverage.end ?? "—")")
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                }
+                Text("Chunks decode: \(trace.decodedCount.map(String.init) ?? "—"); store: \(trace.storeCount); grouped: \(trace.groupedCount.map(String.init) ?? "—"); видимі рядки: \(trace.visibleRowCount)").font(.caption)
+                Text("Покриття: \(trace.coverageState ?? "—") · приховано gate: \(trace.coverageSuppressed == true ? "так" : "ні")").font(.caption)
+            }
+            if trace.requests.isEmpty {
+                Text("HTTP receipts недоступні для цього оновлення").font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(trace.requests.enumerated()), id: \.offset) { item in requestRow(item.element) }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 5)
+        .padding(12)
+        .background(Routes05Tokens.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private func reload() async {
-        session.begin()
-        isLoading = true
-        defer { isLoading = false }
-        await store.load()
-        records = session.records
+    private func requestRow(_ record: SchoolAPIReceiptRecord) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("\(record.endpoint.title) · \(record.range ?? "діапазон недоступний")").font(.caption.monospacedDigit())
+            Text("HTTP \(record.status.map(String.init) ?? "—") · \(record.outcome.rawValue) · refresh \(record.refresh.rawValue)").font(.caption2.monospaced())
+            if let count = record.count { Text("Записи: \(count) · \(record.minimumDate ?? "—") – \(record.maximumDate ?? "—")").font(.caption2.monospacedDigit()) }
+            ForEach(Array(record.coverage.enumerated()), id: \.offset) { item in
+                let coverage = item.element
+                Text("Coverage \(coverage.state) · rows \(coverage.count.map(String.init) ?? "—") · \(coverage.start ?? "—") – \(coverage.end ?? "—")").font(.caption2.monospacedDigit())
+            }
+        }
+        .padding(.top, 6)
     }
 }
 #endif
@@ -1173,6 +1197,12 @@ final class SchoolHubV2Store {
         let days = Set((0..<5).compactMap { SchoolHubLogic.addDays($0, to: weekStart) })
         return timetable.filter { !days.contains($0.localDate) }.count
     }
+#if DEBUG
+    private(set) var screenReceiptTraces: [SchoolAPIReceiptScreenTrace] = []
+    private var receiptLoadNumber = 0
+    private var activeReceiptLoads = 0
+    private var latestReceiptLoad = 0
+#endif
     var visibleTimetable: [OrbitSchoolHubV2TimetableEntry] {
         SchoolHubLogic.timetableEntries(timetable, weekStart: weekStart, localDate: { $0.localDate })
     }
@@ -1230,35 +1260,95 @@ final class SchoolHubV2Store {
         switch failure.status { case 401: return .unauthorized; case 403: return .forbidden; case 503: return .unavailable; default: return .failed }
     }
 
-    private func fetchExams() async throws -> (exams: [OrbitSchoolHubV2Exam], to: String, states: [String]) {
-        var exams: [OrbitSchoolHubV2Exam] = []; var to = weekEnd; var states: [String] = []
+    private func fetchExams(receiptCaptureID: UUID? = nil) async throws -> (exams: [OrbitSchoolHubV2Exam], to: String, states: [String], decodedCount: Int) {
+        var exams: [OrbitSchoolHubV2Exam] = []; var to = weekEnd; var states: [String] = []; var decodedCount = 0
         for window in SchoolHubLogic.windows(from: weekStart, days: 56) {
+#if DEBUG
+            let response = try await MainProductAPI.shared.schoolExams(from: window.from, to: window.to, receiptCaptureID: receiptCaptureID)
+#else
             let response = try await MainProductAPI.shared.schoolExams(from: window.from, to: window.to)
+#endif
+            decodedCount += response.exams.count
             exams += response.exams; to = response.to
             if let state = response.coverage?.state { states.append(state) }
         }
-        return (exams, to, states)
+        return (exams, to, states, decodedCount)
     }
 
     func load() async {
+        await loadInternal(receiptScreenName: nil)
+    }
+
+#if DEBUG
+    func load(forScreen screen: SchoolAPIReceiptScreen?) async {
+        await loadInternal(receiptScreenName: screen?.rawValue)
+    }
+#endif
+
+    private func loadInternal(receiptScreenName: String?) async {
         phase = .loading; errorText = nil; timetableFailure = nil; examsFailure = nil; overviewFailure = nil
         let start = weekStart, end = weekEnd
+#if DEBUG
+        let receiptScreen = receiptScreenName.flatMap(SchoolAPIReceiptScreen.init(rawValue:))
+        var decodedTimetable: [OrbitSchoolHubV2TimetableEntry]?
+        var decodedExamsCount: Int?
+        var completion: SchoolAPIReceiptScreenTrace.Result = .complete
+        var receiptCapture: SchoolAPIReceiptLoadCapture?
+        if let screen = receiptScreen, SchoolAPIReceiptSession.shared.isActive {
+            receiptLoadNumber += 1
+            latestReceiptLoad = receiptLoadNumber
+            activeReceiptLoads += 1
+            receiptCapture = SchoolAPIReceiptSession.shared.beginLoad(screen: screen, range: "\(start) – \(end)", loadNumber: receiptLoadNumber, overlappingLoads: max(0, activeReceiptLoads - 1))
+        }
+        defer {
+            if receiptCapture != nil { activeReceiptLoads = max(0, activeReceiptLoads - 1) }
+            if let receiptCapture, SchoolAPIReceiptSession.shared.isCurrent(receiptCapture) {
+                let trace = makeScreenReceiptTrace(
+                    capture: receiptCapture,
+                    result: completion,
+                    decodedTimetable: decodedTimetable,
+                    decodedExamsCount: decodedExamsCount,
+                    overlappingLoads: max(receiptCapture.overlappingAtStart, max(0, activeReceiptLoads)),
+                    latestAtCompletion: receiptCapture.loadNumber == latestReceiptLoad
+                )
+                if screenReceiptTraces.count == 6 { screenReceiptTraces.removeFirst() }
+                screenReceiptTraces.append(trace)
+            }
+        }
+        let receiptCaptureID = receiptCapture?.id
+        async let overviewResult = MainProductAPI.shared.schoolOverview(start: start, end: end, receiptCaptureID: receiptCaptureID)
+        async let examsResult = fetchExams(receiptCaptureID: receiptCaptureID)
+        async let timetableResult = MainProductAPI.shared.schoolTimetable(from: start, to: end, receiptCaptureID: receiptCaptureID)
+#else
+        _ = receiptScreenName
         async let overviewResult = MainProductAPI.shared.schoolOverview(start: start, end: end)
         async let examsResult = fetchExams()
         async let timetableResult = MainProductAPI.shared.schoolTimetable(from: start, to: end)
+#endif
         var firstError: Error?
         var overviewError: Error?, examsError: Error?, timetableError: Error?
         var states: [String] = []
         do {
             let response = try await overviewResult
             overview = response.overview; freshness = response.overview.freshness
-        } catch is CancellationError { if phase == .loading { phase = .idle }; return }
+        } catch is CancellationError { if phase == .loading { phase = .idle }
+#if DEBUG
+            completion = .cancelled
+#endif
+            return }
         catch { overviewFailure = Self.failurePhase(for: error); overviewError = error; firstError = error }
         do {
             let response = try await examsResult
+#if DEBUG
+            decodedExamsCount = response.decodedCount
+#endif
             exams = SchoolHubLogic.chronologicalExams(Dictionary(grouping: response.exams, by: \.id).compactMap { $0.value.first }, dayKey: { $0.dayKey }, id: { $0.id })
             examCoverageEnd = response.to; states += response.states
-        } catch is CancellationError { if phase == .loading { phase = .idle }; return }
+        } catch is CancellationError { if phase == .loading { phase = .idle }
+#if DEBUG
+            completion = .cancelled
+#endif
+            return }
         catch { examsFailure = Self.failurePhase(for: error); examsError = error; firstError = firstError ?? error }
         do {
             let response = try await timetableResult
@@ -1267,9 +1357,16 @@ final class SchoolHubV2Store {
                 if lhs.lessonIndex != rhs.lessonIndex { return lhs.lessonIndex < rhs.lessonIndex }
                 return lhs.id < rhs.id
             }
+#if DEBUG
+            decodedTimetable = response.timetable.entries
+#endif
             timetableCoverageState = SchoolHubLogic.timetableCoverageState(response.timetable.coverage?.state, responseState: response.timetable.state, entryCount: timetable.count)
             if let state = response.timetable.coverage?.state { states.append(state) }
-        } catch is CancellationError { if phase == .loading { phase = .idle }; return }
+        } catch is CancellationError { if phase == .loading { phase = .idle }
+#if DEBUG
+            completion = .cancelled
+#endif
+            return }
         catch {
             timetableFailure = Self.failurePhase(for: error); timetableError = error; firstError = firstError ?? error
             timetableCoverageState = "UNAVAILABLE"
@@ -1294,6 +1391,46 @@ final class SchoolHubV2Store {
         default: phase = .ready
         }
     }
+
+#if DEBUG
+    func clearScreenReceiptTraces() { screenReceiptTraces.removeAll(keepingCapacity: false) }
+
+    private func makeScreenReceiptTrace(capture: SchoolAPIReceiptLoadCapture, result: SchoolAPIReceiptScreenTrace.Result, decodedTimetable: [OrbitSchoolHubV2TimetableEntry]?, decodedExamsCount: Int?, overlappingLoads: Int, latestAtCompletion: Bool) -> SchoolAPIReceiptScreenTrace {
+        let selectedStart = weekStart
+        let selectedEnd = weekEnd
+        let timetableCounts = SchoolAPIReceiptLogic.timetableCounts(dates: decodedTimetable?.map(\.localDate) ?? [], weekStart: selectedStart)
+        let groupedExamCount = examWeeks.reduce(0) { $0 + $1.days.reduce(0) { $0 + $1.exams.count } }
+        let examsSuppressed = examsFailure != nil || SchoolAPIReceiptLogic.examsCoverageSuppressesRows(coverageState)
+        let timetableVisible = SchoolAPIReceiptLogic.visibleTimetableRowCount(lessonIndexes: visibleTimetable.map(\.lessonIndex))
+        let hubContentCanRender = phase == .ready || phase == .empty || phase == .notSynced || phase == .stale
+        let visibleRows: Int
+        switch capture.screen {
+        case .timetable: visibleRows = (timetableFailure != nil || [.unauthorized, .forbidden, .unavailable, .failed].contains(phase)) && timetable.isEmpty ? 0 : timetableVisible
+        case .timetableHub: visibleRows = !hubContentCanRender || timetableFailure != nil ? 0 : timetableVisible
+        case .exams: visibleRows = SchoolAPIReceiptLogic.visibleExamRowCount(groupedCount: groupedExamCount, coverageState: coverageState, hasFailure: examsFailure != nil || !hubContentCanRender)
+        }
+        return SchoolAPIReceiptScreenTrace(
+            screen: capture.screen,
+            range: capture.range,
+            requests: capture.requests,
+            result: result,
+            loadNumber: capture.loadNumber,
+            overlappingLoads: overlappingLoads,
+            latestAtCompletion: latestAtCompletion,
+            phase: String(describing: phase),
+            decodedCount: capture.screen.isTimetable ? decodedTimetable?.count : decodedExamsCount,
+            validDateCount: capture.screen.isTimetable ? decodedTimetable?.filter { SchoolHubLogic.date(fromDayKey: $0.localDate) != nil }.count : nil,
+            selectedStart: selectedStart,
+            selectedEnd: selectedEnd,
+            matchingCount: capture.screen.isTimetable ? timetableCounts.matchingCount : nil,
+            storeCount: capture.screen == .timetable ? timetable.count : exams.count,
+            groupedCount: capture.screen == .exams ? groupedExamCount : nil,
+            visibleRowCount: visibleRows,
+            coverageState: capture.screen.isTimetable ? timetableCoverageState : coverageState,
+            coverageSuppressed: capture.screen == .exams ? (examsSuppressed && groupedExamCount > 0) : nil
+        )
+    }
+#endif
 
     func shiftWeek(_ days: Int) { weekStart = SchoolHubLogic.addDays(days, to: weekStart) ?? weekStart }
 
@@ -3574,6 +3711,8 @@ private struct Routes05SchoolTimetableProductionView: View {
     @State private var detail: LessonSelection?
 #if DEBUG
     private var usesFixture = false
+    @State private var showingAPIReceipt = false
+    @State private var apiReceiptCaptureEnabled = false
 #endif
 
     init(studentLabel: String?, onOpenOverview: @escaping () -> Void = {}, onOpenExams: @escaping () -> Void = {}) {
@@ -3627,15 +3766,20 @@ private struct Routes05SchoolTimetableProductionView: View {
                     coverage
                     content
                 }.padding(.bottom, 28)
-            }.refreshable { await store.load() }
+            }.refreshable { await reloadStore() }
         }
         .foregroundStyle(Routes05Tokens.ink).background(Routes05Tokens.canvas.ignoresSafeArea()).toolbar(.hidden, for: .navigationBar)
-        
+#if DEBUG
+        .sheet(isPresented: $showingAPIReceipt, onDismiss: stopReceiptCapture) {
+            if !usesFixture { SchoolAPIReceiptView(store: store, screen: .timetable) }
+        }
+        .onDisappear(perform: stopReceiptCapture)
+#endif
         .task(id: store.weekStart) {
 #if DEBUG
             if usesFixture { return }
 #endif
-            await store.load()
+            await reloadStore()
         }
         .onChange(of: days) { _, value in if !value.contains(selectedDay ?? "") { selectedDay = value.first } }
     }
@@ -3645,9 +3789,45 @@ private struct Routes05SchoolTimetableProductionView: View {
             Button { dismiss() } label: { Image(systemName: "arrow.left").font(.title3.weight(.semibold)).frame(width: 43, height: 43).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.5)) }.accessibilityLabel("Назад до школи")
             Text("Розклад").font(.system(.headline, design: .rounded).weight(.black))
             Spacer()
-            Menu { Button("Огляд", action: onOpenOverview); Button("Іспити", action: onOpenExams) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Інші розділи школи")
+            Menu {
+                Button("Огляд", action: onOpenOverview)
+                Button("Іспити", action: onOpenExams)
+#if DEBUG
+                if !usesFixture {
+                    Divider()
+                    Button(apiReceiptCaptureEnabled ? "Зупинити запис" : "Почати запис") {
+                        if apiReceiptCaptureEnabled { stopReceiptCapture() } else { startReceiptCapture() }
+                    }
+                    Button("Відкрити API receipt") { showingAPIReceipt = true }.disabled(!apiReceiptCaptureEnabled)
+                }
+#endif
+            } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Інші розділи школи")
         }.padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 17)
     }
+
+    private func reloadStore() async {
+#if DEBUG
+        if usesFixture { return }
+        await store.load(forScreen: .timetable)
+#else
+        await store.load()
+#endif
+    }
+
+#if DEBUG
+    private func startReceiptCapture() {
+        guard !usesFixture else { return }
+        store.clearScreenReceiptTraces()
+        SchoolAPIReceiptSession.shared.begin()
+        apiReceiptCaptureEnabled = true
+    }
+
+    private func stopReceiptCapture() {
+        SchoolAPIReceiptSession.shared.end()
+        store.clearScreenReceiptTraces()
+        apiReceiptCaptureEnabled = false
+    }
+#endif
     private var intro: some View {
         HStack { Text("WEEK / \(weekNumber)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.8); Spacer(); Text(year).font(.system(size: 10, weight: .medium, design: .monospaced)) }
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
@@ -3690,7 +3870,7 @@ private struct Routes05SchoolTimetableProductionView: View {
             ContentUnavailableView {
                 Label(failure == .unauthorized ? "Потрібна авторизація" : failure == .forbidden ? "Доступ обмежено" : "Не вдалося завантажити розклад", systemImage: failure == .unauthorized ? "lock" : failure == .forbidden ? "hand.raised" : "exclamationmark.triangle")
             } description: { Text(failure == .unauthorized || failure == .forbidden ? coverageText : "Це помилка запиту, а не відсутність розкладу. Перевірте з’єднання й повторіть спробу.") } actions: {
-                if failure != .unauthorized && failure != .forbidden { Button("Повторити") { Task { await store.load() } }.buttonStyle(.bordered) }
+                if failure != .unauthorized && failure != .forbidden { Button("Повторити") { Task { await reloadStore() } }.buttonStyle(.bordered) }
             }.padding(.vertical, 24)
         }
         else if visibleTimetable.isEmpty { ContentUnavailableView(store.timetableCoverageState == "READY_EMPTY" ? "Уроків цього тижня немає" : "Немає уроків для вибраного тижня", systemImage: "calendar.badge.exclamationmark", description: Text(coverageText)).padding(.vertical, 24) }
