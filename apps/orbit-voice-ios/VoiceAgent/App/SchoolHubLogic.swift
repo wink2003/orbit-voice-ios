@@ -111,6 +111,9 @@ struct SchoolAPIReceiptScreenTrace: Equatable {
     let phase: String
     let decodedCount: Int?
     let validDateCount: Int?
+    let validDayKeyCount: Int?
+    let exactDateEqualityCount: Int?
+    let localDateFormats: SchoolAPIReceiptLocalDateFormatCounts?
     let selectedStart: String?
     let selectedEnd: String?
     let matchingCount: Int?
@@ -149,13 +152,59 @@ final class SchoolAPIReceiptLoadCapture {
 nonisolated struct SchoolAPIReceiptTimetableCounts: Equatable {
     let validDateCount: Int
     let matchingCount: Int
+    let validDayKeyCount: Int
+    let exactDateEqualityCount: Int
+    let localDateFormats: SchoolAPIReceiptLocalDateFormatCounts
+}
+
+nonisolated struct SchoolAPIReceiptLocalDateFormatCounts: Equatable {
+    let isoDate: Int
+    let isoDateTime: Int
+    let numeric: Int
+    let empty: Int
+    let other: Int
 }
 
 nonisolated enum SchoolAPIReceiptLogic {
-    static func timetableCounts(dates: [String], weekStart: String) -> SchoolAPIReceiptTimetableCounts {
+    static func timetableCounts(dayKeys: [String], dates: [String], weekStart: String) -> SchoolAPIReceiptTimetableCounts {
         let validDates = dates.filter { SchoolHubLogic.date(fromDayKey: $0) != nil }
         let weekdays = Set((0..<5).compactMap { SchoolHubLogic.addDays($0, to: weekStart) })
-        return SchoolAPIReceiptTimetableCounts(validDateCount: validDates.count, matchingCount: validDates.filter(weekdays.contains).count)
+        var isoDate = 0, isoDateTime = 0, numeric = 0, empty = 0, other = 0
+        for value in dates {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if Self.isISODate(trimmed) {
+                isoDate += 1
+            } else if Self.isISODateTime(trimmed) {
+                isoDateTime += 1
+            } else if !trimmed.isEmpty && trimmed.range(of: "^[0-9]+$", options: .regularExpression) != nil {
+                numeric += 1
+            } else if trimmed.isEmpty {
+                empty += 1
+            } else {
+                other += 1
+            }
+        }
+        return SchoolAPIReceiptTimetableCounts(
+            validDateCount: validDates.count,
+            matchingCount: validDates.filter(weekdays.contains).count,
+            validDayKeyCount: dayKeys.filter(Self.isISODate).count,
+            exactDateEqualityCount: zip(dayKeys, dates).filter { $0.0 == $0.1 }.count,
+            localDateFormats: SchoolAPIReceiptLocalDateFormatCounts(isoDate: isoDate, isoDateTime: isoDateTime, numeric: numeric, empty: empty, other: other)
+        )
+    }
+
+    private static func isISODate(_ value: String) -> Bool {
+        value.range(of: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", options: .regularExpression) != nil && SchoolHubLogic.date(fromDayKey: value) != nil
+    }
+
+    private static func isISODateTime(_ value: String) -> Bool {
+        guard value.range(of: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})$", options: .regularExpression) != nil,
+              SchoolHubLogic.date(fromDayKey: value) != nil else { return false }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if formatter.date(from: value) != nil { return true }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value) != nil
     }
 
     static func examsCoverageSuppressesRows(_ state: String) -> Bool {
