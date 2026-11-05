@@ -470,9 +470,16 @@ struct SchoolHubLogicTests {
             let day = SchoolHubLogic.addDays(offset, to: "2026-11-02")!
             return Array(repeating: day, count: 6)
         } + ["2026-11-09", "invalid", "2026-02-31"]
-        let screenCounts = SchoolAPIReceiptLogic.timetableCounts(dates: screenDates, weekStart: "2026-11-02")
+        let screenCounts = SchoolAPIReceiptLogic.timetableCounts(dayKeys: screenDates, dates: screenDates, weekStart: "2026-11-02")
         precondition(screenCounts.validDateCount == 31 && screenCounts.matchingCount == 30, "screen trace counts valid decoded local dates and only the selected Monday-Friday")
-        precondition(SchoolAPIReceiptLogic.timetableCounts(dates: screenDates, weekStart: "2026-11-09").matchingCount == 1, "week changes are measured against the currently selected civil dates")
+        precondition(SchoolAPIReceiptLogic.timetableCounts(dayKeys: screenDates, dates: screenDates, weekStart: "2026-11-09").matchingCount == 1, "week changes are measured against the currently selected civil dates")
+        let dateShapes = SchoolAPIReceiptLogic.timetableCounts(
+            dayKeys: ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "invalid"],
+            dates: ["2026-11-02", "2026-11-03T00:00:00Z", "1700000000", "  ", "weekday"],
+            weekStart: "2026-11-02"
+        )
+        precondition(dateShapes.validDayKeyCount == 4 && dateShapes.exactDateEqualityCount == 1)
+        precondition(dateShapes.localDateFormats == SchoolAPIReceiptLocalDateFormatCounts(isoDate: 1, isoDateTime: 1, numeric: 1, empty: 1, other: 1), "receipt reports only aggregate localDate format categories")
 
         precondition(SchoolHubLogic.examsCoverageSuppressesRows("NOT_SYNCED"), "the existing Exams gate suppresses rows for NOT_SYNCED coverage")
         precondition(SchoolAPIReceiptLogic.visibleExamRowCount(groupedCount: 5, coverageState: "NOT_SYNCED", hasFailure: false) == 0, "trace reports nonempty grouped exams hidden by the current coverage gate")

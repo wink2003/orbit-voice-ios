@@ -631,7 +631,10 @@ private struct SchoolAPIReceiptView: View {
             Text("Завершення: \(trace.result.rawValue) · стан: \(trace.phase)").font(.caption.monospaced())
             Text("Одночасні оновлення: \(trace.overlappingLoads) · останнє запущене: \(trace.latestAtCompletion ? "так" : "ні")").font(.caption)
             if trace.screen.isTimetable {
-                Text("Decode: \(trace.decodedCount.map(String.init) ?? "—"); валідні дати: \(trace.validDateCount.map(String.init) ?? "—")").font(.caption)
+                Text("Decode: \(trace.decodedCount.map(String.init) ?? "—"); валідні localDate: \(trace.validDateCount.map(String.init) ?? "—"); ISO dayKey: \(trace.validDayKeyCount.map(String.init) ?? "—"); однакові: \(trace.exactDateEqualityCount.map(String.init) ?? "—")").font(.caption)
+                if let formats = trace.localDateFormats {
+                    Text("Формат localDate — ISO date: \(formats.isoDate), ISO datetime: \(formats.isoDateTime), numeric: \(formats.numeric), empty: \(formats.empty), other: \(formats.other)").font(.caption)
+                }
                 Text("Вибраний тиждень: \(trace.selectedStart ?? "—") – \(trace.selectedEnd ?? "—")").font(.caption.monospacedDigit())
                 Text("Збіг із пн–пт: \(trace.matchingCount.map(String.init) ?? "—"); store: \(trace.storeCount); видимі уроки: \(trace.visibleRowCount)").font(.caption)
             } else {
@@ -1398,7 +1401,11 @@ final class SchoolHubV2Store {
     private func makeScreenReceiptTrace(capture: SchoolAPIReceiptLoadCapture, result: SchoolAPIReceiptScreenTrace.Result, decodedTimetable: [OrbitSchoolHubV2TimetableEntry]?, decodedExamsCount: Int?, overlappingLoads: Int, latestAtCompletion: Bool) -> SchoolAPIReceiptScreenTrace {
         let selectedStart = weekStart
         let selectedEnd = weekEnd
-        let timetableCounts = SchoolAPIReceiptLogic.timetableCounts(dates: decodedTimetable?.map(\.localDate) ?? [], weekStart: selectedStart)
+        let timetableCounts = SchoolAPIReceiptLogic.timetableCounts(
+            dayKeys: decodedTimetable?.map(\.dayKey) ?? [],
+            dates: decodedTimetable?.map(\.localDate) ?? [],
+            weekStart: selectedStart
+        )
         let groupedExamCount = examWeeks.reduce(0) { $0 + $1.days.reduce(0) { $0 + $1.exams.count } }
         let examsSuppressed = examsFailure != nil || SchoolAPIReceiptLogic.examsCoverageSuppressesRows(coverageState)
         let timetableVisible = SchoolAPIReceiptLogic.visibleTimetableRowCount(lessonIndexes: visibleTimetable.map(\.lessonIndex))
@@ -1420,6 +1427,9 @@ final class SchoolHubV2Store {
             phase: String(describing: phase),
             decodedCount: capture.screen.isTimetable ? decodedTimetable?.count : decodedExamsCount,
             validDateCount: capture.screen.isTimetable ? decodedTimetable?.filter { SchoolHubLogic.date(fromDayKey: $0.localDate) != nil }.count : nil,
+            validDayKeyCount: capture.screen.isTimetable ? timetableCounts.validDayKeyCount : nil,
+            exactDateEqualityCount: capture.screen.isTimetable ? timetableCounts.exactDateEqualityCount : nil,
+            localDateFormats: capture.screen.isTimetable ? timetableCounts.localDateFormats : nil,
             selectedStart: selectedStart,
             selectedEnd: selectedEnd,
             matchingCount: capture.screen.isTimetable ? timetableCounts.matchingCount : nil,
