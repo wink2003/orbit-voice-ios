@@ -122,7 +122,7 @@ struct SchoolAPIReceiptScreenTrace: Equatable {
 }
 
 @MainActor
-final class SchoolAPIReceiptLoadCapture {
+final class SchoolAPIReceiptLoadCapture: @unchecked Sendable {
     let screen: SchoolAPIReceiptScreen
     let range: String
     let loadNumber: Int
