@@ -1088,7 +1088,7 @@ final class SchoolHubV2Store {
 
 #if DEBUG
     init(fixture: Routes05SchoolFixture) {
-        let observed = Date(timeIntervalSince1970: 1_729_555_200)
+        let observed = Date()
         let freshness = OrbitSchoolHubV2Freshness(state: "READY_WITH_DATA", sourceStates: ["schulmanager": "READY"], observedAt: observed, source: "schulmanager", fingerprint: "routes05")
         let fixtureWeekStart = SchoolHubV2Store.currentWeekStart()
         let fixtureWeekEnd = SchoolHubLogic.addDays(7, to: fixtureWeekStart) ?? fixtureWeekStart
@@ -1107,6 +1107,7 @@ final class SchoolHubV2Store {
         timetable = lessons
         self.freshness = freshness
         coverageState = "READY_WITH_DATA"
+        timetableCoverageState = "READY_WITH_DATA"
         phase = .ready
     }
 #endif
