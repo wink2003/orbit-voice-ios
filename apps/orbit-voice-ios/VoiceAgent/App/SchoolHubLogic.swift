@@ -1,5 +1,118 @@
 import Foundation
 
+#if DEBUG
+enum SchoolAPIReceiptEndpoint: String, CaseIterable, Equatable {
+    case overview, timetable, exams
+
+    var title: String {
+        switch self {
+        case .overview: "Огляд"
+        case .timetable: "Розклад"
+        case .exams: "Іспити"
+        }
+    }
+
+    static func allowed(method: String, path: String) -> Self? {
+        guard method.uppercased() == "GET" else { return nil }
+        let pathOnly = String(path.prefix { $0 != "?" })
+        switch pathOnly {
+        case "/api/school/overview": return .overview
+        case "/api/school/timetable": return .timetable
+        case "/api/school/exams": return .exams
+        default: return nil
+        }
+    }
+}
+
+struct SchoolAPIReceiptCoverage: Equatable {
+    let state: String
+    let count: Int?
+    let start: String?
+    let end: String?
+
+    init(state: String, count: Int?, start: String?, end: String?) {
+        let allowedStates: Set<String> = ["READY", "READY_WITH_DATA", "READY_EMPTY", "STALE", "PARTIAL", "UNAVAILABLE", "ERROR", "NOT_SYNCED"]
+        self.state = allowedStates.contains(state.uppercased()) ? state.uppercased() : "OTHER"
+        self.count = count.map { max(0, $0) }
+        self.start = Self.isoDay(start)
+        self.end = Self.isoDay(end)
+    }
+
+    private static func isoDay(_ value: String?) -> String? {
+        guard let value, SchoolHubLogic.date(fromDayKey: value) != nil else { return nil }
+        return value
+    }
+}
+
+struct SchoolAPIReceiptRecord: Equatable {
+    enum Outcome: String, Equatable {
+        case notSent = "not_sent_auth_missing"
+        case transportFailure = "transport_failure"
+        case invalidResponse = "invalid_response"
+        case httpFailure = "http_failure"
+        case decodeFailure = "decode_failure"
+        case decoded = "decoded"
+        case decodedEmpty = "decoded_empty"
+        case decodedNonempty = "decoded_nonempty"
+    }
+
+    enum Refresh: String, Equatable {
+        case notAttempted = "not_attempted"
+        case succeeded
+        case failed
+        case unavailable
+    }
+
+    let endpoint: SchoolAPIReceiptEndpoint
+    let range: String?
+    let status: Int?
+    let outcome: Outcome
+    let refresh: Refresh
+    let count: Int?
+    let minimumDate: String?
+    let maximumDate: String?
+    let coverage: [SchoolAPIReceiptCoverage]
+
+    static let safeDisplayFields: Set<String> = ["endpoint", "range", "status", "outcome", "refresh", "count", "minimumDate", "maximumDate", "coverage"]
+
+    static func decodedOutcome(count: Int?) -> Outcome {
+        guard let count else { return .decoded }
+        return count == 0 ? .decodedEmpty : .decodedNonempty
+    }
+
+    static func refreshOutcome(sessionAvailable: Bool, succeeded: Bool) -> Refresh {
+        guard sessionAvailable else { return .unavailable }
+        return succeeded ? .succeeded : .failed
+    }
+
+    static func isoDateBounds(_ values: [String]) -> (minimum: String?, maximum: String?) {
+        let valid = values.filter { SchoolHubLogic.date(fromDayKey: $0) != nil }.sorted()
+        return (valid.first, valid.last)
+    }
+}
+
+@MainActor
+final class SchoolAPIReceiptSession {
+    static let shared = SchoolAPIReceiptSession()
+    private(set) var isActive = false
+    private(set) var records: [SchoolAPIReceiptRecord] = []
+    private let capacity = 24
+
+    func begin() { records.removeAll(keepingCapacity: true); isActive = true }
+    func end() { isActive = false; records.removeAll(keepingCapacity: false) }
+    func append(_ record: SchoolAPIReceiptRecord) {
+        guard isActive else { return }
+        if records.count == capacity { records.removeFirst() }
+        records.append(record)
+    }
+
+    func examCountTotal(in records: [SchoolAPIReceiptRecord]? = nil) -> Int {
+        (records ?? self.records).filter { $0.endpoint == .exams && [.decodedEmpty, .decodedNonempty].contains($0.outcome) }
+            .compactMap(\.count).reduce(0, +)
+    }
+}
+#endif
+
 nonisolated enum SchoolTranslatedBody {
     /// Keeps source line breaks and list markers intact while exposing paragraph spacing to the view.
     static func paragraphs(from text: String) -> [String] {
