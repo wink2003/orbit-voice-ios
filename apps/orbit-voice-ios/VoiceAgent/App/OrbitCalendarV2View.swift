@@ -411,7 +411,7 @@ struct OrbitCalendarV2View: View {
             }
         }
         .padding(10)
-        .background(Routes05Tokens.yellow.opacity(colorScheme == .dark ? 0.25 : 0.55))
+        .background(Routes05Tokens.yellow.opacity(colorScheme == .dark ? 0.92 : 0.55))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.yellow, lineWidth: 1.5))
         .padding(.horizontal, 16)
         .foregroundStyle(Routes05Tokens.accentInk)

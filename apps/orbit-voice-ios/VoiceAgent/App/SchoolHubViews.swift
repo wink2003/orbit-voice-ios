@@ -440,7 +440,7 @@ private struct SchoolHubV2View: View {
                 Text("ТИЖДЕНЬ \(week.week)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.3).foregroundStyle(Routes05Tokens.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
                 ForEach(week.days, id: \.date) { day in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(SchoolHubFormat.long(day.date)).font(.headline.weight(.black)).foregroundStyle(Routes05Tokens.accentInk)
+                        Text(SchoolHubFormat.long(day.date)).font(.headline.weight(.black)).foregroundStyle(Routes05Tokens.ink)
                         ForEach(day.exams) { exam in examRow(exam) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
