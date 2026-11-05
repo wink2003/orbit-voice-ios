@@ -395,6 +395,17 @@ struct SchoolHubLogicTests {
         let doubleSlot = try! decoder.decode(OrbitSchoolHubV2TimetableResponse.self, from: doubleSlotJSON).timetable
         precondition(doubleSlot.entries.filter { $0.localDate == "2026-11-02" && $0.lessonIndex == 2 }.count == 2 && doubleSlot.coverage?.state == "READY_WITH_DATA")
 
+        // Independent loading: one failed endpoint must not fail the whole hub
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: nil, exams: nil, timetable: nil))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: 503, exams: nil, timetable: nil))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: 503, exams: nil, timetable: 0))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: nil, exams: 400, timetable: nil))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: nil, exams: nil, timetable: 503))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: 503, exams: 400, timetable: nil))
+        precondition(SchoolHubLogic.isHubWideFailure(overview: 503, exams: 400, timetable: 0))
+        precondition(SchoolHubLogic.isHubWideFailure(overview: nil, exams: 401, timetable: nil))
+        precondition(SchoolHubLogic.isHubWideFailure(overview: nil, exams: nil, timetable: 403))
+
         print("school hub logic tests passed")
     }
 }

@@ -432,7 +432,8 @@ private struct SchoolHubV2View: View {
     private var examsView: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-            if store.coverageState == "NOT_SYNCED" { ContentUnavailableView("Дані за цей тиждень ще не завантажені", systemImage: "clock.badge.exclamationmark", description: Text("Для вибраного тижня ще немає підтвердженої синхронізації.")) }
+            if let failure = store.examsFailure { ContentUnavailableView { Label("Не вдалося завантажити іспити", systemImage: "exclamationmark.triangle") } description: { Text("Це помилка запиту, а не відсутність іспитів.") } actions: { if failure != .unauthorized && failure != .forbidden { Button("Повторити") { Task { await store.load() } }.buttonStyle(.bordered) } } }
+            else if store.coverageState == "NOT_SYNCED" { ContentUnavailableView("Дані за цей тиждень ще не завантажені", systemImage: "clock.badge.exclamationmark", description: Text("Для вибраного тижня ще немає підтвердженої синхронізації.")) }
             else if ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState) { ContentUnavailableView("Дані тимчасово недоступні", systemImage: "cloud.slash", description: Text("Стан синхронізації не підтверджено для цього тижня.")) }
             else if store.exams.isEmpty { ContentUnavailableView("Іспитів немає", systemImage: "checkmark.circle", description: Text("За вибраний період іспитів не знайдено.")) }
             else { ForEach(store.examWeeks, id: \.week) { week in
@@ -455,6 +456,9 @@ private struct SchoolHubV2View: View {
     }
 
     private var timetableView: some View {
+        if store.timetableFailure != nil {
+            return AnyView(ContentUnavailableView { Label("Не вдалося завантажити розклад", systemImage: "exclamationmark.triangle") } description: { Text("Це помилка запиту, а не відсутність розкладу.") } actions: { Button("Повторити") { Task { await store.load() } }.buttonStyle(.bordered) })
+        }
         if store.timetable.isEmpty {
             let unsynced = store.coverageState == "NOT_SYNCED"
             let unavailable = ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState)
@@ -1095,6 +1099,12 @@ final class SchoolHubV2Store {
 
     var timetableFailure: Phase?
     var examsFailure: Phase?
+    var overviewFailure: Phase?
+
+    private static func status(of error: Error?) -> Int? {
+        guard let error else { return nil }
+        return (error as? OrbitHTTPResponseFailure)?.status ?? 0
+    }
 
     static func failurePhase(for error: Error) -> Phase {
         guard let failure = error as? OrbitHTTPResponseFailure else { return .failed }
@@ -1112,18 +1122,19 @@ final class SchoolHubV2Store {
     }
 
     func load() async {
-        phase = .loading; errorText = nil; timetableFailure = nil; examsFailure = nil
+        phase = .loading; errorText = nil; timetableFailure = nil; examsFailure = nil; overviewFailure = nil
         let start = weekStart, end = weekEnd
         async let overviewResult = MainProductAPI.shared.schoolOverview(start: start, end: end)
         async let examsResult = fetchExams()
         async let timetableResult = MainProductAPI.shared.schoolTimetable(from: start, to: end)
         var firstError: Error?
+        var overviewError: Error?, examsError: Error?, timetableError: Error?
         var states: [String] = []
         do {
             let response = try await overviewResult
             overview = response.overview; freshness = response.overview.freshness
         } catch is CancellationError { if phase == .loading { phase = .idle }; return }
-        catch { firstError = error }
+        catch { overviewFailure = Self.failurePhase(for: error); overviewError = error; firstError = error }
         do {
             let response = try await examsResult
             exams = Dictionary(grouping: response.exams, by: \.id).compactMap { $0.value.first }.sorted {
@@ -1132,7 +1143,7 @@ final class SchoolHubV2Store {
             }
             examCoverageEnd = response.to; states += response.states
         } catch is CancellationError { if phase == .loading { phase = .idle }; return }
-        catch { examsFailure = Self.failurePhase(for: error); firstError = firstError ?? error }
+        catch { examsFailure = Self.failurePhase(for: error); examsError = error; firstError = firstError ?? error }
         do {
             let response = try await timetableResult
             timetable = response.timetable.entries.sorted { lhs, rhs in
@@ -1142,14 +1153,21 @@ final class SchoolHubV2Store {
             }
             if let state = response.timetable.coverage?.state { states.append(state) }
         } catch is CancellationError { if phase == .loading { phase = .idle }; return }
-        catch { timetableFailure = Self.failurePhase(for: error); firstError = firstError ?? error }
+        catch {
+            timetableFailure = Self.failurePhase(for: error); timetableError = error; firstError = firstError ?? error
+            timetable = timetable.filter { $0.localDate >= start && $0.localDate < end }
+        }
         if !states.isEmpty || firstError == nil {
             coverageState = states.first(where: { ["PARTIAL", "UNAVAILABLE", "ERROR"].contains($0) }) ?? (states.contains("STALE") ? "STALE" : states.contains("READY_WITH_DATA") ? "READY_WITH_DATA" : states.contains("READY_EMPTY") ? "READY_EMPTY" : "NOT_SYNCED")
         }
         if let firstError {
-            phase = Self.failurePhase(for: firstError)
             errorText = (firstError as? OrbitHTTPResponseFailure)?.code ?? firstError.localizedDescription
-            return
+            if SchoolHubLogic.isHubWideFailure(overview: Self.status(of: overviewError), exams: Self.status(of: examsError), timetable: Self.status(of: timetableError)) {
+                let blocking = [overviewError, examsError, timetableError].compactMap { $0 }.first { [401, 403].contains(Self.status(of: $0)) } ?? firstError
+                phase = Self.failurePhase(for: blocking)
+                return
+            }
+            if states.isEmpty { coverageState = "UNAVAILABLE" }
         }
         switch coverageState {
         case "NOT_SYNCED": phase = .notSynced
@@ -3534,7 +3552,6 @@ private struct Routes05SchoolTimetableProductionView: View {
     }
     private var failure: SchoolHubV2Store.Phase? {
         if let failure = store.timetableFailure { return failure }
-        guard store.overview == nil else { return nil }
         switch store.phase { case .unauthorized, .forbidden, .unavailable, .failed: return store.phase; default: return nil }
     }
     private var coverageText: String {

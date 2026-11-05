@@ -427,6 +427,14 @@ nonisolated enum SchoolHubLogic {
         return result
     }
 
+    /// Each argument is nil on success, else the HTTP status (0 for a non-HTTP failure).
+    /// The whole hub fails only for auth problems or when every endpoint failed; otherwise sections with data stay usable.
+    static func isHubWideFailure(overview: Int?, exams: Int?, timetable: Int?) -> Bool {
+        let all = [overview, exams, timetable]
+        if all.contains(where: { $0 == 401 || $0 == 403 }) { return true }
+        return all.allSatisfy { $0 != nil }
+    }
+
     static func daysBetween(_ from: String, _ to: String) -> Int {
         guard let a = date(fromDayKey: from), let b = date(fromDayKey: to) else { return 0 }
         return calendar().dateComponents([.day], from: a, to: b).day ?? 0
