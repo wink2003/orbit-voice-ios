@@ -291,6 +291,9 @@ private struct SchoolHubV2View: View {
 #endif
     @State private var store = SchoolHubV2Store()
     @State private var tab = 0
+#if DEBUG
+    @State private var showingAPIReceipt = false
+#endif
 
     init(studentLabel: String?, initialSection: SchoolV2Section = .overview) {
         self.studentLabel = studentLabel
@@ -381,6 +384,19 @@ private struct SchoolHubV2View: View {
             }
         }
         .background(Routes05Tokens.canvas.ignoresSafeArea())
+#if DEBUG
+        .toolbar {
+            if debugFixture == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("API receipt", systemImage: "waveform.path.ecg") { showingAPIReceipt = true }
+                        .accessibilityHint("Відкрити локальну діагностику шкільних запитів")
+                }
+            }
+        }
+        .sheet(isPresented: $showingAPIReceipt) {
+            if debugFixture == nil { SchoolAPIReceiptView(store: store) }
+        }
+#endif
     }
 
     private var timetableTitle: String {
@@ -537,6 +553,93 @@ private struct SchoolHubV2View: View {
 
     private func reload() { Task { await store.load() } }
 }
+
+#if DEBUG
+private struct SchoolAPIReceiptView: View {
+    let store: SchoolHubV2Store
+    @Environment(\.dismiss) private var dismiss
+    @State private var records: [SchoolAPIReceiptRecord] = []
+    @State private var isLoading = false
+    private let session = SchoolAPIReceiptSession.shared
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    Text("Локальний DEBUG receipt. У пам’яті зберігаються лише статус, категорія результату, кількість і дати; вміст відповідей не записується та не експортується.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    ForEach(SchoolAPIReceiptEndpoint.allCases, id: \.rawValue) { endpoint in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(endpoint.title).font(.headline)
+                            let matching = Array(records.filter { $0.endpoint == endpoint }.enumerated())
+                            if matching.isEmpty {
+                                Text("Не запитувався у цій сесії").font(.subheadline).foregroundStyle(.secondary)
+                            } else {
+                                ForEach(matching, id: \.offset) { item in receiptRow(item.element) }
+                            }
+                            if endpoint == .exams, !matching.isEmpty {
+                                Text("Разом за декодованими частинами: \(session.examCountTotal(in: records))")
+                                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Routes05Tokens.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+                .padding(16)
+            }
+            .background(Routes05Tokens.canvas)
+            .navigationTitle("School API receipt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Оновити") { Task { await reload() } }.disabled(isLoading) }
+                ToolbarItem(placement: .topBarTrailing) { Button("Закрити") { dismiss() } }
+            }
+        }
+        .task {
+            await reload()
+        }
+        .onDisappear {
+            session.end()
+            records.removeAll(keepingCapacity: false)
+        }
+    }
+
+    @ViewBuilder
+    private func receiptRow(_ record: SchoolAPIReceiptRecord) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let range = record.range { Text(range).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+            Text("HTTP \(record.status.map(String.init) ?? "—") · \(record.outcome.rawValue) · refresh: \(record.refresh.rawValue)")
+                .font(.caption.monospaced()).textSelection(.enabled)
+            if let count = record.count { Text("Кількість: \(count)").font(.caption) }
+            if record.minimumDate != nil || record.maximumDate != nil {
+                Text("Дати: \(record.minimumDate ?? "—") – \(record.maximumDate ?? "—")").font(.caption.monospacedDigit())
+            }
+            if record.coverage.isEmpty {
+                Text("Покриття: відсутнє у відповіді").font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(record.coverage.enumerated()), id: \.offset) { item in
+                    let coverage = item.element
+                    Text("Покриття \(coverage.state) · рядків \(coverage.count.map(String.init) ?? "—") · \(coverage.start ?? "—") – \(coverage.end ?? "—")")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 5)
+    }
+
+    private func reload() async {
+        session.begin()
+        isLoading = true
+        defer { isLoading = false }
+        await store.load()
+        records = session.records
+    }
+}
+#endif
 
 private struct SchoolV2StateView: View {
     let title: String; let message: String; let icon: String; let retry: (() -> Void)?

@@ -15,7 +15,7 @@ private func inboxTask(_ source: String, status: String = "open") -> SchoolInbox
 
 @main
 struct SchoolHubLogicTests {
-    static func main() {
+    @MainActor static func main() {
         // Week navigation: 7 days Monday..Sunday
         let week = SchoolHubLogic.weekDays(containing: "2026-10-08")
         precondition(week.count == 7 && week.first == "2026-10-05" && week.last == "2026-10-11")
@@ -423,6 +423,49 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.isHubWideFailure(overview: 503, exams: 400, timetable: 0))
         precondition(SchoolHubLogic.isHubWideFailure(overview: nil, exams: 401, timetable: nil))
         precondition(SchoolHubLogic.isHubWideFailure(overview: nil, exams: nil, timetable: 403))
+
+#if DEBUG
+        // Opt-in diagnostics accept only the three read-only School Hub GET endpoints.
+        precondition(SchoolAPIReceiptEndpoint.allowed(method: "GET", path: "/api/school/overview?start=2026-11-02&end=2026-11-09") == .overview)
+        precondition(SchoolAPIReceiptEndpoint.allowed(method: "GET", path: "/api/school/timetable?start=2026-11-02&end=2026-11-09") == .timetable)
+        precondition(SchoolAPIReceiptEndpoint.allowed(method: "GET", path: "/api/school/exams?start=2026-11-02&end=2026-11-30") == .exams)
+        precondition(SchoolAPIReceiptEndpoint.allowed(method: "POST", path: "/api/school/exams") == nil)
+        precondition(SchoolAPIReceiptEndpoint.allowed(method: "GET", path: "/api/school/items") == nil)
+
+        let safeBounds = SchoolAPIReceiptRecord.isoDateBounds(["2026-11-08", "bad-date", "2026-11-02", "2026-02-31"])
+        precondition(safeBounds.minimum == "2026-11-02" && safeBounds.maximum == "2026-11-08", "only parsed ISO civil dates appear in the receipt")
+        let emptyReceipt = SchoolAPIReceiptRecord(endpoint: .timetable, range: "2026-11-02 – 2026-11-09", status: 200, outcome: .decodedEmpty, refresh: .notAttempted, count: 0, minimumDate: nil, maximumDate: nil, coverage: [SchoolAPIReceiptCoverage(state: "READY_EMPTY", count: 0, start: "2026-11-02", end: "2026-11-09")])
+        let nonemptyReceipt = SchoolAPIReceiptRecord(endpoint: .timetable, range: "2026-11-02 – 2026-11-09", status: 200, outcome: .decodedNonempty, refresh: .notAttempted, count: 2, minimumDate: "2026-11-02", maximumDate: "2026-11-02", coverage: [SchoolAPIReceiptCoverage(state: "READY_WITH_DATA", count: 2, start: "2026-11-02", end: "2026-11-09")])
+        let overviewReceipt = SchoolAPIReceiptRecord(endpoint: .overview, range: "2026-11-02 – 2026-11-09", status: 200, outcome: .decoded, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])
+        let unauthorizedReceipt = SchoolAPIReceiptRecord(endpoint: .exams, range: "2026-11-02 – 2026-11-30", status: 401, outcome: .httpFailure, refresh: .succeeded, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])
+        let decodeFailureReceipt = SchoolAPIReceiptRecord(endpoint: .timetable, range: "2026-11-02 – 2026-11-09", status: 200, outcome: .decodeFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])
+        let firstExamChunk = SchoolAPIReceiptRecord(endpoint: .exams, range: "2026-11-02 – 2026-11-30", status: 200, outcome: .decodedNonempty, refresh: .notAttempted, count: 2, minimumDate: "2026-11-05", maximumDate: "2026-11-20", coverage: [])
+        let secondExamChunk = SchoolAPIReceiptRecord(endpoint: .exams, range: "2026-11-30 – 2026-12-28", status: 200, outcome: .decodedNonempty, refresh: .notAttempted, count: 3, minimumDate: "2026-12-01", maximumDate: "2026-12-07", coverage: [])
+        precondition(emptyReceipt.outcome == .decodedEmpty && emptyReceipt.count == 0)
+        precondition(nonemptyReceipt.outcome == .decodedNonempty && nonemptyReceipt.count == 2)
+        precondition(overviewReceipt.outcome == .decoded && overviewReceipt.count == nil)
+        precondition(unauthorizedReceipt.status == 401 && unauthorizedReceipt.refresh == .succeeded && unauthorizedReceipt.count == nil)
+        precondition(decodeFailureReceipt.status == 200 && decodeFailureReceipt.outcome == .decodeFailure)
+        precondition(SchoolAPIReceiptSession.shared.examCountTotal(in: [unauthorizedReceipt, firstExamChunk, secondExamChunk]) == 5, "exam chunks aggregate only successfully decoded response counts")
+        let receiptSession = SchoolAPIReceiptSession.shared
+        receiptSession.end()
+        receiptSession.append(nonemptyReceipt)
+        precondition(receiptSession.records.isEmpty, "receipt capture is disabled by default")
+        receiptSession.begin()
+        receiptSession.append(nonemptyReceipt)
+        precondition(receiptSession.records == [nonemptyReceipt])
+        receiptSession.end()
+        precondition(receiptSession.records.isEmpty && !receiptSession.isActive, "leaving the receipt session clears its in-memory records")
+        precondition(SchoolAPIReceiptRecord.safeDisplayFields == ["endpoint", "range", "status", "outcome", "refresh", "count", "minimumDate", "maximumDate", "coverage"])
+        let sanitizedCoverage = SchoolAPIReceiptCoverage(state: "unrecognized-private-text", count: -1, start: "not-a-date", end: "2026-11-09")
+        precondition(sanitizedCoverage.state == "OTHER" && sanitizedCoverage.count == 0 && sanitizedCoverage.start == nil && sanitizedCoverage.end == "2026-11-09")
+        precondition(SchoolAPIReceiptRecord.decodedOutcome(count: 0) == .decodedEmpty)
+        precondition(SchoolAPIReceiptRecord.decodedOutcome(count: 3) == .decodedNonempty)
+        precondition(SchoolAPIReceiptRecord.decodedOutcome(count: nil) == .decoded)
+        precondition(SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: true, succeeded: true) == .succeeded)
+        precondition(SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: true, succeeded: false) == .failed)
+        precondition(SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: false, succeeded: false) == .unavailable)
+#endif
 
         print("school hub logic tests passed")
     }

@@ -909,7 +909,16 @@ final class MainProductAPI {
     }
 
     func request<T: Decodable>(path: String, method: String = "GET", body: Data? = nil, cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy, classifyUnavailable: Bool = false, allowRefresh: Bool = true, preserveHTTPStatus: Bool = false, as: T.Type = T.self) async throws -> T {
-        guard let token = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
+#if DEBUG
+        let receiptEndpoint = SchoolAPIReceiptEndpoint.allowed(method: method, path: path)
+        let receiptRange = receiptEndpoint.flatMap { _ in Self.schoolReceiptRange(path: path) }
+#endif
+        guard let token = KeychainStore.readMainBearerToken() else {
+#if DEBUG
+            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: nil, outcome: .notSent, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+#endif
+            throw OrbitChatAPIError.notPaired
+        }
         guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -917,19 +926,103 @@ final class MainProductAPI {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body { request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = body }
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
-        if http.statusCode == 401, allowRefresh, KeychainStore.readSessionToken() != nil, await OrbitAuthentication.refreshStoredSession() {
-            return try await self.request(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, preserveHTTPStatus: preserveHTTPStatus, as: T.self)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+#if DEBUG
+            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: nil, outcome: .transportFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+#endif
+            throw error
+        }
+        guard let http = response as? HTTPURLResponse else {
+#if DEBUG
+            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: nil, outcome: .invalidResponse, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+#endif
+            throw OrbitChatAPIError.invalidResponse
+        }
+        var recordedUnauthorized = false
+        if http.statusCode == 401, allowRefresh {
+            let refresh: SchoolAPIReceiptRecord.Refresh
+            if KeychainStore.readSessionToken() == nil {
+                refresh = SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: false, succeeded: false)
+            } else {
+                let refreshed = await OrbitAuthentication.refreshStoredSession()
+                refresh = SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: true, succeeded: refreshed)
+#if DEBUG
+                if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: refresh, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+#endif
+                recordedUnauthorized = true
+                if refreshed {
+                    return try await self.request(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, preserveHTTPStatus: preserveHTTPStatus, as: T.self)
+                }
+            }
+#if DEBUG
+            if !recordedUnauthorized, let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: refresh, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+#endif
+            recordedUnauthorized = true
         }
         guard (200 ..< 300).contains(http.statusCode) else {
+#if DEBUG
+            if !recordedUnauthorized, let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+#endif
             let code = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
             if preserveHTTPStatus { throw OrbitHTTPResponseFailure(status: http.statusCode, code: code) }
             if classifyUnavailable, let failure = OrbitHTTPFailure.classify(status: http.statusCode) { throw failure }
             throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
         }
-        do { return try decoder.decode(T.self, from: data) } catch { throw OrbitChatAPIError.invalidResponse }
+        do {
+            let value = try decoder.decode(T.self, from: data)
+#if DEBUG
+            if let receiptEndpoint { recordSchoolReceipt(value, endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode) }
+#endif
+            return value
+        } catch {
+#if DEBUG
+            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .decodeFailure, refresh: .notAttempted, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
+#endif
+            throw OrbitChatAPIError.invalidResponse
+        }
     }
+
+#if DEBUG
+    private static func schoolReceiptRange(path: String) -> String? {
+        guard let components = URLComponents(string: path) else { return nil }
+        let values = Dictionary(components.queryItems?.map { ($0.name, $0.value ?? "") } ?? [], uniquingKeysWith: { first, _ in first })
+        guard let start = values["start"], let end = values["end"], SchoolHubLogic.date(fromDayKey: start) != nil, SchoolHubLogic.date(fromDayKey: end) != nil else { return nil }
+        return "\(start) – \(end)"
+    }
+
+    private func recordSchoolReceipt<T>(_ value: T, endpoint: SchoolAPIReceiptEndpoint, range: String?, status: Int) {
+        var count: Int?
+        var dates: [String] = []
+        var coverage: [SchoolAPIReceiptCoverage] = []
+        switch endpoint {
+        case .overview:
+            if let response = value as? OrbitSchoolHubV2OverviewResponse {
+                coverage = (response.overview.coverage?.values ?? Dictionary<String, OrbitSchoolHubV2Coverage>().values).prefix(8).map {
+                    SchoolAPIReceiptCoverage(state: $0.state, count: $0.rowCount, start: $0.startDayKey, end: $0.endDayKey)
+                }
+                dates = coverage.flatMap { [$0.start, $0.end].compactMap { $0 } }
+            }
+        case .timetable:
+            if let response = value as? OrbitSchoolHubV2TimetableResponse {
+                count = response.timetable.entries.count
+                dates = response.timetable.entries.map(\.localDate)
+                if let item = response.timetable.coverage { coverage = [SchoolAPIReceiptCoverage(state: item.state, count: item.rowCount, start: item.startDayKey, end: item.endDayKey)] }
+            }
+        case .exams:
+            if let response = value as? OrbitSchoolHubV2ExamsResponse {
+                count = response.exams.count
+                dates = response.exams.map(\.dayKey)
+                if let item = response.coverage { coverage = [SchoolAPIReceiptCoverage(state: item.state, count: item.rowCount, start: item.startDayKey, end: item.endDayKey)] }
+            }
+        }
+        let bounds = SchoolAPIReceiptRecord.isoDateBounds(dates)
+        let outcome = SchoolAPIReceiptRecord.decodedOutcome(count: count)
+        SchoolAPIReceiptSession.shared.append(.init(endpoint: endpoint, range: range, status: status, outcome: outcome, refresh: .notAttempted, count: count, minimumDate: bounds.minimum, maximumDate: bounds.maximum, coverage: coverage))
+    }
+#endif
 
     nonisolated static func triggerSchoolSync() async throws {
         guard let token = KeychainStore.readMainBearerToken() else { throw OrbitSchoolSyncError.notPaired }
