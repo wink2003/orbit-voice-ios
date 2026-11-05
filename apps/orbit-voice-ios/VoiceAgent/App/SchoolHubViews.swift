@@ -1142,7 +1142,7 @@ final class SchoolHubV2Store {
             }
             if let state = response.timetable.coverage?.state { states.append(state) }
         } catch is CancellationError { if phase == .loading { phase = .idle }; return }
-        catch { timetable = []; timetableFailure = Self.failurePhase(for: error); firstError = firstError ?? error }
+        catch { timetableFailure = Self.failurePhase(for: error); firstError = firstError ?? error }
         if !states.isEmpty || firstError == nil {
             coverageState = states.first(where: { ["PARTIAL", "UNAVAILABLE", "ERROR"].contains($0) }) ?? (states.contains("STALE") ? "STALE" : states.contains("READY_WITH_DATA") ? "READY_WITH_DATA" : states.contains("READY_EMPTY") ? "READY_EMPTY" : "NOT_SYNCED")
         }
@@ -3436,6 +3436,9 @@ private struct Routes05SchoolTimetableProductionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDay: String?
     @State private var detail: LessonSelection?
+#if DEBUG
+    private var usesFixture = false
+#endif
 
     init(studentLabel: String?, onOpenOverview: @escaping () -> Void = {}, onOpenExams: @escaping () -> Void = {}) {
         self.studentLabel = studentLabel
@@ -3449,6 +3452,7 @@ private struct Routes05SchoolTimetableProductionView: View {
         self.onOpenOverview = onOpenOverview
         self.onOpenExams = onOpenExams
         _store = State(initialValue: SchoolHubV2Store(fixture: fixture))
+        usesFixture = true
     }
 #endif
 
@@ -3487,7 +3491,13 @@ private struct Routes05SchoolTimetableProductionView: View {
             }.refreshable { await store.load() }
         }
         .foregroundStyle(Routes05Tokens.ink).background(Routes05Tokens.canvas.ignoresSafeArea()).toolbar(.hidden, for: .navigationBar)
-        .task(id: store.weekStart) { await store.load() }
+        
+        .task(id: store.weekStart) {
+#if DEBUG
+            if usesFixture { return }
+#endif
+            await store.load()
+        }
         .onChange(of: days) { _, value in if !value.contains(selectedDay ?? "") { selectedDay = value.first } }
     }
 
@@ -3513,10 +3523,10 @@ private struct Routes05SchoolTimetableProductionView: View {
     private var weekControls: some View {
         VStack(spacing: 11) {
             HStack { Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.accessibilityLabel("Попередній тиждень"); Spacer(); Text("\(SchoolHubFormat.shortDay(store.weekStart)) – \(SchoolHubFormat.shortDay(SchoolHubLogic.addDays(4, to: store.weekStart) ?? store.weekStart))").font(.system(.headline, design: .rounded).weight(.bold)).multilineTextAlignment(.center); Spacer(); Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }.accessibilityLabel("Наступний тиждень") }.buttonStyle(.plain)
-            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 7) { ForEach(days, id: \.self) { day in
+            HStack(spacing: 4) { ForEach(days, id: \.self) { day in
                 let selected = selectedDay == day || (selectedDay == nil && day == days.first)
-                Button { selectedDay = day } label: { VStack(spacing: 4) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.largeTitle, design: .rounded).weight(.black)) }.frame(width: 72, height: 79).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
-            } }.padding(.horizontal, 16) }
+                Button { selectedDay = day } label: { VStack(spacing: 4) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.largeTitle, design: .rounded).weight(.black)) }.frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
+            } }.padding(.horizontal, 16)
         }.padding(.horizontal, 0).padding(.top, 12)
     }
     private var coverage: some View {
