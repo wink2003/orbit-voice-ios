@@ -131,9 +131,9 @@ struct OrbitCalendarV2View: View {
                         sourceNote
                         Color.clear.frame(height: 1).id("routes05-bottom")
                     }
-                    .padding(.bottom, 126) // NovaDock is supplied by NovaShell in the real app.
                 }
                 .scrollIndicators(.hidden)
+                .novaDockAwareScrollContent()
                 #if DEBUG
                 .onChange(of: isLoading) { _, loading in
                     guard !loading, Routes05DebugCapture.scrollToBottom else { return }
