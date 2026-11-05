@@ -658,7 +658,7 @@ private struct SchoolActionHistoryView: View {
 private enum SchoolHubFormat {
     static func formatter(_ pattern: String) -> DateFormatter {
         let value = DateFormatter()
-        value.locale = .autoupdatingCurrent
+        value.locale = SchoolHubLogic.interfaceLocale
         value.timeZone = SchoolHubLogic.schoolTimeZone
         value.dateFormat = pattern
         return value
@@ -738,8 +738,8 @@ private struct Routes05TimetableCell: View {
                 }
             }
         }
-        .frame(width: width, height: height, alignment: .topLeading)
         .padding(10)
+        .frame(width: width, height: height, alignment: .topLeading)
         .background(fill)
         .overlay(Rectangle().stroke(Routes05Tokens.ink, lineWidth: 1))
         .accessibilityElement(children: .combine)
@@ -1092,7 +1092,7 @@ final class SchoolHubV2Store {
         let freshness = OrbitSchoolHubV2Freshness(state: "READY_WITH_DATA", sourceStates: ["schulmanager": "READY"], observedAt: observed, source: "schulmanager", fingerprint: "routes05")
         let fixtureWeekStart = SchoolHubV2Store.currentWeekStart()
         let fixtureWeekEnd = SchoolHubLogic.addDays(7, to: fixtureWeekStart) ?? fixtureWeekStart
-        let coverage = OrbitSchoolHubV2Coverage(state: "READY_WITH_DATA", rowCount: 2, sourceStatus: "READY", sourceFingerprint: "routes05", successfulSyncAt: observed, observedAt: observed, errorCode: nil, startDayKey: fixtureWeekStart, endDayKey: fixtureWeekEnd)
+        let coverage = OrbitSchoolHubV2Coverage(state: "READY_WITH_DATA", rowCount: 6, sourceStatus: "READY", sourceFingerprint: "routes05", successfulSyncAt: observed, observedAt: observed, errorCode: nil, startDayKey: fixtureWeekStart, endDayKey: fixtureWeekEnd)
         let exam = OrbitSchoolHubV2Exam(id: "routes05-exam", subject: "Deutsch", dayKey: "2026-10-24", lessonStart: 3, lessonEnd: 4, startsAt: "2026-10-24T10:00:00+02:00", room: "5F", teacher: "M. Bauer", group: nil, groupName: nil, startClassHourNumber: 3, typeName: "Klassenarbeit", typeColor: "#C9B8FF", typeVisibleForStudents: true, comment: "Projektwoche", status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
         let examNextWeek = OrbitSchoolHubV2Exam(id: "routes05-exam-next", subject: "Mathematik", dayKey: "2026-10-30", lessonStart: nil, lessonEnd: nil, startsAt: nil, room: nil, teacher: "M. Bauer", group: nil, groupName: nil, startClassHourNumber: nil, typeName: "Test", typeColor: "#C9B8FF", typeVisibleForStudents: true, comment: nil, status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
         let examFollowingWeek = OrbitSchoolHubV2Exam(id: "routes05-exam-following", subject: "Englisch", dayKey: "2026-11-05", lessonStart: nil, lessonEnd: nil, startsAt: nil, room: "B12", teacher: nil, group: nil, groupName: nil, startClassHourNumber: nil, typeName: nil, typeColor: nil, typeVisibleForStudents: true, comment: nil, status: "upcoming", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
@@ -1102,9 +1102,10 @@ final class SchoolHubV2Store {
         let lessons = lessonDays.enumerated().map { index, day in
             OrbitSchoolHubV2TimetableEntry(id: "routes05-lesson-\(index)", dayKey: day, localDate: day, lessonIndex: index + 1, subject: subjects[index], teacher: "M. Bauer", room: "5F", group: nil, groupName: nil, startsAt: "\(day)T08:00:00+02:00", endsAt: "\(day)T08:45:00+02:00", startsAtLocal: String(format: "%02d:00", 8 + index), endsAtLocal: String(format: "%02d:45", 8 + index), classHourNumber: index + 1, isCancelled: false, originalLessonCount: 1, teachers: [OrbitSchoolHubV2Teacher(abbreviation: "MB")], groups: [OrbitSchoolHubV2Group(name: "5F")], status: "scheduled", kind: "lesson", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
         }
+        let extraMondayLesson = OrbitSchoolHubV2TimetableEntry(id: "routes05-lesson-monday-extra", dayKey: fixtureWeekStart, localDate: fixtureWeekStart, lessonIndex: 6, subject: "Französisch", teacher: "M. Bauer", room: "5F", group: nil, groupName: nil, startsAt: "\(fixtureWeekStart)T13:00:00+02:00", endsAt: "\(fixtureWeekStart)T13:45:00+02:00", startsAtLocal: "13:00", endsAtLocal: "13:45", classHourNumber: 6, isCancelled: false, originalLessonCount: 1, teachers: [OrbitSchoolHubV2Teacher(abbreviation: "MB")], groups: [OrbitSchoolHubV2Group(name: "5F")], status: "scheduled", kind: "lesson", source: "schulmanager", sourceFingerprint: "routes05", observedAt: observed)
         overview = OrbitSchoolHubV2Overview(state: "READY", freshness: freshness, sourceStates: ["schulmanager": "READY"], profileTitle: fixture.studentNames.first, todayDayKey: "2026-10-24", upcomingExams: fixtureExams, projects: [], coverage: ["timetable": coverage, "exams": coverage])
         exams = fixtureExams
-        timetable = lessons
+        timetable = lessons + [extraMondayLesson]
         self.freshness = freshness
         coverageState = "READY_WITH_DATA"
         timetableCoverageState = "READY_WITH_DATA"

@@ -346,6 +346,7 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.chronologicalExams([laterExam, exams.exams[0]], dayKey: { $0.dayKey }, id: { $0.id }).map(\.dayKey) == ["2026-11-05", "2026-11-07"], "exam sorting follows the authoritative ISO day key regardless of response order")
         precondition(SchoolHubLogic.localizedLongDay("2026-11-02", locale: Locale(identifier: "uk_UA"))?.contains("листопада") == true)
         precondition(SchoolHubLogic.localizedLongDay("2026-11-02", locale: Locale(identifier: "en_US"))?.contains("November") == true)
+        precondition(SchoolHubLogic.localizedLongDay("2026-11-02")?.contains("листопада") == true, "exam dates default to the Ukrainian app interface locale, independent of device language")
         precondition(SchoolHubLogic.schoolDayPrecedes("2026-12-31", "2027-01-01") && !SchoolHubLogic.schoolDayPrecedes("2027-01-01", "2026-12-31"), "exam chronology follows civil dates across New Year")
         precondition(SchoolHubLogic.timetableCoverageState("READY", responseState: "READY", entryCount: 2) == "READY_WITH_DATA")
         precondition(SchoolHubLogic.timetableCoverageState("READY", responseState: "READY", entryCount: 0) == "READY_EMPTY")
@@ -404,10 +405,11 @@ struct SchoolHubLogicTests {
         """.utf8)
         let doubleSlot = try! decoder.decode(OrbitSchoolHubV2TimetableResponse.self, from: doubleSlotJSON).timetable
         precondition(doubleSlot.entries.filter { $0.localDate == "2026-11-02" && $0.lessonIndex == 2 }.count == 2 && doubleSlot.coverage?.state == "READY_WITH_DATA")
+        precondition(doubleSlot.entries.filter { $0.localDate == "2026-11-02" }.count == 2, "multiple decoded lessons remain present for one weekday")
         precondition(SchoolHubLogic.timetableEntries(doubleSlot.entries, weekStart: "2026-11-02", localDate: { $0.localDate }).count == 2, "genuine decoded Monday rows map into the selected Mon-Fri week")
         precondition(SchoolHubLogic.timetableEntries(doubleSlot.entries, weekStart: "2026-11-09", localDate: { $0.localDate }).isEmpty, "rows from another week do not create a blank selected-week grid")
         let fiveDayWidth = SchoolHubLogic.timetableColumnWidth(totalWidth: 390, axisWidth: 38, gap: 3)
-        precondition(32 + 38 + 5 * 3 + 5 * fiveDayWidth <= 390, "all five weekday columns fit an iPhone 12 width without horizontal scrolling")
+        precondition(32 + 38 + 5 * 3 + 5 * fiveDayWidth == 390, "five populated cell outer frames share the header width budget and fit a 390pt viewport")
         precondition(SchoolHubLogic.timetableGridHeight(rowHeights: [48, 90]) == 190, "grid container includes its header, both row bodies and row spacing")
         precondition(SchoolHubLogic.date(fromDayKey: "2026-02-31") == nil, "invalid exam civil dates cannot normalize into another month")
 

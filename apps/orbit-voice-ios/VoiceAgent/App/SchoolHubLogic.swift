@@ -348,6 +348,7 @@ nonisolated struct SchoolTimelineEntry: Hashable, Identifiable {
 }
 
 nonisolated enum SchoolHubLogic {
+    static let interfaceLocale = Locale(identifier: "uk_UA")
     static let schoolTimeZone = TimeZone(identifier: "Europe/Berlin")!
     static let olderUndatedDays = 14
     static let lowConfidence = 0.6
@@ -413,7 +414,7 @@ nonisolated enum SchoolHubLogic {
         return date
     }
 
-    static func localizedLongDay(_ key: String, locale: Locale = .autoupdatingCurrent) -> String? {
+    static func localizedLongDay(_ key: String, locale: Locale = interfaceLocale) -> String? {
         guard let date = date(fromDayKey: key) else { return nil }
         let formatter = DateFormatter()
         formatter.locale = locale
