@@ -352,6 +352,18 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.timetableCoverageState("READY", responseState: "READY", entryCount: 0) == "READY_EMPTY")
         precondition(SchoolHubLogic.timetableCoverageState("READY_EMPTY", responseState: "READY", entryCount: 1) == "PARTIAL", "contradictory empty coverage and actual rows is reported as partial")
         precondition(SchoolHubLogic.timetableCoverageState("READY_WITH_DATA", responseState: "READY", entryCount: 0) == "READY_WITH_DATA", "server-reported data with no matching client rows remains a mismatch, not a false empty success")
+        let examChunkCounts = [2, 3]
+        let decodedExamCount = examChunkCounts.reduce(0, +)
+        let examChunkCoverage = ["NOT_SYNCED", "NOT_SYNCED"]
+        let examCoverageState = SchoolHubLogic.examCoverageState(examChunkCoverage)
+        precondition(decodedExamCount == 5 && SchoolHubLogic.canRenderReceivedExams(count: decodedExamCount, hasFailure: false), "records from both returned chunks remain visible even when coverage is not confirmed")
+        precondition(examCoverageState == "NOT_SYNCED" && SchoolHubLogic.examCoverageWarning(examCoverageState) == .notSynced)
+        precondition(SchoolHubLogic.examCoverageState(["READY_WITH_DATA", "NOT_SYNCED"]) == "NOT_SYNCED", "one incomplete exam window is not masked by another window or by timetable coverage")
+        precondition(SchoolHubLogic.examCoverageWarning("NOT_SYNCED") == .notSynced)
+        precondition(SchoolHubLogic.examCoverageWarning("PARTIAL") == .incomplete && SchoolHubLogic.examCoverageWarning("UNAVAILABLE") == .incomplete)
+        precondition(!SchoolHubLogic.canRenderReceivedExams(count: 0, hasFailure: false), "an empty response still uses the honest empty or coverage state")
+        precondition(!SchoolHubLogic.canRenderReceivedExams(count: 5, hasFailure: true), "a request failure remains higher priority than cached or partial records")
+        precondition(SchoolHubLogic.examCoverageWarning("READY_WITH_DATA") == nil)
         let populatedOverviewJSON = Data("""
         {"overview":{"state":"READY","freshness":{"state":"READY","sourceStates":{"exams":"READY","timetable":"READY"},"observedAt":"2026-10-19T21:00:48.207Z","source":"schulmanager","fingerprint":"abc"},"sourceStates":{"exams":"READY","timetable":"READY"},"profileTitle":"Олександр","todayDayKey":"2026-10-19","upcomingExams":[{"id":"exam-1","subject":"Mathematik","dayKey":"2026-11-05","lessonStart":2,"lessonEnd":3,"startsAt":"2026-11-05T09:45:00.000Z","room":null,"teacher":null,"group":null,"groupName":null,"startClassHourNumber":"2","typeName":"Klassenarbeit","typeColor":null,"typeVisibleForStudents":true,"comment":null,"status":null,"source":"schulmanager","sourceFingerprint":"exam-fp","observedAt":"2026-10-19T21:00:48.207Z"}],"projects":[]}}
         """.utf8)

@@ -93,6 +93,11 @@ nonisolated struct SchoolInboxActionSummary: Equatable {
     var count: Int? { coverageComplete ? itemIDs.count : nil }
 }
 
+nonisolated enum SchoolExamCoverageWarning: Equatable {
+    case notSynced
+    case incomplete
+}
+
 nonisolated struct SchoolInboxItemSnapshot: Hashable, Identifiable {
     let id: String
     let type: String
@@ -451,6 +456,25 @@ nonisolated enum SchoolHubLogic {
         if let coverageState, coverageState != "READY" { return coverageState }
         guard coverageState == "READY" || responseState == "READY" else { return coverageState ?? responseState }
         return entryCount == 0 ? "READY_EMPTY" : "READY_WITH_DATA"
+    }
+
+    static func canRenderReceivedExams(count: Int, hasFailure: Bool) -> Bool {
+        count > 0 && !hasFailure
+    }
+
+    static func examCoverageWarning(_ state: String) -> SchoolExamCoverageWarning? {
+        if state == "NOT_SYNCED" { return .notSynced }
+        if ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(state) { return .incomplete }
+        return nil
+    }
+
+    static func examCoverageState(_ chunkStates: [String]) -> String {
+        if let incomplete = chunkStates.first(where: { ["PARTIAL", "UNAVAILABLE", "ERROR"].contains($0) }) { return incomplete }
+        if chunkStates.contains("NOT_SYNCED") { return "NOT_SYNCED" }
+        if chunkStates.contains("STALE") { return "STALE" }
+        if chunkStates.contains("READY_WITH_DATA") { return "READY_WITH_DATA" }
+        if !chunkStates.isEmpty && chunkStates.allSatisfy({ $0 == "READY_EMPTY" }) { return "READY_EMPTY" }
+        return chunkStates.last ?? "NOT_SYNCED"
     }
 
     static func chronologicalExams<Exam>(_ exams: [Exam], dayKey: (Exam) -> String, id: (Exam) -> String) -> [Exam] {
