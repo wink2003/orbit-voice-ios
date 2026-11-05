@@ -433,23 +433,29 @@ private struct SchoolHubV2View: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
             if let failure = store.examsFailure { ContentUnavailableView { Label("Не вдалося завантажити іспити", systemImage: "exclamationmark.triangle") } description: { Text("Це помилка запиту, а не відсутність іспитів.") } actions: { if failure != .unauthorized && failure != .forbidden { Button("Повторити") { Task { await store.load() } }.buttonStyle(.bordered) } } }
-            else if store.coverageState == "NOT_SYNCED" { ContentUnavailableView("Дані за цей тиждень ще не завантажені", systemImage: "clock.badge.exclamationmark", description: Text("Для вибраного тижня ще немає підтвердженої синхронізації.")) }
-            else if ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.coverageState) { ContentUnavailableView("Дані тимчасово недоступні", systemImage: "cloud.slash", description: Text("Стан синхронізації не підтверджено для цього тижня.")) }
-            else if store.exams.isEmpty { ContentUnavailableView("Іспитів немає", systemImage: "checkmark.circle", description: Text("За вибраний період іспитів не знайдено.")) }
-            else { ForEach(store.examWeeks, id: \.week) { week in
-                Text("ТИЖДЕНЬ \(week.week)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.3).foregroundStyle(Routes05Tokens.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
-                ForEach(week.days, id: \.date) { day in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(SchoolHubFormat.long(day.date)).font(.headline.weight(.black)).foregroundStyle(Routes05Tokens.ink)
-                        ForEach(day.exams) { exam in examRow(exam) }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .background(Routes05Tokens.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
-                    .padding(.horizontal, 16)
+            else if SchoolHubLogic.canRenderReceivedExams(count: store.exams.count, hasFailure: store.examsFailure != nil) {
+                if let warning = SchoolHubLogic.examCoverageWarning(store.examCoverageState) {
+                    Label(warning == .notSynced ? "Синхронізацію іспитів не підтверджено; показано отримані записи." : "Покриття неповне; показано отримані записи.", systemImage: "clock.badge.exclamationmark")
+                        .font(.caption).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16)
                 }
-            } }
+                ForEach(store.examWeeks, id: \.week) { week in
+                    Text("ТИЖДЕНЬ \(week.week)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.3).foregroundStyle(Routes05Tokens.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
+                    ForEach(week.days, id: \.date) { day in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(SchoolHubFormat.long(day.date)).font(.headline.weight(.black)).foregroundStyle(Routes05Tokens.ink)
+                            ForEach(day.exams) { exam in examRow(exam) }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(Routes05Tokens.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
+                        .padding(.horizontal, 16)
+                    }
+                }
+            }
+            else if store.examCoverageState == "NOT_SYNCED" { ContentUnavailableView("Дані за цей тиждень ще не завантажені", systemImage: "clock.badge.exclamationmark", description: Text("Для вибраного тижня ще немає підтвердженої синхронізації.")) }
+            else if ["PARTIAL", "UNAVAILABLE", "ERROR"].contains(store.examCoverageState) { ContentUnavailableView("Дані тимчасово недоступні", systemImage: "cloud.slash", description: Text("Стан синхронізації не підтверджено для цього тижня.")) }
+            else if store.exams.isEmpty { ContentUnavailableView("Іспитів немає", systemImage: "checkmark.circle", description: Text("За вибраний період іспитів не знайдено.")) }
             if let end = store.examCoverageEnd { Text("Покриття іспитів: до \(SchoolHubFormat.long(end))").font(.caption).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16) }
             }
             .padding(.vertical, 8)
@@ -1061,6 +1067,8 @@ final class SchoolHubV2Store {
     var timetable: [OrbitSchoolHubV2TimetableEntry] = []
     var freshness: OrbitSchoolHubV2Freshness?
     var coverageState: String = "NOT_SYNCED"
+    var examCoverageStates: [String] = []
+    var examCoverageState: String { SchoolHubLogic.examCoverageState(examCoverageStates) }
     var timetableCoverageState: String = "NOT_SYNCED"
     var weekStart: String = SchoolHubV2Store.currentWeekStart()
     var errorText: String?
@@ -1108,6 +1116,7 @@ final class SchoolHubV2Store {
         timetable = lessons + [extraMondayLesson]
         self.freshness = freshness
         coverageState = "READY_WITH_DATA"
+        examCoverageStates = ["READY_WITH_DATA"]
         timetableCoverageState = "READY_WITH_DATA"
         phase = .ready
     }
@@ -1154,7 +1163,7 @@ final class SchoolHubV2Store {
         do {
             let response = try await examsResult
             exams = SchoolHubLogic.chronologicalExams(Dictionary(grouping: response.exams, by: \.id).compactMap { $0.value.first }, dayKey: { $0.dayKey }, id: { $0.id })
-            examCoverageEnd = response.to; states += response.states
+            examCoverageEnd = response.to; examCoverageStates = response.states; states += response.states
         } catch is CancellationError { if phase == .loading { phase = .idle }; return }
         catch { examsFailure = Self.failurePhase(for: error); examsError = error; firstError = firstError ?? error }
         do {
