@@ -83,22 +83,11 @@ struct OrbitCalendarV2View: View {
         return OrbitCalendarV2Logic.timeline(activeEvents, now: referenceDate, calendar: calendar, excluding: excluded, laterInterval: laterInterval)
     }
 
-    private var todaysEvents: [ConceptCalendarEvent] {
-        occurrences(on: referenceDate)
-    }
-
     private var nextFive: [ConceptCalendarEvent] { timeline.later }
 
     private var laterInterval: DateInterval {
         OrbitCalendarV2Logic.laterInterval(now: referenceDate, calendar: calendar)
             ?? DateInterval(start: afterNextWeekBoundary, end: afterNextWeekBoundary)
-    }
-
-    private var nextPreviewEvent: ConceptCalendarEvent? {
-        OrbitCalendarV2Logic.nextEvent(
-            timeline.today + timeline.thisWeek + timeline.nextWeek + timeline.later,
-            now: referenceDate
-        )
     }
 
     private var collapsedWeekAnchor: Date { selectedDate ?? weekAnchor }
@@ -115,7 +104,7 @@ struct OrbitCalendarV2View: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 17) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Routes05Mast(section: "calendar", action: { showingSources = true }, backAction: onBack, backLabel: "Назад до Інше")
                         hero
                         ForEach(OrbitCalendarV2Logic.sectionOrder, id: \.self) { section in
@@ -198,49 +187,6 @@ struct OrbitCalendarV2View: View {
         .padding(.top, 4)
     }
 
-    private var todaySummary: some View {
-        Button(action: jumpToToday) {
-            HStack(spacing: 13) {
-                VStack(alignment: .center, spacing: 1) {
-                    Text(referenceDate.formatted(.dateTime.day()))
-                        .font(.system(size: 37, weight: .black, design: .rounded))
-                    Text(ConceptCalendarDates.shortMonth(referenceDate).uppercased())
-                        .font(.system(size: 10, weight: .black, design: .monospaced))
-                }
-                .frame(width: 64)
-                Rectangle().fill(Routes05Tokens.accentInk.opacity(0.28)).frame(width: 1, height: 54)
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 7) {
-                        Circle().fill(Routes05Tokens.accentInk).frame(width: 7, height: 7)
-                        Text("СЬОГОДНІ")
-                            .font(.system(size: 11, weight: .black, design: .monospaced))
-                    }
-                    Text(ConceptCalendarDates.weekdayLong(referenceDate).capitalized)
-                        .font(.system(.title3, design: .rounded, weight: .bold))
-                    Text(todaysEvents.isEmpty
-                         ? "На сьогодні подій немає"
-                         : "Подій на сьогодні: \(todaysEvents.count)")
-                        .font(.caption)
-                    Text(nextPreviewEvent.map { "Далі: \($0.title)" } ?? "Попереду немає подій")
-                        .font(.caption.weight(.medium))
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 2)
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.subheadline.weight(.bold))
-                    .accessibilityHidden(true)
-            }
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .foregroundStyle(Routes05Tokens.accentInk)
-            .background(Routes05Tokens.yellow)
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.5))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Сьогодні, \(ConceptCalendarDates.accessible(referenceDate)). \(todaysEvents.count) подій. Повернути календар до сьогодні")
-        .padding(.horizontal, 16)
-    }
-
     private var sourcesSummary: some View {
         Button { showingSources = true } label: {
             HStack(spacing: 9) {
@@ -268,24 +214,40 @@ struct OrbitCalendarV2View: View {
     // MARK: — Current week, expandable to a complete month
 
     private var monthCard: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: displayMode == .week ? 0 : 11) {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
-                    eyebrow(displayMode == .month ? "MONTH / OVERVIEW" : "WEEK / OVERVIEW")
-                    Text(displayMode == .month ? ConceptCalendarDates.monthYear(visibleMonth) : ConceptCalendarDates.weekRange(collapsedWeekAnchor))
-                        .font(.system(.title2, design: .rounded, weight: .black))
+                    if displayMode == .month { eyebrow("MONTH / OVERVIEW") }
+                    Text(displayMode == .month ? ConceptCalendarDates.monthYear(visibleMonth) : ConceptCalendarDates.compactWeekRange(collapsedWeekAnchor))
+                        .font(.system(displayMode == .month ? .title2 : .subheadline, design: .rounded, weight: .black))
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                 }
                 Spacer()
                 monthArrow("chevron.left", shift: -1, label: displayMode == .month ? "Попередній місяць" : "Попередній тиждень")
                 monthArrow("chevron.right", shift: 1, label: displayMode == .month ? "Наступний місяць" : "Наступний тиждень")
+                if displayMode == .week {
+                    Button(action: toggleMonthDisplay) {
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 44, height: 44)
+                            .foregroundStyle(Routes05Tokens.ink)
+                            .background(Routes05Tokens.canvas)
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.rule, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Розгорнути до повного місяця")
+                    .accessibilityValue("Поточний тиждень")
+                }
             }
-            HStack(spacing: 0) {
-                ForEach(["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "НД"], id: \.self) { label in
-                    Text(label)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Routes05Tokens.secondary)
-                        .frame(maxWidth: .infinity)
+            if displayMode == .month {
+                HStack(spacing: 0) {
+                    ForEach(["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "НД"], id: \.self) { label in
+                        Text(label)
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Routes05Tokens.secondary)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 3), count: 7), spacing: 4) {
@@ -293,44 +255,49 @@ struct OrbitCalendarV2View: View {
                     dayButton(day)
                 }
             }
-            Button {
-                if displayMode == .week {
-                    visibleMonth = ConceptCalendarDates.monthStart(collapsedWeekAnchor)
+            if displayMode == .month {
+                Button(action: toggleMonthDisplay) {
+                    HStack(spacing: 6) {
+                        Text("Показати тиждень")
+                        Image(systemName: "chevron.up").font(.caption.weight(.bold))
+                    }
+                    .font(.caption.weight(.bold))
+                    .frame(minHeight: 44)
+                    .foregroundStyle(Routes05Tokens.ink)
                 }
-                displayMode.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    Text(displayMode == .month ? "Показати тиждень" : "Показати повний місяць")
-                    Image(systemName: displayMode == .month ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.bold))
+                .buttonStyle(.plain)
+                .accessibilityLabel("Згорнути до тижня")
+                .accessibilityValue("Повний місяць")
+            }
+            if displayMode == .month {
+                HStack(spacing: 7) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Routes05Tokens.yellow)
+                    Text("Жовтий — сьогодні")
+                    Spacer()
+                    Text("Крапки — події календарів")
                 }
-                .font(.caption.weight(.bold))
-                .frame(minHeight: 40)
-                .foregroundStyle(Routes05Tokens.ink)
+                .font(.system(size: 10))
+                .foregroundStyle(Routes05Tokens.secondary)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(displayMode == .month ? "Згорнути до тижня" : "Розгорнути до повного місяця")
-            .accessibilityValue(displayMode == .month ? "Повний місяць" : "Поточний тиждень")
-            HStack(spacing: 7) {
-                Image(systemName: "circle.fill")
-                    .font(.system(size: 8))
-                    .foregroundStyle(Routes05Tokens.yellow)
-                Text("Жовтий — сьогодні")
-                Spacer()
-                Text("Крапки — події календарів")
-            }
-            .font(.system(size: 10))
-            .foregroundStyle(Routes05Tokens.secondary)
             if isLoading {
                 ProgressView("Завантаження календаря…")
                     .font(.caption)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(13)
+        .padding(displayMode == .month ? 13 : 6)
         .background(Routes05Tokens.surface)
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1.3))
         .padding(.horizontal, 16)
+    }
+
+    private func toggleMonthDisplay() {
+        if displayMode == .week {
+            visibleMonth = ConceptCalendarDates.monthStart(collapsedWeekAnchor)
+        }
+        displayMode.toggle()
     }
 
     private func monthArrow(_ symbol: String, shift: Int, label: String) -> some View {
@@ -375,7 +342,12 @@ struct OrbitCalendarV2View: View {
                 Task { await refreshTimelineCoverage() }
             }
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: displayMode == .week ? 0 : 4) {
+                if displayMode == .week {
+                    Text(ConceptCalendarDates.weekdayInitial(day))
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Routes05Tokens.secondary)
+                }
                 Text(day.formatted(.dateTime.day()))
                     .font(.system(size: 15, weight: isToday || isSelected ? .black : .semibold, design: .rounded))
                     .frame(maxWidth: .infinity)
@@ -389,7 +361,7 @@ struct OrbitCalendarV2View: View {
                 }
                 .frame(height: 7)
             }
-            .frame(maxWidth: .infinity, minHeight: 45)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .foregroundStyle(isToday ? Routes05Tokens.accentInk : (inMonth ? Routes05Tokens.ink : Routes05Tokens.secondary.opacity(0.52)))
             .background(isToday ? Routes05Tokens.yellow : (isSelected ? Routes05Tokens.mint.opacity(0.22) : Color.clear))
             .overlay(RoundedRectangle(cornerRadius: 3).stroke(isSelected ? Routes05Tokens.ink : Color.clear, lineWidth: 2))
@@ -410,12 +382,7 @@ struct OrbitCalendarV2View: View {
                 selectedDaySection(selectedDate)
             }
         case .today:
-            VStack(alignment: .leading, spacing: 12) {
-                todaySummary
-                if !timeline.today.isEmpty {
-                    eventRows(timeline.today, emptyMessage: "На сьогодні подій немає.")
-                }
-            }
+            todaySection
         case .thisWeek:
             eventsSection(
                 eyebrow: "THIS WEEK / CURRENT",
@@ -433,6 +400,37 @@ struct OrbitCalendarV2View: View {
         case .later:
             nextFiveSection
         }
+    }
+
+    private var todaySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "sun.max.fill").font(.caption).accessibilityHidden(true)
+                Text("СЬОГОДНІ · \(ConceptCalendarDates.weekdayLong(referenceDate).capitalized)")
+                    .font(.system(.headline, design: .rounded, weight: .bold))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                Button("Сьогодні") { jumpToToday() }
+                    .font(.caption.weight(.bold))
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Повернути календар до сьогодні")
+            }
+            if timeline.today.isEmpty {
+                Text("На сьогодні подій немає.")
+                    .font(.subheadline)
+                    .foregroundStyle(Routes05Tokens.accentInk)
+                    .padding(.vertical, 5)
+            } else {
+                ForEach(timeline.today, id: \.identityKey) { event in
+                    upcomingRow(event, inTodaySection: true)
+                }
+            }
+        }
+        .padding(10)
+        .background(Routes05Tokens.yellow.opacity(colorScheme == .dark ? 0.92 : 0.55))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.yellow, lineWidth: 1.5))
+        .padding(.horizontal, 16)
+        .foregroundStyle(Routes05Tokens.accentInk)
     }
 
     private func eventsSection(eyebrow label: String, title: String, events: [ConceptCalendarEvent], emptyMessage: String) -> some View {
@@ -458,8 +456,8 @@ struct OrbitCalendarV2View: View {
                     .padding(.horizontal, 16)
             }
         } else {
-            ForEach(Array(events.enumerated()), id: \.offset) { index, event in
-                upcomingRow(event, number: index + 1)
+            ForEach(events, id: \.identityKey) { event in
+                upcomingRow(event)
                     .padding(.horizontal, 16)
             }
         }
@@ -551,21 +549,21 @@ struct OrbitCalendarV2View: View {
                 .background(Routes05Tokens.surface)
             } else {
                 ForEach(nextFive, id: \.identityKey) { event in
-                    upcomingRow(event, number: (nextFive.firstIndex(where: { $0.identityKey == event.identityKey }) ?? 0) + 1)
+                    upcomingRow(event)
                 }
             }
         }
         .padding(.horizontal, 16)
     }
 
-    private func upcomingRow(_ event: ConceptCalendarEvent, number: Int) -> some View {
+    private func upcomingRow(_ event: ConceptCalendarEvent, inTodaySection: Bool = false) -> some View {
         let origin = source(event)
         let involved = names(for: event.involvedPersonIDs)
         let associated = names(for: origin.relatedPersonIDs)
 
         return Button { selectedEvent = event } label: {
             HStack(alignment: .top, spacing: 11) {
-                Rectangle().fill(origin.color).frame(width: 5, height: 126)
+                RoundedRectangle(cornerRadius: 2).fill(origin.color).frame(width: 4, height: 40)
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(spacing: 6) {
                         Text(ConceptCalendarDates.relativeDate(event.startsAt, now: referenceDate))
@@ -585,9 +583,6 @@ struct OrbitCalendarV2View: View {
                             .font(.caption.weight(.semibold))
                             .lineLimit(1)
                         Spacer(minLength: 2)
-                        Text(String(format: "%02d", number))
-                            .font(.system(size: 11, weight: .black, design: .monospaced))
-                            .foregroundStyle(Routes05Tokens.secondary)
                     }
                     Text("Власник календаря: \(associated.isEmpty ? "Не надано сервером" : associated.joined(separator: ", "))")
                         .font(.caption)
@@ -609,7 +604,7 @@ struct OrbitCalendarV2View: View {
             }
             .padding(13)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Routes05Tokens.surface)
+            .background(inTodaySection && colorScheme == .dark ? Routes05Tokens.darkSurface : (inTodaySection ? Routes05Tokens.yellow.opacity(0.30) : Routes05Tokens.surface))
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
             .foregroundStyle(Routes05Tokens.ink)
         }
@@ -1012,6 +1007,16 @@ private enum ConceptCalendarDates {
     static func monthYear(_ date: Date) -> String { formatter("LLLL yyyy").string(from: date).capitalized }
     static func shortMonth(_ date: Date) -> String { formatter("LLL").string(from: date) }
     static func weekdayLong(_ date: Date) -> String { formatter("EEEE").string(from: date) }
+    static func weekdayInitial(_ date: Date) -> String { formatter("EEEEE").string(from: date).uppercased() }
+    static func compactWeekRange(_ date: Date) -> String {
+        guard let interval = OrbitCalendarV2Logic.weekInterval(containing: date, calendar: calendar),
+              let last = calendar.date(byAdding: .day, value: -1, to: interval.end) else { return monthYear(date) }
+        let sameMonth = calendar.component(.month, from: interval.start) == calendar.component(.month, from: last)
+        let sameYear = calendar.component(.year, from: interval.start) == calendar.component(.year, from: last)
+        let firstFormatter = formatter(sameYear && sameMonth ? "d" : (sameYear ? "d MMM" : "d MMM yyyy"))
+        let lastFormatter = formatter(sameYear ? "d MMM" : "d MMM yyyy")
+        return "\(firstFormatter.string(from: interval.start))–\(lastFormatter.string(from: last))"
+    }
     static func weekRange(_ date: Date) -> String {
         guard let interval = OrbitCalendarV2Logic.weekInterval(containing: date, calendar: calendar),
               let last = calendar.date(byAdding: .day, value: -1, to: interval.end) else { return monthYear(date) }

@@ -152,7 +152,9 @@ enum OrbitCalendarV2Logic {
             event.startsAt < period.end && event.endsAt > period.start
         }
 
-        let thisWeek = unique.filter { intersects($0, currentWeek) && assigned.insert(eventKey($0)).inserted }
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? currentWeek.end
+        let remainingWeek = DateInterval(start: tomorrow, end: currentWeek.end)
+        let thisWeek = unique.filter { intersects($0, remainingWeek) && assigned.insert(eventKey($0)).inserted }
         let nextWeekEvents = unique.filter { intersects($0, nextWeek) && assigned.insert(eventKey($0)).inserted }
         let laterCandidates = unique
             .filter { event in

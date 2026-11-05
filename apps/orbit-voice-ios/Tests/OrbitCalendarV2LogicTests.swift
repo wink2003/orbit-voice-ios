@@ -83,16 +83,31 @@ struct OrbitCalendarV2LogicTests {
         let beyondHorizon = event("beyond-horizon", at(2026, 11, 29), at(2026, 11, 29, 1))
         let timeline = OrbitCalendarV2Logic.timeline(timelineEvents + [timelineEvents[1], beyondHorizon], now: today, calendar: calendar, laterInterval: laterInterval)
         precondition(timeline.today.map(\.id) == ["today"], "today section contains today's event")
-        precondition(timeline.thisWeek.map(OrbitCalendarV2Logic.eventKey) == ["family:week", "family:spans-weeks"], "family event remains in the current-week section")
+        precondition(timeline.thisWeek.map(OrbitCalendarV2Logic.eventKey) == ["family:spans-weeks"], "This Week excludes earlier days and Today while retaining an event on a later weekday")
         let iso = ISO8601DateFormatter()
         precondition(timeline.nextWeek.map(OrbitCalendarV2Logic.eventKey) == ["icloud:week", "family:next-week", "family:before-boundary"], "iCloud event with a colliding raw ID remains in next week; got \(timeline.nextWeek.map(OrbitCalendarV2Logic.eventKey)), current week got \(timeline.thisWeek.map(OrbitCalendarV2Logic.eventKey)), later got \(timeline.later.map(\.id)), interval \(iso.string(from: nextWeek.start))..<\(iso.string(from: nextWeek.end)), boundary event \(iso.string(from: timelineEvents[4].startsAt))..<\(iso.string(from: timelineEvents[4].endsAt))")
         precondition(timeline.later.map(\.id) == ["after-1", "after-2", "after-3", "after-4", "after-5"], "later section has five chronological events starting at the exclusive next-week boundary")
         precondition(!timeline.later.contains(where: { $0.id == "beyond-horizon" }), "events at or beyond HorizonEnd are excluded")
-        precondition(timeline.thisWeek.filter { OrbitCalendarV2Logic.eventKey($0) == "family:week" }.count == 1, "duplicate instances of one canonical event are assigned only once")
+        precondition(timeline.thisWeek.filter { OrbitCalendarV2Logic.eventKey($0) == "family:week" }.isEmpty, "a canonical event on an earlier weekday is excluded from This Week")
+        precondition(timeline.nextWeek.filter { OrbitCalendarV2Logic.eventKey($0) == "icloud:week" }.count == 1, "a same-ID event from another source remains assigned once to Next Week")
         precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: []) == 0, "no selected sources produce no eligible later events")
         precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["family"]) == 6, "later-event coverage counts selected sources only")
         precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["family"], excluding: ["family:after-1"]) == 5, "selected-date canonical event identities are excluded from later-event coverage")
         precondition(OrbitCalendarV2Logic.eligibleLaterEventCount(timelineEvents, after: nextWeek.end, now: today, sourceIDs: ["unknown"]) == 0, "unselected sources do not inflate later-event coverage")
+        let sunday = at(2026, 11, 8, 12)
+        let sundayTimeline = OrbitCalendarV2Logic.timeline([
+            event("sunday-today", at(2026, 11, 8, 9), at(2026, 11, 8, 10)),
+            event("sunday-past", at(2026, 11, 6, 9), at(2026, 11, 6, 10)),
+            event("monday-next", at(2026, 11, 9, 9), at(2026, 11, 9, 10))
+        ], now: sunday, calendar: calendar)
+        precondition(sundayTimeline.today.map(\.id) == ["sunday-today"] && sundayTimeline.thisWeek.isEmpty && sundayTimeline.nextWeek.map(\.id) == ["monday-next"], "Sunday separates the current day from next Monday without retaining past weekdays")
+        let monday = at(2026, 11, 9, 12)
+        let mondayTimeline = OrbitCalendarV2Logic.timeline([
+            event("monday-today", at(2026, 11, 9, 9), at(2026, 11, 9, 10)),
+            event("sunday-past", at(2026, 11, 8, 9), at(2026, 11, 8, 10)),
+            event("tuesday", at(2026, 11, 10, 9), at(2026, 11, 10, 10))
+        ], now: monday, calendar: calendar)
+        precondition(mondayTimeline.today.map(\.id) == ["monday-today"] && mondayTimeline.thisWeek.map(\.id) == ["tuesday"], "Monday starts a new week and shows only future weekdays in This Week")
         let sectionKeys = timeline.today + timeline.thisWeek + timeline.nextWeek + timeline.later
         precondition(Set(sectionKeys.map(OrbitCalendarV2Logic.eventKey)).count == sectionKeys.count, "event identities never repeat across timeline sections")
         let selectedExclusion = OrbitCalendarV2Logic.timeline(timelineEvents, now: today, calendar: calendar, excluding: [OrbitCalendarV2Logic.eventKey(timelineEvents[0])])

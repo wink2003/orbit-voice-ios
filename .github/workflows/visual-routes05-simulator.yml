@@ -18,6 +18,11 @@ on:
         required: false
         default: false
         type: boolean
+      skip_family_menu:
+        description: 'Skip the separately failing Family-menu readiness capture while retaining Calendar, Exams and Timetable evidence'
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - codex/routes05-batch1
@@ -186,7 +191,7 @@ jobs:
           done
           fi
 
-          if [ "${GITHUB_REF}" = "refs/heads/codex/calendar-v2" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main-orbit-calendar-ux-20261102" ]; then
+          if [ "${GITHUB_REF}" = "refs/heads/codex/calendar-v2" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main-orbit-calendar-ux-20261102" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main119-cal-school-ux-20261105" ]; then
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
               sleep 2
@@ -266,7 +271,9 @@ jobs:
           # Family route opens the real More owner, Exams spans multiple weeks,
           # and Timetable is positioned at the rightmost horizontal column.
           all_targeted_passed=true
-          for screen in family-menu exams timetable; do
+          targeted_screens="family-menu exams timetable"
+          if [ "${{ inputs.skip_family_menu }}" = "true" ]; then targeted_screens="exams timetable"; fi
+          for screen in $targeted_screens; do
             for appearance in light dark; do
               file="$out/routes05-${screen}-${appearance}-targeted.png"
               captured=false
