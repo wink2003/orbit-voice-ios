@@ -559,9 +559,11 @@ private struct SchoolHubV2View: View {
         .accessibilityElement(children: .combine)
     }
 
+#if DEBUG
     private var receiptScreen: SchoolAPIReceiptScreen? {
         switch tab { case 1: .exams; case 2: .timetableHub; default: nil }
     }
+#endif
 
     private func loadScreenStore() async {
 #if DEBUG
@@ -1404,12 +1406,12 @@ final class SchoolHubV2Store {
         let groupedExamCount = examWeeks.reduce(0) { $0 + $1.days.reduce(0) { $0 + $1.exams.count } }
         let examsSuppressed = examsFailure != nil || SchoolAPIReceiptLogic.examsCoverageSuppressesRows(coverageState)
         let timetableVisible = SchoolAPIReceiptLogic.visibleTimetableRowCount(lessonIndexes: visibleTimetable.map(\.lessonIndex))
-        let examsRootCanRender = phase == .ready || phase == .empty || phase == .notSynced || phase == .stale
+        let hubContentCanRender = phase == .ready || phase == .empty || phase == .notSynced || phase == .stale
         let visibleRows: Int
         switch capture.screen {
         case .timetable: visibleRows = (timetableFailure != nil || [.unauthorized, .forbidden, .unavailable, .failed].contains(phase)) && timetable.isEmpty ? 0 : timetableVisible
-        case .timetableHub: visibleRows = [.unauthorized, .forbidden, .unavailable, .failed].contains(phase) || timetableFailure != nil ? 0 : timetableVisible
-        case .exams: visibleRows = SchoolAPIReceiptLogic.visibleExamRowCount(groupedCount: groupedExamCount, coverageState: coverageState, hasFailure: examsFailure != nil || !examsRootCanRender)
+        case .timetableHub: visibleRows = !hubContentCanRender || timetableFailure != nil ? 0 : timetableVisible
+        case .exams: visibleRows = SchoolAPIReceiptLogic.visibleExamRowCount(groupedCount: groupedExamCount, coverageState: coverageState, hasFailure: examsFailure != nil || !hubContentCanRender)
         }
         return SchoolAPIReceiptScreenTrace(
             screen: capture.screen,

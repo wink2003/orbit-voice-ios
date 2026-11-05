@@ -658,7 +658,7 @@ nonisolated enum SchoolHubLogic {
     }
 
     static func examsCoverageSuppressesRows(_ state: String) -> Bool {
-        ["NOT_SYNCED", "PARTIAL", "UNAVAILABLE", "ERROR"].contains(state.uppercased())
+        ["NOT_SYNCED", "PARTIAL", "UNAVAILABLE", "ERROR"].contains(state)
     }
 
     static func chronologicalExams<Exam>(_ exams: [Exam], dayKey: (Exam) -> String, id: (Exam) -> String) -> [Exam] {

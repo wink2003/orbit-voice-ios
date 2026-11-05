@@ -981,7 +981,11 @@ final class MainProductAPI {
             recordedUnauthorized = true
 #endif
             if refreshed {
+#if DEBUG
                 return try await self.requestImpl(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, preserveHTTPStatus: preserveHTTPStatus, receiptCapture: screenCapture, as: T.self)
+#else
+                return try await self.requestImpl(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, preserveHTTPStatus: preserveHTTPStatus, receiptCapture: nil, as: T.self)
+#endif
             }
         }
         guard (200 ..< 300).contains(http.statusCode) else {
