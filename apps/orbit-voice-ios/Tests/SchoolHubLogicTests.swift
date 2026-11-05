@@ -376,6 +376,36 @@ struct SchoolHubLogicTests {
         mustRejectOverview("\"999999999999999999999999999999\"")
         precondition(SchoolHubLogic.addDays(7, to: "2026-11-02") == "2026-11-09")
 
+        // EX-03: the API rejects windows > 31 days, so the 56-day exam horizon is split into contiguous windows.
+        let examWindows = SchoolHubLogic.windows(from: "2026-11-02", days: 56)
+        precondition(examWindows.count == 2 && examWindows[0].from == "2026-11-02" && examWindows[0].to == "2026-11-30" && examWindows[1].from == "2026-11-30" && examWindows[1].to == "2026-12-28")
+        for window in examWindows { precondition(SchoolHubLogic.daysBetween(window.from, window.to) <= 31) }
+        precondition(SchoolHubLogic.windows(from: "2026-12-14", days: 56).last?.to == "2027-02-08")
+        precondition(SchoolHubLogic.windows(from: "2026-11-02", days: 10).count == 1 && SchoolHubLogic.windows(from: "2026-11-02", days: 0).isEmpty)
+        // ISO week / year boundary used for exam grouping and week navigation
+        precondition(SchoolHubLogic.isoWeek(of: "2026-12-28") == "2026-W53" && SchoolHubLogic.isoWeek(of: "2027-01-04") == "2027-W01")
+        precondition(SchoolHubLogic.addDays(-7, to: "2027-01-04") == "2026-12-28")
+        // TT-04: compact labels never invent data and stay short
+        precondition(SchoolHubLogic.subjectAbbreviation("Mathematik") == "Mat" && SchoolHubLogic.subjectAbbreviation("Kunst") == "Kun" && SchoolHubLogic.subjectAbbreviation("Bio") == "Bio")
+        precondition(SchoolHubLogic.subjectAbbreviation("Religion Evangelisch") == "RE" && SchoolHubLogic.subjectAbbreviation("  ") == "—")
+        // Multiple lessons in one slot are all decoded and kept
+        let doubleSlotJSON = Data("""
+        {"timetable":{"state":"READY","freshness":{"state":"READY","sourceStates":{"timetable":"READY"},"observedAt":"2026-10-19T21:00:48.207Z","source":"schulmanager","fingerprint":"abc"},"startDayKey":"2026-11-02","entries":[{"id":"a","dayKey":"2026-11-02","localDate":"2026-11-02","lessonIndex":2,"subject":"Englisch","teacher":null,"room":"B1","group":null,"groupName":null,"startsAt":null,"endsAt":null,"startsAtLocal":"08:50","endsAtLocal":"09:35","classHourNumber":2,"isCancelled":false,"originalLessonCount":1,"teachers":[],"groups":[],"status":null,"kind":null,"source":"schulmanager","sourceFingerprint":null,"observedAt":null},{"id":"b","dayKey":"2026-11-02","localDate":"2026-11-02","lessonIndex":2,"subject":"Französisch","teacher":null,"room":"B2","group":null,"groupName":null,"startsAt":null,"endsAt":null,"startsAtLocal":"08:50","endsAtLocal":"09:35","classHourNumber":2,"isCancelled":true,"originalLessonCount":1,"teachers":[],"groups":[],"status":null,"kind":null,"source":"schulmanager","sourceFingerprint":null,"observedAt":null}],"coverage":{"state":"READY_WITH_DATA","rowCount":2,"sourceStatus":"READY","sourceFingerprint":null,"successfulSyncAt":"2026-11-05T05:00:00.000Z","observedAt":"2026-11-05T05:00:00.000Z","errorCode":null,"startDayKey":"2026-11-02","endDayKey":"2026-11-09"}}}
+        """.utf8)
+        let doubleSlot = try! decoder.decode(OrbitSchoolHubV2TimetableResponse.self, from: doubleSlotJSON).timetable
+        precondition(doubleSlot.entries.filter { $0.localDate == "2026-11-02" && $0.lessonIndex == 2 }.count == 2 && doubleSlot.coverage?.state == "READY_WITH_DATA")
+
+        // Independent loading: one failed endpoint must not fail the whole hub
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: nil, exams: nil, timetable: nil))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: 503, exams: nil, timetable: nil))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: 503, exams: nil, timetable: 0))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: nil, exams: 400, timetable: nil))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: nil, exams: nil, timetable: 503))
+        precondition(!SchoolHubLogic.isHubWideFailure(overview: 503, exams: 400, timetable: nil))
+        precondition(SchoolHubLogic.isHubWideFailure(overview: 503, exams: 400, timetable: 0))
+        precondition(SchoolHubLogic.isHubWideFailure(overview: nil, exams: 401, timetable: nil))
+        precondition(SchoolHubLogic.isHubWideFailure(overview: nil, exams: nil, timetable: 403))
+
         print("school hub logic tests passed")
     }
 }

@@ -413,6 +413,42 @@ nonisolated enum SchoolHubLogic {
         return dayKey(of: moved)
     }
 
+    /// The school API rejects any window longer than 31 days (`invalid_school_window`),
+    /// so longer horizons are requested as consecutive windows of at most `chunk` days.
+    static func windows(from start: String, days: Int, chunk: Int = 28) -> [(from: String, to: String)] {
+        var result: [(from: String, to: String)] = []
+        var offset = 0
+        while offset < days {
+            let length = min(chunk, days - offset)
+            guard let from = addDays(offset, to: start), let to = addDays(offset + length, to: start) else { break }
+            result.append((from, to))
+            offset += length
+        }
+        return result
+    }
+
+    /// Each argument is nil on success, else the HTTP status (0 for a non-HTTP failure).
+    /// The whole hub fails only for auth problems or when every endpoint failed; otherwise sections with data stay usable.
+    static func isHubWideFailure(overview: Int?, exams: Int?, timetable: Int?) -> Bool {
+        let all = [overview, exams, timetable]
+        if all.contains(where: { $0 == 401 || $0 == 403 }) { return true }
+        return all.allSatisfy { $0 != nil }
+    }
+
+    static func daysBetween(_ from: String, _ to: String) -> Int {
+        guard let a = date(fromDayKey: from), let b = date(fromDayKey: to) else { return 0 }
+        return calendar().dateComponents([.day], from: a, to: b).day ?? 0
+    }
+
+    /// Compact timetable label; the full subject stays available in details and accessibility text.
+    static func subjectAbbreviation(_ subject: String) -> String {
+        let words = subject.split(whereSeparator: { $0.isWhitespace || $0 == "/" || $0 == "-" }).map(String.init)
+        guard !words.isEmpty else { return "—" }
+        if words.count > 1 { return String(words.prefix(3).compactMap(\.first)).uppercased() }
+        let word = words[0]
+        return word.count <= 4 ? word : String(word.prefix(3))
+    }
+
     static func isoWeek(of key: String) -> String {
         guard let date = date(fromDayKey: key) else { return "—" }
         var value = Calendar(identifier: .iso8601)
