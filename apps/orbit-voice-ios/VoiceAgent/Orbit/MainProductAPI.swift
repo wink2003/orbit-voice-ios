@@ -941,26 +941,20 @@ final class MainProductAPI {
 #endif
             throw OrbitChatAPIError.invalidResponse
         }
+        #if DEBUG
         var recordedUnauthorized = false
+        #endif
         if http.statusCode == 401, allowRefresh {
-            let refresh: SchoolAPIReceiptRecord.Refresh
-            if KeychainStore.readSessionToken() == nil {
-                refresh = SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: false, succeeded: false)
-            } else {
-                let refreshed = await OrbitAuthentication.refreshStoredSession()
-                refresh = SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: true, succeeded: refreshed)
+            let sessionAvailable = KeychainStore.readSessionToken() != nil
+            let refreshed = sessionAvailable ? await OrbitAuthentication.refreshStoredSession() : false
 #if DEBUG
-                if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: refresh, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
-#endif
-                recordedUnauthorized = true
-                if refreshed {
-                    return try await self.request(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, preserveHTTPStatus: preserveHTTPStatus, as: T.self)
-                }
-            }
-#if DEBUG
-            if !recordedUnauthorized, let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: refresh, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
-#endif
+            let refresh = SchoolAPIReceiptRecord.refreshOutcome(sessionAvailable: sessionAvailable, succeeded: refreshed)
+            if let receiptEndpoint { SchoolAPIReceiptSession.shared.append(.init(endpoint: receiptEndpoint, range: receiptRange, status: http.statusCode, outcome: .httpFailure, refresh: refresh, count: nil, minimumDate: nil, maximumDate: nil, coverage: [])) }
             recordedUnauthorized = true
+#endif
+            if refreshed {
+                return try await self.request(path: path, method: method, body: body, cachePolicy: cachePolicy, classifyUnavailable: classifyUnavailable, allowRefresh: false, preserveHTTPStatus: preserveHTTPStatus, as: T.self)
+            }
         }
         guard (200 ..< 300).contains(http.statusCode) else {
 #if DEBUG
