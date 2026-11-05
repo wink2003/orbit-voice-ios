@@ -84,6 +84,13 @@ nonisolated enum OrbitNavigation {
     }
 }
 
+nonisolated enum OrbitCalendarRouteOrigin: Equatable {
+    case root
+    case more
+
+    var showsBackControl: Bool { self == .more }
+}
+
 nonisolated enum OrbitChatNavigationPolicy {
     static func opensExplicitConversation(contactPrompt: String?) -> Bool {
         contactPrompt != nil

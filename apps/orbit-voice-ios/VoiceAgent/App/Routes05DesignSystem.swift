@@ -57,9 +57,35 @@ private extension UIColor {
 struct Routes05Mast: View {
     let section: String
     var action: (() -> Void)?
+    var backAction: (() -> Void)? = nil
+    var backLabel = "Назад"
+
+    init(section: String, action: (() -> Void)? = nil) {
+        self.section = section
+        self.action = action
+        backAction = nil
+        backLabel = "Назад"
+    }
+
+    init(section: String, action: (() -> Void)? = nil, backAction: (() -> Void)?, backLabel: String) {
+        self.section = section
+        self.action = action
+        self.backAction = backAction
+        self.backLabel = backLabel
+    }
 
     var body: some View {
         HStack(spacing: 10) {
+            if let backAction {
+                Button(action: backAction) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .black))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .foregroundStyle(Routes05Tokens.ink)
+                .accessibilityLabel(backLabel)
+            }
             HStack(spacing: 7) {
                 ZStack {
                     Circle().stroke(Routes05Tokens.ink, lineWidth: 2)

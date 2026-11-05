@@ -371,6 +371,89 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     let sourceColor: String?
     let createdAt: Date?
     let updatedAt: Date?
+    var occurrenceId: String? = nil
+    var startDate: String? = nil
+    var endDate: String? = nil
+    var timeZone: String? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case id, familyId, ownerPersonId, title, notes, startsAt, endsAt, allDay
+        case sourceType, sourceIdentifier, sourceName, sourceColor, createdAt, updatedAt
+        case occurrenceId, startDate, endDate, timeZone
+    }
+
+    init(
+        id: String,
+        familyId: String,
+        ownerPersonId: String,
+        title: String,
+        notes: String,
+        startsAt: Date,
+        endsAt: Date,
+        allDay: Bool,
+        sourceType: String,
+        sourceIdentifier: String?,
+        sourceName: String?,
+        sourceColor: String?,
+        createdAt: Date?,
+        updatedAt: Date?,
+        occurrenceId: String? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil,
+        timeZone: String? = nil
+    ) {
+        self.id = id
+        self.familyId = familyId
+        self.ownerPersonId = ownerPersonId
+        self.title = title
+        self.notes = notes
+        self.startsAt = startsAt
+        self.endsAt = endsAt
+        self.allDay = allDay
+        self.sourceType = sourceType
+        self.sourceIdentifier = sourceIdentifier
+        self.sourceName = sourceName
+        self.sourceColor = sourceColor
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.occurrenceId = occurrenceId
+        self.startDate = startDate
+        self.endDate = endDate
+        self.timeZone = timeZone
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        familyId = try values.decode(String.self, forKey: .familyId)
+        ownerPersonId = try values.decode(String.self, forKey: .ownerPersonId)
+        title = try values.decode(String.self, forKey: .title)
+        notes = try values.decode(String.self, forKey: .notes)
+        allDay = try values.decode(Bool.self, forKey: .allDay)
+        sourceType = try values.decode(String.self, forKey: .sourceType)
+        sourceIdentifier = try values.decodeIfPresent(String.self, forKey: .sourceIdentifier)
+        sourceName = try values.decodeIfPresent(String.self, forKey: .sourceName)
+        sourceColor = try values.decodeIfPresent(String.self, forKey: .sourceColor)
+        createdAt = try values.decodeIfPresent(Date.self, forKey: .createdAt)
+        updatedAt = try values.decodeIfPresent(Date.self, forKey: .updatedAt)
+        occurrenceId = try values.decodeIfPresent(String.self, forKey: .occurrenceId)
+        startDate = try values.decodeIfPresent(String.self, forKey: .startDate)
+        endDate = try values.decodeIfPresent(String.self, forKey: .endDate)
+        timeZone = try values.decodeIfPresent(String.self, forKey: .timeZone)
+
+        let eventCalendarTimeZone = timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
+        if allDay, let startDate, let localStart = OrbitCalendarV2Logic.localCalendarDate(startDate, timeZone: eventCalendarTimeZone) {
+            startsAt = localStart
+        } else {
+            startsAt = try values.decode(Date.self, forKey: .startsAt)
+        }
+        if allDay, let endDate, let localEnd = OrbitCalendarV2Logic.localCalendarDate(endDate, timeZone: eventCalendarTimeZone) {
+            endsAt = localEnd
+        } else {
+            endsAt = try values.decode(Date.self, forKey: .endsAt)
+        }
+    }
+
 }
 
 extension OrbitCalendarEvent: OrbitCalendarV2EventLike {}
@@ -399,17 +482,18 @@ struct OrbitCalendarSource: Decodable, Identifiable, Hashable {
     let isDefaultWritable: Bool
 }
 
-struct OrbitCalendarUpcomingResult: Hashable {
+struct OrbitCalendarLaterResult: Hashable {
     let events: [OrbitCalendarEvent]
-    let coveredThrough: Date
-    let windowsRequested: Int
-    let reachedFive: Bool
+    let horizonEnd: Date
+    let complete: Bool
+    let partialFailure: Bool
+    let truncated: Bool
 
     var coverageDescription: String {
-        if reachedFive {
-            return "Показано 5 найближчих подій; пошук зупинено після достатнього покриття."
+        if complete {
+            return "Пошук «Далі» охоплює події до \(horizonEnd.formatted(date: .abbreviated, time: .omitted))."
         }
-        return "Знайдено \(events.count) подій до \(coveredThrough.formatted(date: .abbreviated, time: .omitted)). Сервер не повідомляє, що джерело повністю вичерпане; синхронізацію може бути неповною."
+        return "Перевірка календарів часткова; список може не містити всіх найближчих подій."
     }
 }
 
@@ -531,7 +615,13 @@ private struct ContactsResponse: Decodable { let contacts: [OrbitContact] }
 private struct ContactResponse: Decodable { let contact: OrbitContact }
 
 private struct FamilyMessagesResponse: Decodable { let messages: [OrbitFamilyMessage] }
-private struct CalendarResponse: Decodable { let events: [OrbitCalendarEvent] }
+private struct CalendarResponse: Decodable {
+    let events: [OrbitCalendarEvent]
+    let partialFailure: Bool?
+    let truncated: Bool?
+    let complete: Bool?
+    let selectionMode: String?
+}
 private struct CalendarConnectionsResponse: Decodable { let connections: [OrbitCalendarConnection] }
 private struct CalendarSourcesResponse: Decodable { let sources: [OrbitCalendarSource] }
 private struct CalendarSourceResponse: Decodable { let source: OrbitCalendarSource }
@@ -654,42 +744,39 @@ final class MainProductAPI {
         return response.events
     }
 
-    /// Bounded lookahead for the independent upcoming queue. The existing
-    /// endpoint is windowed, so query four 3-month pages at most and stop once
-    /// five eligible events are known. This never changes the visible month.
-    func upcomingCalendarEvents(now: Date = .now, maxWindows: Int = 4) async throws -> OrbitCalendarUpcomingResult {
-        var from = now
-        var collected: [OrbitCalendarEvent] = []
-        var coveredThrough = now
-        var windows = 0
-
-        for _ in 0..<max(1, min(maxWindows, 4)) {
-            guard let to = Calendar.current.date(byAdding: .month, value: 3, to: from) else { break }
-            let page = try await calendarEvents(from: from, to: to, classifyUnavailable: true)
-            windows += 1
-            coveredThrough = to
-            collected.append(contentsOf: page.filter { $0.endsAt > now })
-
-            var seen = Set<String>()
-            collected = collected.filter { event in
-                let source = event.sourceIdentifier ?? event.sourceType
-                return seen.insert("\(source):\(event.id)").inserted
-            }
-            let sorted = collected.sorted {
-                if $0.startsAt != $1.startsAt { return $0.startsAt < $1.startsAt }
-                return $0.id < $1.id
-            }
-            if sorted.count >= 5 {
-                return OrbitCalendarUpcomingResult(events: Array(sorted.prefix(5)), coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: true)
-            }
-            from = to
+    /// Requests the single, half-open local-date interval used by the Later section.
+    func laterCalendarEvents(
+        from start: Date,
+        to end: Date,
+        timeZone: TimeZone = .current,
+        excludingEventKeys: Set<String> = []
+    ) async throws -> OrbitCalendarLaterResult {
+        guard end > start else {
+            return OrbitCalendarLaterResult(events: [], horizonEnd: end, complete: true, partialFailure: false, truncated: false)
         }
-
-        let sorted = collected.sorted {
-            if $0.startsAt != $1.startsAt { return $0.startsAt < $1.startsAt }
-            return $0.id < $1.id
-        }
-        return OrbitCalendarUpcomingResult(events: Array(sorted.prefix(5)), coveredThrough: coveredThrough, windowsRequested: windows, reachedFive: false)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let excludedJSON = try encoder.encode(excludingEventKeys.sorted())
+        guard let excluded = String(data: excludedJSON, encoding: .utf8) else { throw OrbitChatAPIError.invalidResponse }
+        var components = URLComponents()
+        components.path = "/api/family/calendar"
+        components.queryItems = [
+            URLQueryItem(name: "selection", value: "starts"),
+            URLQueryItem(name: "from", value: formatter.string(from: start)),
+            URLQueryItem(name: "to", value: formatter.string(from: end)),
+            URLQueryItem(name: "timeZone", value: timeZone.identifier),
+            URLQueryItem(name: "excludeEventKeys", value: excluded),
+        ]
+        guard let path = components.string else { throw OrbitChatAPIError.invalidResponse }
+        let response: CalendarResponse = try await request(path: path, classifyUnavailable: true)
+        let complete = response.complete == true && response.selectionMode == "starts" && response.partialFailure != true && response.truncated != true
+        return OrbitCalendarLaterResult(
+            events: response.events,
+            horizonEnd: end,
+            complete: complete,
+            partialFailure: response.partialFailure == true,
+            truncated: response.truncated == true || response.complete == nil
+        )
     }
 
     func calendarConnections() async throws -> [OrbitCalendarConnection] {

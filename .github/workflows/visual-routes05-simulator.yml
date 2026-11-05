@@ -186,7 +186,7 @@ jobs:
           done
           fi
 
-          if [ "${GITHUB_REF}" = "refs/heads/codex/calendar-v2" ]; then
+          if [ "${GITHUB_REF}" = "refs/heads/codex/calendar-v2" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main-orbit-calendar-ux-20261102" ]; then
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
               sleep 2
