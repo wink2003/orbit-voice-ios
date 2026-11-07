@@ -304,12 +304,13 @@ struct SchoolInboxView: View {
             SchoolInboxItemSnapshot(
                 id: item.id,
                 type: item.type,
-                title: item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title,
+                title: item.displayTitle,
                 sender: item.sender,
                 preview: item.translationUkrainian ?? item.previewPlainText ?? item.originalPlainText ?? item.originalGerman,
                 searchText: [
                     item.title,
                     item.titlePlainText,
+                    item.titleUkrainian,
                     item.sender,
                     item.previewPlainText,
                     item.originalPlainText,
@@ -353,7 +354,7 @@ struct SchoolInboxView: View {
     }
     private func schoolRow(_ item: OrbitSchoolItem, index: Int) -> some View {
         let sender = item.sender.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.sender
-        let title = item.titlePlainText?.isEmpty == false ? item.titlePlainText! : (item.title.isEmpty ? String((item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).prefix(80)) : item.title)
+        let title = item.displayTitle.isEmpty ? String((item.previewPlainText ?? item.originalPlainText ?? item.originalGerman).prefix(80)) : item.displayTitle
         let tint: Color = switch index % 4 {
         case 0: Routes05Tokens.yellow
         case 1: Routes05Tokens.mint
@@ -655,6 +656,7 @@ struct SchoolDetailView: View {
                         if item.unread { Text("НОВЕ В ORBIT").font(.caption2.weight(.black).monospaced()).foregroundStyle(Routes05Tokens.blue) }
                     }
                     if !displayTitle.isEmpty { Text(displayTitle).font(.system(size: 30, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true).textSelection(.enabled).accessibilityAddTraits(.isHeader) }
+                    if let original = item.germanTitleCaption { Text(original).font(.footnote).foregroundStyle(Routes05Tokens.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
                     VStack(alignment: .leading, spacing: 5) {
                         Label(item.sender.isEmpty ? "Відправника не вказано" : item.sender, systemImage: "building.2.crop.circle")
                             .font(.callout.weight(.bold))
@@ -792,7 +794,7 @@ struct SchoolDetailView: View {
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
     }
-    private var displayTitle: String { item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title }
+    private var displayTitle: String { item.displayTitle }
     @ViewBuilder private func attachmentRow(_ file: OrbitSchoolAttachment) -> some View {
         let rawURL = file.url ?? file.downloadURL
         let safeURL = rawURL.flatMap { value -> URL? in

@@ -37,6 +37,20 @@ struct OrbitSchoolItem: Decodable, Identifiable, Hashable {
     let tasks: [OrbitSchoolItemTask]?
     // Additive, backend-provided: ready | pending | failed | original_only. Absent on older backends.
     var translationStatus: String? = nil
+    // Additive, backend-provided Ukrainian rendering of `title`. Absent on older backends or before translation.
+    var titleUkrainian: String? = nil
+}
+extension OrbitSchoolItem {
+    private static func nonBlank(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+    /// German plain-text title, exactly as received (never altered).
+    var germanTitle: String { Self.nonBlank(titlePlainText) ?? title }
+    /// Ukrainian title when the backend provides one, otherwise the German original.
+    var displayTitle: String { Self.nonBlank(titleUkrainian) ?? germanTitle }
+    /// The German original, shown as a caption only when a different Ukrainian title is displayed.
+    var germanTitleCaption: String? { Self.nonBlank(titleUkrainian) != nil && germanTitle != displayTitle && !germanTitle.isEmpty ? germanTitle : nil }
 }
 struct OrbitSchoolItemTask: Decodable, Hashable { let key: String?; let title: String?; let action: String?; let dueAt: String?; let allDay: Bool?; let importance: String?; let target: String?; let confidence: Double?; let reason: String? }
 struct OrbitSchoolAttachment: Decodable, Hashable {

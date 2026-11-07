@@ -434,6 +434,8 @@ struct SchoolHubLogicTests {
         precondition(SchoolTranslationPlaceholder.message(translation: nil, status: "pending")?.contains("готується") == true)
         precondition(SchoolTranslationPlaceholder.message(translation: nil, status: "failed")?.contains("Не вдалося") == true)
         precondition(SchoolTranslationPlaceholder.message(translation: nil, status: "original_only")?.contains("немає тексту") == true)
+        precondition(!SchoolTranslationPlaceholder.isPending(translation: nil, status: "body_pending"))
+        precondition(SchoolTranslationPlaceholder.message(translation: nil, status: "body_pending")?.contains("не отримано") == true)
         precondition(SchoolTranslationPlaceholder.message(translation: nil, status: nil)?.contains("недоступний") == true)
 
         print("school hub logic tests passed")
