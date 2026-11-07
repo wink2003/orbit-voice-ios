@@ -950,7 +950,7 @@ private struct LegacySchoolHubView: View {
                 Text("·").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
             }
             .frame(width: 15, height: 15)
-            Text("SCHOOL · READ ONLY").fontWeight(.bold).tracking(1.1).foregroundStyle(NovaTodayTokens.teal)
+            Text("ШКОЛА · ЛИШЕ ЧИТАННЯ").fontWeight(.bold).tracking(1.1).foregroundStyle(NovaTodayTokens.teal)
             Spacer()
         }
         .font(.caption2)
@@ -3388,7 +3388,7 @@ private struct Routes05SchoolTasksProductionView: View {
     }
 
     private var intro: some View {
-        HStack { Text("ACTION CENTER / FAMILY").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.8); Spacer(); Text("ORBIT / SCHOOL").font(.system(size: 9, weight: .medium, design: .monospaced)) }
+        HStack { Text("ЦЕНТР ДІЙ / РОДИНА").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.8); Spacer(); Text("ORBIT / ШКОЛА").font(.system(size: 9, weight: .medium, design: .monospaced)) }
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
     }
 
@@ -3546,7 +3546,7 @@ private struct Routes05SchoolTimetableProductionView: View {
         }.padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 17)
     }
     private var intro: some View {
-        HStack { Text("WEEK / \(weekNumber)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.8); Spacer(); Text(year).font(.system(size: 10, weight: .medium, design: .monospaced)) }
+        HStack { Text("ТИЖДЕНЬ / \(weekNumber)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.8); Spacer(); Text(year).font(.system(size: 10, weight: .medium, design: .monospaced)) }
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
     }
     private var hero: some View {

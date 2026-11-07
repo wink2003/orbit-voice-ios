@@ -945,3 +945,23 @@ extension SchoolHubTask {
         }
     }
 }
+
+/// Honest Ukrainian copy for a School item whose translation is not (yet) available.
+/// Pure and testable; the German original is never altered.
+enum SchoolTranslationPlaceholder {
+    static func isPending(translation: String?, status: String?) -> Bool {
+        hasText(translation) == false && (status == nil || status == "pending")
+    }
+    static func message(translation: String?, status: String?) -> String? {
+        if hasText(translation) { return nil }
+        switch status {
+        case "pending": return "Переклад готується. Він з’явиться тут автоматично — або перегляньте німецький оригінал."
+        case "failed": return "Не вдалося підготувати переклад. Перегляньте німецький оригінал."
+        case "original_only": return "У цьому листі немає тексту для перекладу."
+        default: return "Переклад наразі недоступний. Перейдіть до німецького оригіналу."
+        }
+    }
+    private static func hasText(_ value: String?) -> Bool {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+}

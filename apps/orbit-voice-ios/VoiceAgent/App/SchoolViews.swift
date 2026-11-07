@@ -124,7 +124,7 @@ struct SchoolInboxView: View {
                     .padding(.bottom, 15)
 
                     HStack(spacing: 8) {
-                        Text("SCHULMANAGER / READ ONLY")
+                        Text("SCHULMANAGER / ЛИШЕ ЧИТАННЯ")
                             .font(.system(size: 10, weight: .black, design: .monospaced))
                             .tracking(1.3)
                             .fixedSize(horizontal: false, vertical: true)
@@ -269,7 +269,7 @@ struct SchoolInboxView: View {
                 .font(.system(size: 9, weight: .black, design: .monospaced))
                 .tracking(1.1).padding(.leading, 4)
             Spacer(minLength: 4)
-            Text("SCHOOL / 05")
+            Text("ШКОЛА / 05")
                 .font(.system(size: 9, weight: .black, design: .monospaced))
                 .tracking(0.5).lineLimit(1).minimumScaleFactor(0.85)
             Button {
@@ -613,7 +613,10 @@ struct SchoolDetailLoaderView: View {
 }
 
 struct SchoolDetailView: View {
-    let item: OrbitSchoolItem
+    let initialItem: OrbitSchoolItem
+    @State private var refreshedItem: OrbitSchoolItem?
+    private var item: OrbitSchoolItem { refreshedItem ?? initialItem }
+    init(item: OrbitSchoolItem) { self.initialItem = item }
     @Environment(\.dismiss) private var dismiss
     @State private var calendarMessage: String?
     @State private var pendingCalendarEvent: OrbitSchoolEvent?
@@ -693,7 +696,7 @@ struct SchoolDetailView: View {
                     Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
                 }
                 detailHeader("Текст листа")
-                let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian ?? "Переклад наразі недоступний. Перейдіть до німецького оригіналу.")
+                let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (SchoolTranslationPlaceholder.message(translation: item.translationUkrainian, status: item.translationStatus) ?? item.translationUkrainian ?? "")
                 VStack(alignment: .leading, spacing: 12) {
                     Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
                         .pickerStyle(.segmented)
@@ -770,7 +773,19 @@ struct SchoolDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaPadding(.bottom, 16)
-        .task { try? await MainProductAPI.shared.markSchoolItemRead(id: item.id) }
+        .task { try? await MainProductAPI.shared.markSchoolItemRead(id: initialItem.id) }
+        // Bounded refresh (6 x 20 s) while the backend reports the translation as pending,
+        // so a finished translation appears without leaving and reopening the letter.
+        .task(id: item.translationStatus ?? "unknown") {
+            guard SchoolTranslationPlaceholder.isPending(translation: item.translationUkrainian, status: item.translationStatus) else { return }
+            for _ in 0..<6 {
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                if Task.isCancelled { return }
+                guard let fresh = try? await MainProductAPI.shared.schoolItem(id: initialItem.id) else { continue }
+                refreshedItem = fresh
+                if !SchoolTranslationPlaceholder.isPending(translation: fresh.translationUkrainian, status: fresh.translationStatus) { return }
+            }
+        }
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
         .alert("Скопійовано", isPresented: $copyNotice) { Button("Гаразд", role: .cancel) {} } message: { Text("Текст доступний для виділення та копіювання.") }
