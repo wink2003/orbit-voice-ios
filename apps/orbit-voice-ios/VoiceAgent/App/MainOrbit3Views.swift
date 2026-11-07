@@ -119,6 +119,7 @@ struct MainOrbit3HomeView: View {
             .background(Orbit3Theme.canvas.ignoresSafeArea())
             .navigationTitle("Orbit")
             .navigationBarTitleDisplayMode(.inline)
+            .routes05NativeSwipeBack()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink { OrbitMoreView() } label: {
@@ -145,7 +146,7 @@ struct MainOrbit3HomeView: View {
         HStack(alignment: .bottom, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("ORBIT FAMILY").font(.caption.weight(.bold)).tracking(2.2).foregroundStyle(Orbit3Theme.orbit)
-                Text(greeting).font(.largeTitle.weight(.bold)).tracking(-0.5)
+                Routes05HeadingText(greeting, weight: .bold, tracking: -0.5)
                 Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)))
                     .font(.subheadline).foregroundStyle(.secondary)
                     .environment(\.locale, Locale(identifier: "uk_UA"))
@@ -401,6 +402,7 @@ struct MainOrbit3FamilyView: View {
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .routes05NativeSwipeBack()
             .task {
                 #if DEBUG
                 if fixture == nil { await load() }

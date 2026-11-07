@@ -14,12 +14,18 @@ struct NovaShellView: View {
     @State private var dockTopY: CGFloat = .infinity
     @State private var dockHeight: CGFloat = 0
     @State private var dockVisible = true
+    /// Bumping this re-creates the active destination, which returns its own
+    /// NavigationStack (and any presentation state) to the root.
+    @State private var rootGeneration = 0
+    @State private var unsavedInput = Routes05UnsavedInputTracker()
+    @State private var pendingDiscard: OrbitMainTab?
 
     var body: some View {
         destination
+            .id(rootGeneration)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if dockVisible {
-                    NovaDock(selection: $selection)
+                    NovaDock(selection: selection, onSelect: request)
                         .onGeometryChange(for: DockMetrics.self) { proxy in
                             DockMetrics(top: proxy.frame(in: .global).minY, height: proxy.size.height)
                         } action: { metrics in
@@ -31,6 +37,16 @@ struct NovaShellView: View {
             .environment(\.novaDockTopY, dockTopY)
             .environment(\.novaDockHeight, dockHeight)
             .environment(\.novaDockVisible, $dockVisible)
+            .environment(\.routes05UnsavedInput, unsavedInput)
+            .confirmationDialog("Відкинути незбережене?", isPresented: Binding(get: { pendingDiscard != nil }, set: { if !$0 { pendingDiscard = nil } }), titleVisibility: .visible) {
+                Button("Відкинути й перейти", role: .destructive) {
+                    if let tab = pendingDiscard { apply(tab) }
+                    pendingDiscard = nil
+                }
+                Button("Залишитись", role: .cancel) { pendingDiscard = nil }
+            } message: {
+                Text("На цьому екрані є текст, який ще не збережено або не надіслано.")
+            }
             .onReceive(NotificationCenter.default.publisher(for: .orbitSchoolNotificationTapped)) { _ in
                 selection = .school
             }
@@ -101,6 +117,24 @@ struct NovaShellView: View {
     private func select(_ tab: OrbitMainTab) {
         selection = tab == .today ? .home : tab
     }
+
+    /// Every dock tap resolves to the destination's ROOT, from any depth.
+    private func request(_ tab: OrbitMainTab) {
+        switch OrbitRootNavigationPolicy.action(selected: selection, requested: tab, hasUnsavedInput: unsavedInput.hasUnsavedInput) {
+        case .switchTo(let target): apply(target)
+        case .resetRoot: apply(selection)
+        case .confirmDiscard(let target): pendingDiscard = target
+        }
+    }
+
+    private func apply(_ tab: OrbitMainTab) {
+        dockVisible = true
+        if OrbitRootNavigationPolicy.canonical(selection) == OrbitRootNavigationPolicy.canonical(tab) {
+            rootGeneration += 1
+        } else {
+            selection = tab
+        }
+    }
 }
 
 private struct DockMetrics: Equatable, Sendable {
@@ -113,13 +147,14 @@ private struct DockMetrics: Equatable, Sendable {
 }
 
 private struct NovaDock: View {
-    @Binding var selection: OrbitMainTab
+    let selection: OrbitMainTab
+    let onSelect: (OrbitMainTab) -> Void
     private let items: [OrbitMainTab] = [.home, .orbit, .school, .more]
 
     var body: some View {
         HStack(spacing: 6) {
             ForEach(items) { item in
-                Button { selection = item } label: {
+                Button { onSelect(item) } label: {
                     VStack(spacing: 4) {
                         Image(systemName: item.systemImage)
                             .font(.subheadline.weight(.semibold))
@@ -129,9 +164,9 @@ private struct NovaDock: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .foregroundStyle(selection == item ? Routes05Tokens.accentInk : Routes05Tokens.secondary)
+                    .foregroundStyle(OrbitRootNavigationPolicy.canonical(selection) == item ? Routes05Tokens.accentInk : Routes05Tokens.secondary)
                     .background {
-                        if selection == item {
+                        if OrbitRootNavigationPolicy.canonical(selection) == item {
                             Rectangle().fill(Routes05Tokens.yellow)
                         }
                     }
@@ -139,7 +174,7 @@ private struct NovaDock: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(item == .home ? "Today" : item.title)
-                .accessibilityAddTraits(selection == item ? .isSelected : [])
+                .accessibilityAddTraits(OrbitRootNavigationPolicy.canonical(selection) == item ? .isSelected : [])
             }
         }
         .padding(.horizontal, 14)

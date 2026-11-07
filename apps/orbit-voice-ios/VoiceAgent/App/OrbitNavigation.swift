@@ -96,3 +96,48 @@ nonisolated enum OrbitChatNavigationPolicy {
         contactPrompt != nil
     }
 }
+
+/// What a tap on a main-menu (dock) destination should do. The dock is visible
+/// above nested screens, so every tap must resolve to a ROOT destination:
+/// a different tab opens its root, the active tab returns to its own root.
+/// When a nested screen holds unsaved input the user is asked first.
+nonisolated enum OrbitRootNavigationPolicy {
+    enum Action: Equatable {
+        case switchTo(OrbitMainTab)
+        case resetRoot
+        case confirmDiscard(OrbitMainTab)
+    }
+
+    /// Legacy tab values map onto the visible dock destinations.
+    static func canonical(_ tab: OrbitMainTab) -> OrbitMainTab {
+        switch tab {
+        case .today: .home
+        case .chats: .orbit
+        default: tab
+        }
+    }
+
+    static func action(selected: OrbitMainTab, requested: OrbitMainTab, hasUnsavedInput: Bool) -> Action {
+        let target = canonical(requested)
+        if hasUnsavedInput { return .confirmDiscard(target) }
+        return canonical(selected) == target ? .resetRoot : .switchTo(target)
+    }
+}
+
+/// ROUTES 05 screen headings are 80 % of the previous `largeTitle` style and
+/// always occupy a single line; wrapping is replaced by tail truncation.
+nonisolated enum Routes05HeadingMetrics {
+    static let scale = 0.8
+    static let largeTitlePoints = 34.0
+
+    static func points(_ basePoints: Double) -> Double { basePoints * scale }
+
+    /// Authored headings use explicit line breaks ("Справи.\nПо черзі."); a
+    /// one-line heading must show the whole phrase instead of its first line.
+    static func singleLine(_ title: String) -> String {
+        title.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+}

@@ -133,6 +133,7 @@ struct OrbitCalendarV2View: View {
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .foregroundStyle(Routes05Tokens.ink)
             .toolbar(.hidden, for: .navigationBar)
+            .routes05NativeSwipeBack()
             .environment(\.locale, Locale(identifier: "uk_UA"))
             .sheet(isPresented: $showingSources) { sourceManager }
             .sheet(isPresented: $showingCreator) {
@@ -164,10 +165,7 @@ struct OrbitCalendarV2View: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 eyebrow("FAMILY / SHARED TIME")
-                Text("Календар.")
-                    .font(.system(.largeTitle, design: .rounded, weight: .black))
-                    .tracking(-1.5)
-                    .accessibilityAddTraits(.isHeader)
+                Routes05HeadingText("Календар.", tracking: -1.5)
                 Text("Усі важливі події — в одному місці.")
                     .font(.footnote)
                     .foregroundStyle(Routes05Tokens.secondary)

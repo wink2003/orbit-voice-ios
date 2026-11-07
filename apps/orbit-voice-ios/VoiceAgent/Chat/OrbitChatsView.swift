@@ -98,6 +98,7 @@ struct OrbitChatsView: View {
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .routes05NativeSwipeBack()
             .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
             .navigationDestination(item: $selectedChat) { chat in
                 #if DEBUG
@@ -429,8 +430,7 @@ private struct OrbitConversationView: View {
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Пошук у завантажених")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button("Розмови") { dismiss() }
-                    .frame(minHeight: OrbitSpacing.minTarget)
+                Routes05BackButton(label: "Назад до розмов") { dismiss() }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingVoice = true } label: { Image(systemName: "waveform") }

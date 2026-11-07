@@ -38,6 +38,7 @@ struct OrbitMoreView: View {
             .novaDockAwareScrollContent()
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .routes05NativeSwipeBack()
             .accessibilityIdentifier("orbit.more")
             .sheet(item: $selectedTarget) { target in
                 impersonationForm(for: target)
