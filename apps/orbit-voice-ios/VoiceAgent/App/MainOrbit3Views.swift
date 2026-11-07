@@ -279,7 +279,7 @@ struct MainOrbit3HomeView: View {
         return name.map { "\(base), \($0)" } ?? base
     }
 
-    private func schoolTitle(_ item: OrbitSchoolItem) -> String { item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title }
+    private func schoolTitle(_ item: OrbitSchoolItem) -> String { item.displayTitle }
     private func taskDate(_ value: String?) -> Date? { value.flatMap { OrbitSchoolDateDecoding.date(from: $0) } }
     private func dueText(_ value: String?) -> String { guard let date = taskDate(value) else { return "Термін не вказано" }; return "До \(date.formatted(date: .abbreviated, time: .omitted))" }
 

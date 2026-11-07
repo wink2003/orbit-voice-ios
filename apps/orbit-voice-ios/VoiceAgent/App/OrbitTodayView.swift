@@ -540,7 +540,7 @@ private struct NovaSchoolSource: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { Label(item.type == "letter" ? "ORIGINAL SOURCE" : "SCHOOL MESSAGE", systemImage: item.type == "letter" ? "envelope" : "bubble.left").font(.caption2.weight(.bold)).tracking(1.1).foregroundStyle(NovaTodayTokens.teal); Spacer(); if item.unread { Text("UNREAD").font(.caption2.weight(.bold)).foregroundStyle(NovaTodayTokens.coral) } }
-            Text(item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title).font(.headline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+            Text(item.displayTitle).font(.headline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
             Text(item.important ?? item.previewPlainText ?? item.sender).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
             HStack(spacing: 8) { if !item.sender.isEmpty { Text(item.sender) }; if stale { Text("· застаріло") }; if unreadCount > 1 { Text("· \(unreadCount) нових") } }.font(.caption).foregroundStyle(.secondary)
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(NovaTodayTokens.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous)).overlay { RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(NovaTodayTokens.teal.opacity(0.24), lineWidth: 1) }

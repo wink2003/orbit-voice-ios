@@ -65,7 +65,7 @@ final class SchoolHubStore {
         items.map { item in
             SchoolHubLetter(
                 id: item.id, type: item.type,
-                title: item.titlePlainText?.isEmpty == false ? item.titlePlainText! : item.title,
+                title: item.displayTitle,
                 sender: item.sender,
                 originalText: item.originalPlainText ?? item.originalGerman,
                 translation: item.translationUkrainian, important: item.important,
@@ -1942,7 +1942,7 @@ private struct SchoolOverviewView: View {
 private struct SchoolLetterRow: View {
     let item: OrbitSchoolItem
     var body: some View {
-        let title = item.titlePlainText?.isEmpty == false ? item.titlePlainText! : (item.title.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.title)
+        let title = item.displayTitle.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.displayTitle
         let sender = item.sender.isEmpty ? (item.type == "letter" ? "Лист" : "Повідомлення") : item.sender
         var meta = [sender]
         if let date = item.sourceTimestamp ?? item.importedAt { meta.append(SchoolHubFormat.formatter("d MMM").string(from: date)) }

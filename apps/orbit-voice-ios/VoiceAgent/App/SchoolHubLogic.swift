@@ -956,6 +956,7 @@ enum SchoolTranslationPlaceholder {
         if hasText(translation) { return nil }
         switch status {
         case "pending": return "Переклад готується. Він з’явиться тут автоматично — або перегляньте німецький оригінал."
+        case "body_pending": return "Текст листа ще не отримано зі Schulmanager — лист там не відкрито. Переклад з’явиться після завантаження тексту; німецький заголовок збережено."
         case "failed": return "Не вдалося підготувати переклад. Перегляньте німецький оригінал."
         case "original_only": return "У цьому листі немає тексту для перекладу."
         default: return "Переклад наразі недоступний. Перейдіть до німецького оригіналу."
