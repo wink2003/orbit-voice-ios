@@ -130,7 +130,7 @@ struct MainOrbit3HomeView: View {
                 }
             }
             .navigationDestination(isPresented: $showCalendar) {
-                OrbitCalendarView()
+                OrbitCalendarView(origin: .pushed)
             }
             .task { await load() }
             .refreshable { await load() }
@@ -488,7 +488,7 @@ struct MainOrbit3FamilyView: View {
     private var routesLinks: some View {
         VStack(spacing: 0) {
             familyRoute("Родинний чат", messages.isEmpty ? "Нове від близьких" : "Відкрити останні повідомлення", "bubble.left.and.bubble.right.fill", Routes05Tokens.mint) { FamilyMessengerView() }
-            familyRoute("Календар", "Плани й сімейні події", "calendar", Routes05Tokens.lilac) { OrbitCalendarView() }
+            familyRoute("Календар", "Плани й сімейні події", "calendar", Routes05Tokens.lilac) { OrbitCalendarView(origin: .pushed) }
             familyRoute("Контакти", "Дозволені для профілю", "person.2.fill", Routes05Tokens.yellow) { OrbitContactsView() }
             familyRoute("Пам’ять", "Спільні факти й історія", "brain.head.profile", Routes05Tokens.orange) { MemoryCenterView() }
         }

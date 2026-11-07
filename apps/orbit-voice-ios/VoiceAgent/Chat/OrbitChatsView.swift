@@ -257,6 +257,12 @@ private struct OrbitConversationView: View {
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
     private let debugMessages: [OrbitChatMessage]?
 
+    /// A prefilled, untouched prompt (contact shortcut) is not user input.
+    private var hasUnsentDraft: Bool {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !text.isEmpty && text != (initialDraft ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     init(conversation: OrbitConversation, initialDraft: String? = nil, debugMessages: [OrbitChatMessage]? = nil) {
         self.conversation = conversation
         self.initialDraft = initialDraft
@@ -425,13 +431,11 @@ private struct OrbitConversationView: View {
         .navigationTitle(OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
+        .routes05UnsavedInput("chat-draft", when: hasUnsentDraft)
         .toolbarBackground(Routes05Tokens.canvas, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Пошук у завантажених")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Routes05BackButton(label: "Назад до розмов") { dismiss() }
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingVoice = true } label: { Image(systemName: "waveform") }
                     .frame(minWidth: OrbitSpacing.minTarget, minHeight: OrbitSpacing.minTarget)

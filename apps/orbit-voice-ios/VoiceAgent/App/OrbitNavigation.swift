@@ -87,8 +87,10 @@ nonisolated enum OrbitNavigation {
 nonisolated enum OrbitCalendarRouteOrigin: Equatable {
     case root
     case more
+    /// Pushed from another screen (Family route); needs its own Back like `.more`.
+    case pushed
 
-    var showsBackControl: Bool { self == .more }
+    var showsBackControl: Bool { self != .root }
 }
 
 nonisolated enum OrbitChatNavigationPolicy {
@@ -121,6 +123,14 @@ nonisolated enum OrbitRootNavigationPolicy {
         let target = canonical(requested)
         if hasUnsavedInput { return .confirmDiscard(target) }
         return canonical(selected) == target ? .resetRoot : .switchTo(target)
+    }
+}
+
+/// Native interactive-pop is allowed only below a root, outside a running
+/// transition and while no screen holds unsaved input.
+nonisolated enum Routes05SwipeBackRule {
+    static func canBegin(stackDepth: Int, isTransitioning: Bool, hasUnsavedInput: Bool) -> Bool {
+        stackDepth > 1 && !isTransitioning && !hasUnsavedInput
     }
 }
 

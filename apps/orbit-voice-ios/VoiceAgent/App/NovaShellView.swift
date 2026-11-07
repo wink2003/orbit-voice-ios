@@ -17,7 +17,7 @@ struct NovaShellView: View {
     /// Bumping this re-creates the active destination, which returns its own
     /// NavigationStack (and any presentation state) to the root.
     @State private var rootGeneration = 0
-    @State private var unsavedInput = Routes05UnsavedInputTracker()
+    private let unsavedInput = Routes05UnsavedInputTracker.shared
     @State private var pendingDiscard: OrbitMainTab?
 
     var body: some View {
@@ -37,7 +37,6 @@ struct NovaShellView: View {
             .environment(\.novaDockTopY, dockTopY)
             .environment(\.novaDockHeight, dockHeight)
             .environment(\.novaDockVisible, $dockVisible)
-            .environment(\.routes05UnsavedInput, unsavedInput)
             .confirmationDialog("Відкинути незбережене?", isPresented: Binding(get: { pendingDiscard != nil }, set: { if !$0 { pendingDiscard = nil } }), titleVisibility: .visible) {
                 Button("Відкинути й перейти", role: .destructive) {
                     if let tab = pendingDiscard { apply(tab) }
@@ -48,7 +47,9 @@ struct NovaShellView: View {
                 Text("На цьому екрані є текст, який ще не збережено або не надіслано.")
             }
             .onReceive(NotificationCenter.default.publisher(for: .orbitSchoolNotificationTapped)) { _ in
-                selection = .school
+                // Same guard as the dock; an already open School stays where the user is.
+                guard OrbitRootNavigationPolicy.canonical(selection) != .school else { return }
+                request(.school)
             }
     }
 
@@ -129,6 +130,7 @@ struct NovaShellView: View {
 
     private func apply(_ tab: OrbitMainTab) {
         dockVisible = true
+        unsavedInput.reset()
         if OrbitRootNavigationPolicy.canonical(selection) == OrbitRootNavigationPolicy.canonical(tab) {
             rootGeneration += 1
         } else {

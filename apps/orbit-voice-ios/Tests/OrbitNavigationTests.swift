@@ -24,6 +24,11 @@ struct OrbitNavigationTests {
         precondition(OrbitRootNavigationPolicy.action(selected: .chats, requested: .orbit, hasUnsavedInput: false) == .resetRoot, "legacy chats equals orbit")
         precondition(OrbitRootNavigationPolicy.action(selected: .school, requested: .more, hasUnsavedInput: true) == .confirmDiscard(.more), "unsaved input asks first")
         precondition(OrbitRootNavigationPolicy.action(selected: .school, requested: .school, hasUnsavedInput: true) == .confirmDiscard(.school), "reselect with unsaved input asks first")
+        precondition(OrbitCalendarRouteOrigin.pushed.showsBackControl, "Calendar pushed from Family has a Back control")
+        precondition(Routes05SwipeBackRule.canBegin(stackDepth: 2, isTransitioning: false, hasUnsavedInput: false), "swipe-back works below a root")
+        precondition(!Routes05SwipeBackRule.canBegin(stackDepth: 1, isTransitioning: false, hasUnsavedInput: false), "root never pops")
+        precondition(!Routes05SwipeBackRule.canBegin(stackDepth: 3, isTransitioning: true, hasUnsavedInput: false), "no pop during a running transition")
+        precondition(!Routes05SwipeBackRule.canBegin(stackDepth: 3, isTransitioning: false, hasUnsavedInput: true), "no silent pop with unsaved input")
         precondition(OrbitNavigation.visibleTabs().allSatisfy { OrbitRootNavigationPolicy.canonical($0) == $0 }, "every dock tab is canonical")
 
         precondition(abs(Routes05HeadingMetrics.points(Routes05HeadingMetrics.largeTitlePoints) - 27.2) < 0.0001, "headings are 20% smaller than largeTitle")

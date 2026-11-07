@@ -105,14 +105,20 @@ struct Routes05HeadingText: View {
 
 /// Keeps the native interactive-pop swipe alive on screens that hide the
 /// navigation bar for ROUTES 05 chrome (UIKit disables it otherwise). It only
-/// re-enables UIKit's own recognizer; nothing custom is added, and root
-/// screens (one view controller) never begin the gesture.
+/// re-enables UIKit's own recognizer, so the system animation, cancellation and
+/// edge-only activation are untouched; nothing custom is added. The gesture may
+/// begin only below a root, outside a running transition, and never while a
+/// screen holds unsaved input (Back then asks for confirmation instead).
 private final class Routes05SwipeBackDelegate: NSObject, UIGestureRecognizerDelegate {
     static let shared = Routes05SwipeBackDelegate()
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let navigation = gestureRecognizer.view?.next as? UINavigationController else { return false }
-        return navigation.viewControllers.count > 1
+        return Routes05SwipeBackRule.canBegin(
+            stackDepth: navigation.viewControllers.count,
+            isTransitioning: navigation.transitionCoordinator != nil,
+            hasUnsavedInput: Routes05UnsavedInputTracker.shared.hasUnsavedInput
+        )
     }
 }
 
@@ -144,42 +150,54 @@ extension View {
     }
 }
 
-/// Lets nested screens with unsaved input tell the shell, so a main-menu tap
-/// asks before discarding. The shell owns the instance via the environment.
+/// Screens with unsaved input report it here. The shell asks before a main-menu
+/// tap discards it, and the swipe-back delegate stays off while it is set.
 @Observable
 final class Routes05UnsavedInputTracker {
+    static let shared = Routes05UnsavedInputTracker()
+
     private(set) var sources: Set<String> = []
     var hasUnsavedInput: Bool { !sources.isEmpty }
 
     func update(_ source: String, hasInput: Bool) {
         if hasInput { sources.insert(source) } else { sources.remove(source) }
     }
-}
 
-private struct Routes05UnsavedInputKey: EnvironmentKey {
-    static let defaultValue: Routes05UnsavedInputTracker? = nil
-}
-
-extension EnvironmentValues {
-    var routes05UnsavedInput: Routes05UnsavedInputTracker? {
-        get { self[Routes05UnsavedInputKey.self] }
-        set { self[Routes05UnsavedInputKey.self] = newValue }
-    }
+    func reset() { sources.removeAll() }
 }
 
 private struct Routes05UnsavedInputModifier: ViewModifier {
     let source: String
     let hasInput: Bool
-    @Environment(\.routes05UnsavedInput) private var tracker
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmingBack = false
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: hasInput, initial: true) { _, value in tracker?.update(source, hasInput: value) }
-            .onDisappear { tracker?.update(source, hasInput: false) }
+            .onChange(of: hasInput, initial: true) { _, value in Routes05UnsavedInputTracker.shared.update(source, hasInput: value) }
+            .onDisappear { Routes05UnsavedInputTracker.shared.update(source, hasInput: false) }
+            // Only while input exists the system Back is replaced, because it cannot be
+            // intercepted; the replacement is the same compact chevron.
+            .navigationBarBackButtonHidden(hasInput)
+            .toolbar {
+                if hasInput {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Routes05BackButton { confirmingBack = true }
+                    }
+                }
+            }
+            .confirmationDialog("Відкинути незбережене?", isPresented: $confirmingBack, titleVisibility: .visible) {
+                Button("Відкинути й вийти", role: .destructive) { dismiss() }
+                Button("Залишитись", role: .cancel) {}
+            } message: {
+                Text("На цьому екрані є текст, який ще не збережено або не надіслано.")
+            }
     }
 }
 
 extension View {
+    /// For pushed screens that hold a draft. Clears itself when the draft is
+    /// sent/saved/emptied or the screen leaves.
     func routes05UnsavedInput(_ source: String, when hasInput: Bool) -> some View {
         modifier(Routes05UnsavedInputModifier(source: source, hasInput: hasInput))
     }

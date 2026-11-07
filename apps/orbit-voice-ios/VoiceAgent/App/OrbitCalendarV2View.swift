@@ -8,6 +8,9 @@ struct OrbitCalendarView: View {
 
     var body: some View {
         OrbitCalendarV2View(onBack: origin.showsBackControl ? { dismiss() } : nil)
+            // The calendar hosts its own NavigationStack and draws its own Back; hide the
+            // outer bar when pushed so exactly one Back control remains.
+            .toolbar(origin.showsBackControl ? .hidden : .automatic, for: .navigationBar)
     }
 }
 
@@ -105,7 +108,7 @@ struct OrbitCalendarV2View: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
-                        Routes05Mast(section: "calendar", action: { showingSources = true }, backAction: onBack, backLabel: "Назад до Інше")
+                        Routes05Mast(section: "calendar", action: { showingSources = true }, backAction: onBack, backLabel: "Назад")
                         hero
                         ForEach(OrbitCalendarV2Logic.sectionOrder, id: \.self) { section in
                             timelineSection(section)
