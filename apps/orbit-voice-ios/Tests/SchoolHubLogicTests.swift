@@ -424,6 +424,18 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.isHubWideFailure(overview: nil, exams: 401, timetable: nil))
         precondition(SchoolHubLogic.isHubWideFailure(overview: nil, exams: nil, timetable: 403))
 
+        // Translation states: pending/failed/original-only/ready are distinct and honest.
+        precondition(SchoolTranslationPlaceholder.isPending(translation: nil, status: "pending"))
+        precondition(SchoolTranslationPlaceholder.isPending(translation: "  ", status: nil))
+        precondition(!SchoolTranslationPlaceholder.isPending(translation: nil, status: "failed"))
+        precondition(!SchoolTranslationPlaceholder.isPending(translation: nil, status: "original_only"))
+        precondition(!SchoolTranslationPlaceholder.isPending(translation: "Переклад", status: "pending"))
+        precondition(SchoolTranslationPlaceholder.message(translation: "Переклад", status: "ready") == nil)
+        precondition(SchoolTranslationPlaceholder.message(translation: nil, status: "pending")?.contains("готується") == true)
+        precondition(SchoolTranslationPlaceholder.message(translation: nil, status: "failed")?.contains("Не вдалося") == true)
+        precondition(SchoolTranslationPlaceholder.message(translation: nil, status: "original_only")?.contains("немає тексту") == true)
+        precondition(SchoolTranslationPlaceholder.message(translation: nil, status: nil)?.contains("недоступний") == true)
+
         print("school hub logic tests passed")
     }
 }
