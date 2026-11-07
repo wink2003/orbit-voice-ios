@@ -83,6 +83,19 @@ jobs:
             -o "$RUNNER_TEMP/orbit-school-date-tests"
           "$RUNNER_TEMP/orbit-school-date-tests"
 
+      - name: Test School item translationStatus decoding
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'import Foundation' > "$RUNNER_TEMP/orbit-school-item-models.swift"
+          awk '/^struct OrbitSchoolEvent/ { emit=1 } emit { print } /^struct OrbitSchoolItemsResponse/ { emit=0 }' \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/MainProductAPI.swift >> "$RUNNER_TEMP/orbit-school-item-models.swift"
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolDateDecoding.swift \
+            "$RUNNER_TEMP/orbit-school-item-models.swift" \
+            apps/orbit-voice-ios/Tests/OrbitSchoolItemTranslationStatusDecodingTests.swift \
+            -o "$RUNNER_TEMP/orbit-school-item-status-tests"
+          "$RUNNER_TEMP/orbit-school-item-status-tests"
+
       - name: Test Main timezone hint
         run: |
           set -euo pipefail

@@ -696,7 +696,7 @@ struct SchoolDetailView: View {
                     Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
                 }
                 detailHeader("Текст листа")
-                let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (item.translationUkrainian?.isEmpty == false ? item.translationUkrainian! : (SchoolTranslationPlaceholder.message(translation: item.translationUkrainian, status: item.translationStatus) ?? ""))
+                let body = showOriginal ? (item.originalPlainText ?? item.originalGerman) : (SchoolTranslationPlaceholder.message(translation: item.translationUkrainian, status: item.translationStatus) ?? item.translationUkrainian ?? "")
                 VStack(alignment: .leading, spacing: 12) {
                     Picker("Мова", selection: $showOriginal) { Text("Переклад").tag(false); Text("Оригінал (DE)").tag(true) }
                         .pickerStyle(.segmented)
