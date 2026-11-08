@@ -52,6 +52,16 @@ These are **diagnostic concepts**, not newly authorized API error codes. Don't p
 - Read-only production feed observed at **2026-10-25 13:51 UTC**: Main **111**, Mini **29**; **the separate active 112 release is not touched by this document**. The state can change after this observation.
 
 
+## Build-number bump procedure (monotonicity)
+
+A candidate Main Orbit build must be **strictly newer** than the build published in the SideStore feed; the canonical `ipa-plan` enforces this (`BUILD_NOT_NEWER_THAN_LIVE`). Builds 116, 121 and 122/123 were each built and CI-green before this was noticed, so:
+
+1. **Before the release PR is merged**, read the live number (public feed `https://voice.orbit.opik.net/altstore/orbit.json`, Main top entry) and pick `live + 1`.
+2. Bump it in a **separate, reviewed PR** to `release/main-orbit` that changes exactly the two `CURRENT_PROJECT_VERSION` settings in `apps/orbit-voice-ios/VoiceAgent.xcodeproj/project.pbxproj` (examples: #48 122→123, #51 123→124). No auto-increment exists or is wanted.
+3. Merge it; the **push** CI on that exact commit produces the eligible artifact. On `release/main-orbit` the `build-number-gate` job (`scripts/check_build_monotonic.py`) fails in seconds if the number is not newer or the live feed cannot be verified (fail closed) — before the macOS build.
+4. Admission and publication stay canonical: `ipa-plan` → root-owned intent/prepare → one guarded publication with the owner's Passkey. The gate is an early advisory signal only; it never replaces `ipa-plan`, never publishes and never edits the project.
+5. A rerun of the release workflow **after** publishing fails the gate by design (candidate == live); use the artifact of the original run.
+
 ## Missed or expired Guard Passkey — canonical recovery
 
 A missed Passkey window is **not an authorization denial** and is not a reason to change Guard policy, sign the IPA another way, rebuild automatically, or create a preview exception.
