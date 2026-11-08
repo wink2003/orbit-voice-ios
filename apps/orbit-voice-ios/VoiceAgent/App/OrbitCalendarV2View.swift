@@ -178,7 +178,7 @@ struct OrbitCalendarV2View: View {
                 Image(systemName: "plus")
                     .font(.system(size: 25, weight: .black))
                     .foregroundStyle(Routes05Tokens.accentInk)
-                    .frame(width: 58, height: 58)
+                    .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
                     .background(Routes05Tokens.yellow, in: Circle())
                     .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
             }
