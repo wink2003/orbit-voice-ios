@@ -3480,6 +3480,7 @@ private struct Routes05SchoolTimetableProductionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDay: String?
     @State private var detail: LessonSelection?
+    @ScaledMetric(relativeTo: .largeTitle) private var headingTypeScale: CGFloat = 1
 #if DEBUG
     private var usesFixture = false
 #endif
@@ -3521,7 +3522,8 @@ private struct Routes05SchoolTimetableProductionView: View {
         var calendar = Calendar(identifier: .iso8601); calendar.timeZone = SchoolHubLogic.schoolTimeZone
         return String(calendar.component(.weekOfYear, from: date))
     }
-    private var year: String { String(store.weekStart.prefix(4)) }
+    private var monthLabel: String { SchoolHubLogic.timetableMonthLabel(dayKeys: days) ?? "" }
+    private var year: String { String(SchoolHubLogic.isoWeek(of: store.weekStart).prefix(4)) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -3570,19 +3572,29 @@ private struct Routes05SchoolTimetableProductionView: View {
 
     private var hero: some View {
         HStack(alignment: .center, spacing: 12) {
-            Routes05HeadingText(title, tracking: -2)
+            (
+                Text(Routes05HeadingMetrics.singleLine(title)).foregroundColor(Routes05Tokens.ink)
+                + Text("\u{2002}\(monthLabel.capitalized(with: SchoolHubLogic.interfaceLocale))").foregroundColor(Routes05Tokens.blue)
+            )
+            .font(.system(size: CGFloat(Routes05HeadingMetrics.points(Routes05HeadingMetrics.largeTitlePoints)) * headingTypeScale, weight: .black, design: .rounded))
+            .tracking(-2)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .accessibilityLabel("\(Routes05HeadingMetrics.singleLine(title)) \(monthLabel)")
+            .accessibilityAddTraits(.isHeader)
             Spacer()
             Image(systemName: "calendar").font(.system(size: 24, weight: .heavy)).foregroundStyle(Routes05Tokens.accentInk).frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter).background(Routes05Tokens.mint, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityHidden(true)
         }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 8)
     }
     private var weekControls: some View {
-        VStack(spacing: 11) {
-            HStack { Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.accessibilityLabel("Попередній тиждень"); Spacer(); Text("\(SchoolHubFormat.shortDay(store.weekStart)) – \(SchoolHubFormat.shortDay(SchoolHubLogic.addDays(4, to: store.weekStart) ?? store.weekStart))").font(.system(.headline, design: .rounded).weight(.bold)).multilineTextAlignment(.center); Spacer(); Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }.accessibilityLabel("Наступний тиждень") }.buttonStyle(.plain)
-            HStack(spacing: 4) { ForEach(days, id: \.self) { day in
+        HStack(spacing: 4) {
+            Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left").font(.system(size: 18, weight: .black)).frame(width: 44, height: 56).contentShape(Rectangle()) }.accessibilityLabel("Попередній тиждень")
+            ForEach(days, id: \.self) { day in
                 let selected = selectedDay == day || (selectedDay == nil && day == days.first)
-                Button { selectedDay = day } label: { VStack(spacing: 4) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.largeTitle, design: .rounded).weight(.black)) }.frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
-            } }.padding(.horizontal, 16)
-        }.padding(.horizontal, 0).padding(.top, 12)
+                Button { selectedDay = day } label: { VStack(spacing: 4) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.title, design: .rounded).weight(.black)) }.frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
+            }
+            Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right").font(.system(size: 18, weight: .black)).frame(width: 44, height: 56).contentShape(Rectangle()) }.accessibilityLabel("Наступний тиждень")
+        }.buttonStyle(.plain).padding(.horizontal, 16).padding(.top, 12)
     }
     private var coverage: some View {
         Label(coverageText, systemImage: store.coverageState == "READY_WITH_DATA" ? "checkmark.circle" : "info.circle").font(.caption).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 16)

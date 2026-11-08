@@ -423,6 +423,29 @@ nonisolated enum SchoolHubLogic {
         return formatter.string(from: date)
     }
 
+    /// Month label for a selected Monday–Friday school week. Months are
+    /// localized; years are included when the displayed days cross a year.
+    static func timetableMonthLabel(dayKeys: [String], locale: Locale = interfaceLocale) -> String? {
+        let dates = dayKeys.compactMap { date(fromDayKey: $0) }
+        guard !dates.isEmpty else { return nil }
+        var formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = schoolTimeZone
+        formatter.dateFormat = "LLLL"
+        let parts = dates.map { date -> (month: Int, year: Int, name: String) in
+            let components = calendar().dateComponents([.year, .month], from: date)
+            return (components.month ?? 0, components.year ?? 0, formatter.string(from: date))
+        }
+        var unique: [(month: Int, year: Int, name: String)] = []
+        for part in parts where !unique.contains(where: { $0.month == part.month && $0.year == part.year }) {
+            unique.append(part)
+        }
+        guard let first = unique.first else { return nil }
+        if unique.count == 1 { return first.name }
+        let crossesYear = Set(unique.map { $0.year }).count > 1
+        return unique.map { crossesYear ? "\($0.name) \($0.year)" : $0.name }.joined(separator: " / ")
+    }
+
     static func schoolDayPrecedes(_ lhs: String, _ rhs: String) -> Bool {
         switch (date(fromDayKey: lhs), date(fromDayKey: rhs)) {
         case let (left?, right?) where left != right: return left < right
