@@ -3309,7 +3309,7 @@ private struct SchoolSearchResultsView: View {
 private struct Routes05SchoolTasksProductionView: View {
     let store: SchoolHubStore
     @Environment(\.dismiss) private var dismiss
-    @State private var filter: Routes05TaskFilter = .all
+    @State private var filter: Routes05TaskFilter = Routes05TaskFilter.defaultFilter
     @State private var query = ""
     @State private var showSearch = false
     @State private var showCreate = false
@@ -3449,7 +3449,6 @@ private struct Routes05SchoolTasksProductionView: View {
     }
 }
 
-private enum Routes05TaskFilter: CaseIterable, Identifiable { case all, open, completed; var id: Self { self }; var title: String { self == .all ? "Всі" : self == .open ? "Відкриті" : "Завершені" }; func count(_ counts: SchoolTaskCounts) -> Int { self == .all ? counts.all : self == .open ? counts.open : counts.completed } }
 private enum Routes05TaskGroup: CaseIterable { case today, thisWeek, later, undated; var title: String { self == .today ? "Сьогодні" : self == .thisWeek ? "Цього тижня" : self == .later ? "Інші дати" : "Без дати" } }
 
 private struct Routes05TaskRow: View {

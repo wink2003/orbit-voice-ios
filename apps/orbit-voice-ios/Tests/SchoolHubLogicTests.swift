@@ -442,6 +442,24 @@ struct SchoolHubLogicTests {
         precondition(SchoolTranslationPlaceholder.message(translation: nil, status: "body_pending")?.contains("не отримано") == true)
         precondition(SchoolTranslationPlaceholder.message(translation: nil, status: nil)?.contains("недоступний") == true)
 
+        // Tasks filter: owner order Відкриті → Завершені → Всі, default Відкриті.
+        precondition(Routes05TaskFilter.allCases.map(\.title) == ["Відкриті", "Завершені", "Всі"], "task filter order")
+        precondition(Routes05TaskFilter.defaultFilter == .open && Routes05TaskFilter.allCases.first == .open, "task filter default")
+        var taskCounts = SchoolTaskCounts(); taskCounts.open = 3; taskCounts.completed = 2
+        precondition(Routes05TaskFilter.open.count(taskCounts) == 3 && Routes05TaskFilter.completed.count(taskCounts) == 2 && Routes05TaskFilter.all.count(taskCounts) == 5, "task filter counts unchanged")
+
+        // School class comes only from the response (never a global constant): absent -> nil, present -> trimmed value, key aliases accepted.
+        func classOf(_ extra: String) -> String? {
+            let json = Data("""
+            {"overview":{"state":"READY","freshness":{"state":"READY","sourceStates":{},"observedAt":null,"source":"schulmanager","fingerprint":null},"sourceStates":{},"profileTitle":null,"todayDayKey":"2026-10-19","upcomingExams":[],"projects":[]\(extra)}}
+            """.utf8)
+            return try! decoder.decode(OrbitSchoolHubV2OverviewResponse.self, from: json).overview.schoolClass
+        }
+        precondition(classOf("") == nil, "no class in payload -> no class (no hardcoded fallback)")
+        precondition(classOf(",\"schoolClass\":\" 5F \"") == "5F", "schoolClass trimmed")
+        precondition(classOf(",\"className\":\"7A\"") == "7A", "className alias")
+        precondition(classOf(",\"schoolClass\":\"  \"") == nil, "blank class ignored")
+
         print("school hub logic tests passed")
     }
 }

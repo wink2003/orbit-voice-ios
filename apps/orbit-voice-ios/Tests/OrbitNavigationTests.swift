@@ -35,6 +35,8 @@ struct OrbitNavigationTests {
         precondition(Routes05HeadingMetrics.singleLine("Справи.\nПо черзі.") == "Справи. По черзі.", "manual line break becomes one line")
         precondition(Routes05HeadingMetrics.singleLine("  Вхідні\nзі школи.\n") == "Вхідні зі школи.", "outer whitespace removed")
         precondition(Routes05HeadingMetrics.singleLine("Elternbrief: Klassenfahrt") == "Elternbrief: Klassenfahrt", "single line unchanged")
+        precondition(OrbitTodayHeroRoute.destination == .calendar, "Today hero opens Calendar")
+        precondition(OrbitMainTab.allCases.contains(OrbitTodayHeroRoute.destination), "Today hero destination is an existing tab")
         print("OrbitNavigationTests passed")
     }
 }

@@ -156,6 +156,8 @@ struct OrbitCalendarV2LogicTests {
         }
         let result = OrbitCalendarV2Logic.nextFive([later[5], duplicate, later[1], duplicate, later[0], later[2], later[3], later[4]], now: now)
         precondition(result.map(\.id) == ["same", "e1", "e2", "e3", "e4"], "next-five is sorted and deduplicated")
+        precondition(OrbitCalendarCardMetrics.weekdayTopInset >= 6, "weekday top inset")
+        precondition(OrbitCalendarCardMetrics.weekCardMinHeight >= 44 + OrbitCalendarCardMetrics.weekdayTopInset, "week card keeps 44pt target")
         print("OrbitCalendarV2LogicTests passed")
     }
 }
