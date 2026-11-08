@@ -3542,6 +3542,7 @@ private struct Routes05SchoolTimetableProductionView: View {
                 }.padding(.bottom, 28)
             }.refreshable { await store.load() }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .foregroundStyle(Routes05Tokens.ink).background(Routes05Tokens.canvas.ignoresSafeArea()).toolbar(.hidden, for: .navigationBar)
         
         .task(id: store.weekStart) {
