@@ -3407,7 +3407,7 @@ private struct Routes05SchoolTasksProductionView: View {
         HStack(alignment: .center, spacing: 12) {
             Routes05HeadingText("Справи.\nПо черзі.", tracking: -2)
             Spacer()
-            Text(String(format: "%02d", openTaskCount)).font(.system(size: 30, weight: .black, design: .rounded)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 77, height: 77).background(Routes05Tokens.orange, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityLabel("Відкритих справ: \(openTaskCount)")
+            Text(String(format: "%02d", openTaskCount)).font(.system(size: 24, weight: .black, design: .rounded)).foregroundStyle(Routes05Tokens.accentInk).frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter).background(Routes05Tokens.orange, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityLabel("Відкритих справ: \(openTaskCount)")
         }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 15)
     }
 
@@ -3572,7 +3572,7 @@ private struct Routes05SchoolTimetableProductionView: View {
         HStack(alignment: .center, spacing: 12) {
             Routes05HeadingText(title, tracking: -2)
             Spacer()
-            Image(systemName: "calendar").font(.system(size: 29, weight: .heavy)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 77, height: 77).background(Routes05Tokens.mint, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityHidden(true)
+            Image(systemName: "calendar").font(.system(size: 24, weight: .heavy)).foregroundStyle(Routes05Tokens.accentInk).frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter).background(Routes05Tokens.mint, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityHidden(true)
         }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 8)
     }
     private var weekControls: some View {

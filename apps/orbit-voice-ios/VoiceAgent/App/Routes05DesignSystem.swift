@@ -256,6 +256,12 @@ struct Routes05Mast: View {
 
 /// Shared root geometry. Keeping the text column and badge in one fixed-width
 /// trailing slot prevents long localized titles from moving the badge left.
+/// One visual diameter for circular badges alongside Main Orbit page headings.
+/// Previously the timetable badge was 77 pt; reducing it by 20% gives ≈62 pt.
+enum Routes05HeroBadgeMetrics {
+    static let diameter: CGFloat = 62
+}
+
 struct Routes05RootHeader<Badge: View>: View {
     let eyebrow: String
     let title: String
@@ -287,7 +293,7 @@ struct Routes05RootHeader<Badge: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             badge
-                .frame(width: 59, height: 59)
+                .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
                 .layoutPriority(1)
         }
         .padding(.horizontal, 16)
@@ -301,7 +307,7 @@ struct Routes05OrbitBadge: View {
             Circle().stroke(Routes05Tokens.ink, lineWidth: 7).frame(width: 52, height: 52)
             Circle().fill(Routes05Tokens.yellow).frame(width: 30, height: 30)
         }
-        .frame(width: 59, height: 59)
+        .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
         .background(Routes05Tokens.mint, in: Circle())
         .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
         .accessibilityLabel("Orbit")
@@ -317,7 +323,7 @@ struct Routes05SchoolBadge: View {
             .minimumScaleFactor(0.65)
             .lineLimit(1)
             .foregroundStyle(Routes05Tokens.accentInk)
-            .frame(width: 59, height: 59)
+            .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
             .background(Routes05Tokens.mint, in: Circle())
             .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
             .accessibilityLabel(classLabel?.isEmpty == false ? "Клас \(classLabel!)" : "Клас не визначено")
@@ -343,7 +349,7 @@ struct Routes05Chapter: View {
                 }
                 Spacer(minLength: 8)
                 Text("↗").font(.system(size: 27, weight: .black)).foregroundStyle(Routes05Tokens.accentInk)
-                    .frame(width: 59, height: 59).background(accent).clipShape(Circle())
+                    .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter).background(accent).clipShape(Circle())
                     .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
             }
             if let detail { Text(detail).font(.subheadline).foregroundStyle(Routes05Tokens.secondary) }

@@ -60,7 +60,7 @@ struct OrbitTodayView: View {
             Text("↗")
                 .font(.system(size: 29, weight: .black))
                 .foregroundStyle(Routes05Tokens.accentInk)
-                .frame(width: 59, height: 59)
+                .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
                 .background(Routes05Tokens.mint, in: Circle())
                 .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
                 .accessibilityHidden(true)

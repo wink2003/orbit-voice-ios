@@ -128,7 +128,7 @@ struct SchoolInboxView: View {
                         Text(String(format: "%02d", min(items.filter(\.unread).count, 99)))
                             .font(.system(size: 28, weight: .black, design: .rounded))
                             .foregroundStyle(Routes05Tokens.accentInk)
-                            .frame(width: 60, height: 60)
+                            .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
                             .background(Routes05Tokens.blue, in: Circle())
                             .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
                             .accessibilityLabel("Непрочитаних: \(items.filter(\.unread).count)")
