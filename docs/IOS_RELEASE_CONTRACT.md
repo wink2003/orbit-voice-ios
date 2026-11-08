@@ -62,6 +62,27 @@ A candidate Main Orbit build must be **strictly newer** than the build published
 4. Admission and publication stay canonical: `ipa-plan` → root-owned intent/prepare → one guarded publication with the owner's Passkey. The gate is an early advisory signal only; it never replaces `ipa-plan`, never publishes and never edits the project.
 5. A rerun of the release workflow **after** publishing fails the gate by design (candidate == live); use the artifact of the original run.
 
+## Declaring BLOCKED: do not conflate these (issue #57)
+
+Four different facts are routinely mixed up and have produced **false BLOCKED** decisions (builds 125/126, 2026-11-08). They are independent; none substitutes for another:
+
+| Fact | What it is | What it is NOT |
+|---|---|---|
+| Code / diff review | A reviewer actually read the exact diff | A GitHub "Approve" |
+| GitHub approving review | An enforced merge condition **only if** the *effective* policy requires it | Implied by `protected=true` or by one REST value |
+| Scoped owner authorization | The owner's explicit permission for the exact scope | A Passkey, or a standing permission |
+| Guard / Passkey approval | The real Passkey on the exact request, created by the ceremony | Evidence about merges or reviews |
+
+Rules before writing BLOCKED:
+
+1. **Review requirement.** Use the effective GraphQL branch protection plus repository rulesets. The legacy REST `required_pull_request_reviews` value can be stale or inapplicable (2026-11-08: REST `1` versus effective `requiresApprovingReviews=false`, rulesets `[]`, and #54 merged with zero approvals). If the sources conflict and cannot be reconciled, report **UNCERTAIN**, never an invented approval requirement. A single maintainer's ordinary merge stays subject to every *effective* GitHub and Orbit gate; the diff review and the owner's authorization are still required.
+2. **Guard idle state.** `production-synthetic-only` with `productionAccess=false`, Broker disabled and `baseline_ok=true` before a ceremony is the **required safe baseline** (`SAFE_IDLE / NOT_REQUESTED`), not a failed admission. The ceremony enables exact-scope admission, asks for the real Passkey and restores the baseline. Recommend no Guard repair unless the **authorized executor** reports a failed, kind-specific gate (`ADMISSION_FAILED`).
+3. **Privilege context.** A `PermissionError` seen by a restricted observer (for example the Gateway principal reading a root-owned `0600` legacy publisher) is **observer access limited**, not `PUBLISHER_BLOCKED`. Repeat the read through the supported root-authoritative path; do not change permissions. If the authorized executor itself reports the failure, stay fail-closed.
+4. **Preparation not done.** No intent, manifest or `ipa-plan` yet means **NOT_CHECKED**: neither READY nor BLOCKED.
+5. A BLOCKED report names the exact enforced condition, the source/revision/target/phase and the canonical route. Otherwise write UNCERTAIN.
+
+`scripts/classify_release_blockers.py` on `release/main-orbit` encodes rules 1-4 as an advisory helper with regression tests (including REST=1 versus effective false/null with empty rulesets, and genuinely required approvals). It is not an authority: `ipa-plan`, the installed ceremony and the owner's Passkey remain the only gates, and nothing here changes branch protection, Guard or release tooling.
+
 ## Missed or expired Guard Passkey — canonical recovery
 
 A missed Passkey window is **not an authorization denial** and is not a reason to change Guard policy, sign the IPA another way, rebuild automatically, or create a preview exception.
