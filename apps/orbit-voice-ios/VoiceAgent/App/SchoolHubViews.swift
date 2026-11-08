@@ -3574,7 +3574,7 @@ private struct Routes05SchoolTimetableProductionView: View {
         HStack(alignment: .center, spacing: 12) {
             (
                 Text(Routes05HeadingMetrics.singleLine(title)).foregroundColor(Routes05Tokens.ink)
-                + Text(" \(monthLabel.capitalized(with: SchoolHubLogic.interfaceLocale))").foregroundColor(Routes05Tokens.blue)
+                + Text("\u{2002}\(monthLabel.capitalized(with: SchoolHubLogic.interfaceLocale))").foregroundColor(Routes05Tokens.blue)
             )
             .font(.system(size: CGFloat(Routes05HeadingMetrics.points(Routes05HeadingMetrics.largeTitlePoints)) * headingTypeScale, weight: .black, design: .rounded))
             .tracking(-2)
@@ -3591,7 +3591,7 @@ private struct Routes05SchoolTimetableProductionView: View {
             Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left").font(.system(size: 18, weight: .black)).frame(width: 44, height: 56).contentShape(Rectangle()) }.accessibilityLabel("Попередній тиждень")
             ForEach(days, id: \.self) { day in
                 let selected = selectedDay == day || (selectedDay == nil && day == days.first)
-                Button { selectedDay = day } label: { VStack(spacing: 4) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.largeTitle, design: .rounded).weight(.black)) }.frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
+                Button { selectedDay = day } label: { VStack(spacing: 4) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.title, design: .rounded).weight(.black)) }.frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
             }
             Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right").font(.system(size: 18, weight: .black)).frame(width: 44, height: 56).contentShape(Rectangle()) }.accessibilityLabel("Наступний тиждень")
         }.buttonStyle(.plain).padding(.horizontal, 16).padding(.top, 12)
