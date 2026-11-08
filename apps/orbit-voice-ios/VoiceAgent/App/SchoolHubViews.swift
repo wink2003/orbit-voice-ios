@@ -3592,18 +3592,20 @@ private struct Routes05SchoolTimetableProductionView: View {
                 .padding(.horizontal, 16)
                 .accessibilityLabel("Тиждень \(weekNumber), \(year)")
             GeometryReader { proxy in
-              let cardWidth = max(44, (proxy.size.width - 2 * 44 - 28) / 5)
+              let selectorHeight = max(44, 52 * timetableTypeScale)
+              let arrowWidth = 44 * timetableTypeScale
+              let cardWidth = max(arrowWidth, (proxy.size.width - 2 * arrowWidth - 28 * timetableTypeScale) / 5)
               ScrollView(.horizontal, showsIndicators: false) {
                HStack(spacing: 2) {
-                Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left").font(.system(size: 19, weight: .black)).frame(width: 44, height: 52).contentShape(Rectangle()) }.accessibilityLabel("Попередній тиждень")
+                Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left").font(.system(size: 19, weight: .black)).frame(width: arrowWidth, height: selectorHeight).contentShape(Rectangle()) }.accessibilityLabel("Попередній тиждень")
                 ForEach(days, id: \.self) { day in
                 let selected = selectedDay == day || (selectedDay == nil && day == days.first)
-                Button { selectedDay = day } label: { VStack(spacing: 1) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.title3, design: .rounded).weight(.black)) }.frame(width: cardWidth, minHeight: 52, maxHeight: 52).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
+                Button { selectedDay = day } label: { VStack(spacing: 1) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.title3, design: .rounded).weight(.black)) }.frame(width: cardWidth, minHeight: selectorHeight, maxHeight: selectorHeight).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
                 }
-                Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right").font(.system(size: 19, weight: .black)).frame(width: 44, height: 52).contentShape(Rectangle()) }.accessibilityLabel("Наступний тиждень")
+                Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right").font(.system(size: 19, weight: .black)).frame(width: arrowWidth, height: selectorHeight).contentShape(Rectangle()) }.accessibilityLabel("Наступний тиждень")
                }.buttonStyle(.plain).padding(.horizontal, 8)
               }
-            }.frame(height: 52)
+            }.frame(height: max(52, 52 * timetableTypeScale))
         }.padding(.top, 2)
     }
     private var coverage: some View {
