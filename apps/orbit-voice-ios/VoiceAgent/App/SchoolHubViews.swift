@@ -3480,6 +3480,7 @@ private struct Routes05SchoolTimetableProductionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDay: String?
     @State private var detail: LessonSelection?
+    @ScaledMetric(relativeTo: .caption) private var timetableTypeScale: CGFloat = 1
 #if DEBUG
     private var usesFixture = false
 #endif
@@ -3521,7 +3522,12 @@ private struct Routes05SchoolTimetableProductionView: View {
         var calendar = Calendar(identifier: .iso8601); calendar.timeZone = SchoolHubLogic.schoolTimeZone
         return String(calendar.component(.weekOfYear, from: date))
     }
-    private var year: String { String(store.weekStart.prefix(4)) }
+    private var isoWeekLabel: String { SchoolHubLogic.isoWeek(of: store.weekStart).replacingOccurrences(of: "-W", with: " · ") }
+    private var monthLabel: String { SchoolHubLogic.timetableMonthLabel(dayKeys: days) ?? "" }
+    private var year: String {
+        let years = Array(Set(days.map { String($0.prefix(4)) })).sorted()
+        return years.joined(separator: "/")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -3549,11 +3555,7 @@ private struct Routes05SchoolTimetableProductionView: View {
 
     private var intro: some View {
         HStack(spacing: 8) {
-            Text("ТИЖДЕНЬ / \(weekNumber)")
-                .font(.system(size: 10, weight: .black, design: .monospaced))
-                .tracking(1.8)
-            Spacer(minLength: 4)
-            Text(year).font(.system(size: 10, weight: .medium, design: .monospaced))
+            Spacer(minLength: 0)
             Menu {
                 Button("Огляд", action: onOpenOverview)
                 Button("Іспити", action: onOpenExams)
@@ -3563,29 +3565,49 @@ private struct Routes05SchoolTimetableProductionView: View {
             .accessibilityLabel("Інші розділи школи")
         }
         .padding(.horizontal, 16)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
+        .padding(.top, 0)
+        .padding(.bottom, 2)
         .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
     }
 
     private var hero: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 8) {
             Routes05HeadingText(title, tracking: -2)
+            Text(monthLabel.capitalized(with: SchoolHubLogic.interfaceLocale))
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Routes05Tokens.blue)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("Місяць: \(monthLabel)")
             Spacer()
             Image(systemName: "calendar").font(.system(size: 24, weight: .heavy)).foregroundStyle(Routes05Tokens.accentInk).frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter).background(Routes05Tokens.mint, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityHidden(true)
-        }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 8)
+        }.padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 2)
     }
     private var weekControls: some View {
-        VStack(spacing: 11) {
-            HStack { Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.accessibilityLabel("Попередній тиждень"); Spacer(); Text("\(SchoolHubFormat.shortDay(store.weekStart)) – \(SchoolHubFormat.shortDay(SchoolHubLogic.addDays(4, to: store.weekStart) ?? store.weekStart))").font(.system(.headline, design: .rounded).weight(.bold)).multilineTextAlignment(.center); Spacer(); Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }.accessibilityLabel("Наступний тиждень") }.buttonStyle(.plain)
-            HStack(spacing: 4) { ForEach(days, id: \.self) { day in
+        VStack(spacing: 2) {
+            Text("ТИЖДЕНЬ \(isoWeekLabel)")
+                .font(.system(size: 10, weight: .black, design: .monospaced))
+                .tracking(1.1)
+                .foregroundStyle(Routes05Tokens.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .accessibilityLabel("Тиждень \(weekNumber), \(year)")
+            GeometryReader { proxy in
+              let cardWidth = max(44, (proxy.size.width - 2 * 44 - 28) / 5)
+              ScrollView(.horizontal, showsIndicators: false) {
+               HStack(spacing: 2) {
+                Button { store.shiftWeek(-7) } label: { Image(systemName: "chevron.left").font(.system(size: 19, weight: .black)).frame(width: 44, height: 52).contentShape(Rectangle()) }.accessibilityLabel("Попередній тиждень")
+                ForEach(days, id: \.self) { day in
                 let selected = selectedDay == day || (selectedDay == nil && day == days.first)
-                Button { selectedDay = day } label: { VStack(spacing: 4) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.largeTitle, design: .rounded).weight(.black)) }.frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
-            } }.padding(.horizontal, 16)
-        }.padding(.horizontal, 0).padding(.top, 12)
+                Button { selectedDay = day } label: { VStack(spacing: 1) { Text(SchoolHubFormat.weekdayShort(day).uppercased()).font(.system(.caption2, design: .monospaced).weight(.bold)); Text(SchoolHubFormat.dayNumber(day)).font(.system(.title3, design: .rounded).weight(.black)) }.frame(width: cardWidth, minHeight: 52, maxHeight: 52).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.2)) }.buttonStyle(.plain).accessibilityLabel(SchoolHubFormat.long(day)).accessibilityAddTraits(selected ? .isSelected : [])
+                }
+                Button { store.shiftWeek(7) } label: { Image(systemName: "chevron.right").font(.system(size: 19, weight: .black)).frame(width: 44, height: 52).contentShape(Rectangle()) }.accessibilityLabel("Наступний тиждень")
+               }.buttonStyle(.plain).padding(.horizontal, 8)
+              }
+            }.frame(height: 52)
+        }.padding(.top, 2)
     }
     private var coverage: some View {
-        Label(coverageText, systemImage: store.coverageState == "READY_WITH_DATA" ? "checkmark.circle" : "info.circle").font(.caption).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 16)
+        Label(coverageText, systemImage: store.coverageState == "READY_WITH_DATA" ? "checkmark.circle" : "info.circle").font(.caption).foregroundStyle(Routes05Tokens.secondary).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 16).padding(.top, 5).padding(.bottom, 6)
     }
     private var failure: SchoolHubV2Store.Phase? {
         if let failure = store.timetableFailure { return failure }
@@ -3610,11 +3632,11 @@ private struct Routes05SchoolTimetableProductionView: View {
             }.padding(.vertical, 24)
         }
         else if visibleTimetable.isEmpty { ContentUnavailableView(store.timetableCoverageState == "READY_EMPTY" ? "Уроків цього тижня немає" : "Немає уроків для вибраного тижня", systemImage: "calendar.badge.exclamationmark", description: Text(coverageText)).padding(.vertical, 24) }
-        else { GeometryReader { proxy in timetableGrid(width: proxy.size.width) }.frame(height: SchoolHubLogic.timetableGridHeight(rowHeights: slots.map(slotHeight))) }
+        else { GeometryReader { proxy in timetableGrid(width: proxy.size.width) }.frame(height: SchoolHubLogic.timetableGridHeight(rowHeights: slots.map(slotHeight), headerHeight: 40 * timetableTypeScale)) }
     }
     private func slotHeight(_ slot: Int) -> CGFloat {
         let maximumEntries = days.map { day in store.timetable.filter { $0.localDate == day && $0.lessonIndex == slot }.count }.max() ?? 0
-        return max(48, CGFloat(maximumEntries) * 38 + 10)
+        return max(48 * timetableTypeScale, CGFloat(maximumEntries) * 38 * timetableTypeScale + 10 * timetableTypeScale)
     }
     private func timetableGrid(width: CGFloat) -> some View {
         let axis: CGFloat = 22; let gap: CGFloat = 3
@@ -3631,7 +3653,7 @@ private struct Routes05SchoolTimetableProductionView: View {
                     .accessibilityElement(children: .ignore).accessibilityLabel(SchoolHubFormat.long(day))
                 }
             }
-            .frame(height: 40)
+            .frame(height: 40 * timetableTypeScale)
             .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
             ForEach(slots, id: \.self) { slot in
                 let height = slotHeight(slot)
@@ -3646,7 +3668,6 @@ private struct Routes05SchoolTimetableProductionView: View {
             }
         }
         .padding(.horizontal, 16)
-        .dynamicTypeSize(...DynamicTypeSize.large)
         .sheet(item: $detail) { selection in lessonDetail(selection) }
 #if DEBUG
         .onAppear {
@@ -3694,8 +3715,8 @@ private struct Routes05SchoolTimetableProductionView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(entries) { entry in
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(SchoolHubLogic.subjectAbbreviation(entry.subject)).font(.system(size: 12, weight: .black, design: .rounded)).strikethrough(entry.isCancelled).lineLimit(1).minimumScaleFactor(0.7)
-                            if let room = entry.room, !room.isEmpty { Text(room).font(.system(size: 9)).lineLimit(1).minimumScaleFactor(0.7) }
+                            Text(SchoolHubLogic.subjectAbbreviation(entry.subject)).font(.caption.weight(.black)).strikethrough(entry.isCancelled).lineLimit(1).minimumScaleFactor(0.7)
+                            if let room = entry.room, !room.isEmpty { Text(room).font(.caption2).lineLimit(1).minimumScaleFactor(0.7) }
                         }
                     }
                 }
