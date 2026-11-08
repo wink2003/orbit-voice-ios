@@ -963,7 +963,7 @@ private struct LegacySchoolHubView: View {
     private var header: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Шкільний простір").font(.system(.largeTitle, design: .rounded).weight(.bold)).minimumScaleFactor(0.7).lineLimit(1).accessibilityAddTraits(.isHeader)
+                Routes05HeadingText("Шкільний простір", weight: .bold, tracking: 0)
                 Text("Джерела, дати й справи без запису в Schulmanager").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -1266,6 +1266,7 @@ struct SchoolHubView: View {
                 }
                 #endif
             }
+            .routes05NativeSwipeBack()
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 // SchoolHubView owns the navigation stack for this route. The inbox
@@ -2144,13 +2145,11 @@ private struct SchoolTaskDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-        Routes05Mast(section: "school")
+        Routes05Mast(section: "school", backAction: { dismiss() }, backLabel: "Назад до справ")
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Button { dismiss() } label: { Label("Справи", systemImage: "arrow.left").font(.callout.weight(.bold)) }
-                        .buttonStyle(.plain).frame(minHeight: OrbitSpacing.minTarget)
                     Spacer()
                     Text(task.kind == "family" ? "СІМЕЙНА СПРАВА" : "ДЖЕРЕЛО ШКОЛИ").font(.caption2.weight(.black).monospaced())
                 }
@@ -2159,7 +2158,7 @@ private struct SchoolTaskDetailView: View {
                     detailTag(task.status == "completed" ? "ВИКОНАНО" : "ВІДКРИТО", tint: task.status == "completed" ? Routes05Tokens.mint : Routes05Tokens.yellow)
                 }
                 HStack(alignment: .top, spacing: 12) {
-                    Text(task.title).font(.system(size: 30, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true).textSelection(.enabled).accessibilityAddTraits(.isHeader)
+                    Routes05HeadingText(task.title, tracking: -0.8, basePoints: 30, lineLimit: 3).textSelection(.enabled)
                     Spacer(minLength: 0)
                     Image(systemName: task.kind == "family" ? "checklist" : "list.bullet.rectangle")
                         .font(.title2.weight(.black))
@@ -2489,6 +2488,7 @@ private struct SchoolChecklistView: View {
             }
         }
         .navigationTitle("Підготовка")
+        .routes05UnsavedInput("school-preparation", when: !(newTitle + newItem).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         .navigationBarTitleDisplayMode(.inline)
         .task { if store.actionCapability.canMutate { await load() } }
         .refreshable { if store.actionCapability.canMutate { await load() } }
@@ -2584,6 +2584,7 @@ private struct SchoolNotesView: View {
             }
         }
         .navigationTitle("")
+        .routes05UnsavedInput("school-notes", when: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         .navigationBarTitleDisplayMode(.inline)
         .task { if store.actionCapability.canMutate { await load() } }
         .refreshable { if store.actionCapability.canMutate { await load() } }
@@ -3334,7 +3335,7 @@ private struct Routes05SchoolTasksProductionView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Routes05Mast(section: "school")
+            Routes05Mast(section: "school", backAction: { dismiss() }, backLabel: "Назад до школи")
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     topBar
@@ -3378,7 +3379,6 @@ private struct Routes05SchoolTasksProductionView: View {
 
     private var topBar: some View {
         HStack(spacing: 12) {
-            Button { dismiss() } label: { Image(systemName: "arrow.left").font(.title3.weight(.semibold)).frame(width: 43, height: 43).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.5)) }.accessibilityLabel("Назад до школи")
             Text("Справи / школа").font(.system(.headline, design: .rounded).weight(.black)).lineLimit(1)
             Spacer(minLength: 4)
             Button { showSearch.toggle(); if !showSearch { query = "" } } label: { Image(systemName: showSearch ? "xmark" : "magnifyingglass").frame(width: 42, height: 44) }.accessibilityLabel(showSearch ? "Закрити пошук" : "Шукати справи")
@@ -3394,7 +3394,7 @@ private struct Routes05SchoolTasksProductionView: View {
 
     private var hero: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text("Справи.\nПо черзі.").font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-2).lineSpacing(-5).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+            Routes05HeadingText("Справи.\nПо черзі.", tracking: -2)
             Spacer()
             Text(String(format: "%02d", openTaskCount)).font(.system(size: 30, weight: .black, design: .rounded)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 77, height: 77).background(Routes05Tokens.orange, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityLabel("Відкритих справ: \(openTaskCount)")
         }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 15)
@@ -3514,7 +3514,7 @@ private struct Routes05SchoolTimetableProductionView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Routes05Mast(section: "school")
+            Routes05Mast(section: "school", backAction: { dismiss() }, backLabel: "Назад до школи")
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
@@ -3539,7 +3539,6 @@ private struct Routes05SchoolTimetableProductionView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Button { dismiss() } label: { Image(systemName: "arrow.left").font(.title3.weight(.semibold)).frame(width: 43, height: 43).overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.5)) }.accessibilityLabel("Назад до школи")
             Text("Розклад").font(.system(.headline, design: .rounded).weight(.black))
             Spacer()
             Menu { Button("Огляд", action: onOpenOverview); Button("Іспити", action: onOpenExams) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Інші розділи школи")
@@ -3551,7 +3550,7 @@ private struct Routes05SchoolTimetableProductionView: View {
     }
     private var hero: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text(title).font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-2).lineSpacing(-5).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+            Routes05HeadingText(title, tracking: -2)
             Spacer()
             Image(systemName: "calendar").font(.system(size: 29, weight: .heavy)).foregroundStyle(Routes05Tokens.accentInk).frame(width: 77, height: 77).background(Routes05Tokens.mint, in: Circle()).overlay(Circle().stroke(Routes05Tokens.darkSurfaceInk, lineWidth: 2)).accessibilityHidden(true)
         }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 8)

@@ -54,6 +54,155 @@ private extension UIColor {
     }
 }
 
+/// The one ROUTES 05 back control: a small leading chevron inside a 44×44 pt
+/// target. Native `NavigationStack` back buttons keep the same glyph weight.
+struct Routes05BackButton: View {
+    var label = "Назад"
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 14, weight: .black))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Routes05Tokens.ink)
+        .accessibilityLabel(label)
+    }
+}
+
+/// Single-line ROUTES 05 screen heading, 20 % smaller than the former
+/// `largeTitle` style. Dynamic Type still scales it; long localized titles are
+/// tail-truncated while VoiceOver reads the complete string.
+struct Routes05HeadingText: View {
+    let title: String
+    var weight: Font.Weight = .black
+    var tracking: CGFloat = -1.8
+    var basePoints = Routes05HeadingMetrics.largeTitlePoints
+    var lineLimit = 1
+    @ScaledMetric(relativeTo: .largeTitle) private var scaleReference = 1
+
+    init(_ title: String, weight: Font.Weight = .black, tracking: CGFloat = -1.8, basePoints: Double = Routes05HeadingMetrics.largeTitlePoints, lineLimit: Int = 1) {
+        self.title = title
+        self.weight = weight
+        self.tracking = tracking
+        self.basePoints = basePoints
+        self.lineLimit = lineLimit
+    }
+
+    var body: some View {
+        Text(lineLimit == 1 ? Routes05HeadingMetrics.singleLine(title) : title)
+            .font(.system(size: Routes05HeadingMetrics.points(basePoints) * scaleReference, weight: weight, design: .rounded))
+            .tracking(tracking)
+            .lineLimit(lineLimit)
+            .truncationMode(.tail)
+            .accessibilityLabel(title.replacingOccurrences(of: "\n", with: " "))
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Keeps the native interactive-pop swipe alive on screens that hide the
+/// navigation bar for ROUTES 05 chrome (UIKit disables it otherwise). It only
+/// re-enables UIKit's own recognizer, so the system animation, cancellation and
+/// edge-only activation are untouched; nothing custom is added. The gesture may
+/// begin only below a root, outside a running transition, and never while a
+/// screen holds unsaved input (Back then asks for confirmation instead).
+private final class Routes05SwipeBackDelegate: NSObject, UIGestureRecognizerDelegate {
+    static let shared = Routes05SwipeBackDelegate()
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let navigation = gestureRecognizer.view?.next as? UINavigationController else { return false }
+        return Routes05SwipeBackRule.canBegin(
+            stackDepth: navigation.viewControllers.count,
+            isTransitioning: navigation.transitionCoordinator != nil,
+            hasUnsavedInput: Routes05UnsavedInputTracker.shared.hasUnsavedInput
+        )
+    }
+}
+
+private struct Routes05SwipeBackInstaller: UIViewControllerRepresentable {
+    final class Probe: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            // A pushed screen may host its own NavigationStack (Calendar from More),
+            // so every ancestor navigation controller gets the native recognizer back.
+            var ancestor: UIViewController? = self
+            while let controller = ancestor {
+                if let navigation = controller as? UINavigationController, let recognizer = navigation.interactivePopGestureRecognizer {
+                    recognizer.delegate = Routes05SwipeBackDelegate.shared
+                    recognizer.isEnabled = true
+                }
+                ancestor = controller.parent
+            }
+        }
+    }
+
+    func makeUIViewController(context: Context) -> Probe { Probe() }
+    func updateUIViewController(_ controller: Probe, context: Context) {}
+}
+
+extension View {
+    /// Apply once to the root content of every `NavigationStack`.
+    func routes05NativeSwipeBack() -> some View {
+        background { Routes05SwipeBackInstaller().frame(width: 0, height: 0).accessibilityHidden(true) }
+    }
+}
+
+/// Screens with unsaved input report it here. The shell asks before a main-menu
+/// tap discards it, and the swipe-back delegate stays off while it is set.
+@Observable
+final class Routes05UnsavedInputTracker {
+    static let shared = Routes05UnsavedInputTracker()
+
+    private(set) var sources: Set<String> = []
+    var hasUnsavedInput: Bool { !sources.isEmpty }
+
+    func update(_ source: String, hasInput: Bool) {
+        if hasInput { sources.insert(source) } else { sources.remove(source) }
+    }
+
+    func reset() { sources.removeAll() }
+}
+
+private struct Routes05UnsavedInputModifier: ViewModifier {
+    let source: String
+    let hasInput: Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmingBack = false
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: hasInput, initial: true) { _, value in Routes05UnsavedInputTracker.shared.update(source, hasInput: value) }
+            .onDisappear { Routes05UnsavedInputTracker.shared.update(source, hasInput: false) }
+            // Only while input exists the system Back is replaced, because it cannot be
+            // intercepted; the replacement is the same compact chevron.
+            .navigationBarBackButtonHidden(hasInput)
+            .toolbar {
+                if hasInput {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Routes05BackButton { confirmingBack = true }
+                    }
+                }
+            }
+            .confirmationDialog("Відкинути незбережене?", isPresented: $confirmingBack, titleVisibility: .visible) {
+                Button("Відкинути й вийти", role: .destructive) { dismiss() }
+                Button("Залишитись", role: .cancel) {}
+            } message: {
+                Text("На цьому екрані є текст, який ще не збережено або не надіслано.")
+            }
+    }
+}
+
+extension View {
+    /// For pushed screens that hold a draft. Clears itself when the draft is
+    /// sent/saved/emptied or the screen leaves.
+    func routes05UnsavedInput(_ source: String, when hasInput: Bool) -> some View {
+        modifier(Routes05UnsavedInputModifier(source: source, hasInput: hasInput))
+    }
+}
+
 struct Routes05Mast: View {
     let section: String
     var action: (() -> Void)?
@@ -76,16 +225,7 @@ struct Routes05Mast: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if let backAction {
-                Button(action: backAction) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .black))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .foregroundStyle(Routes05Tokens.ink)
-                .accessibilityLabel(backLabel)
-            }
+            if let backAction { Routes05BackButton(label: backLabel, action: backAction) }
             HStack(spacing: 7) {
                 ZStack {
                     Circle().stroke(Routes05Tokens.ink, lineWidth: 2)
@@ -137,11 +277,7 @@ struct Routes05RootHeader<Badge: View>: View {
                     .tracking(1.2)
                     .foregroundStyle(Routes05Tokens.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(title)
-                    .font(.system(.largeTitle, design: .rounded).weight(.black))
-                    .tracking(-1.8)
-                    .lineSpacing(-4)
-                    .fixedSize(horizontal: false, vertical: true)
+                Routes05HeadingText(title)
                 if let detail {
                     Text(detail)
                         .font(.footnote.weight(.medium))
@@ -203,7 +339,7 @@ struct Routes05Chapter: View {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(eyebrow).font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.4).foregroundStyle(Routes05Tokens.secondary)
-                    Text(title).font(.system(.largeTitle, design: .rounded).weight(.black)).tracking(-1.8).lineLimit(nil)
+                    Routes05HeadingText(title)
                 }
                 Spacer(minLength: 8)
                 Text("↗").font(.system(size: 27, weight: .black)).foregroundStyle(Routes05Tokens.accentInk)

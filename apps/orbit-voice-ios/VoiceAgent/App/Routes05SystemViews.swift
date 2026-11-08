@@ -148,7 +148,7 @@ struct Routes05SystemRouteView: View {
             Routes05Hero(accent: Routes05Tokens.darkSurface) {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("LIVEKIT / READY").font(.caption.weight(.black)).foregroundStyle(Routes05Tokens.mint)
-                    Text("Говоріть з Orbit.").font(.largeTitle.weight(.black)).foregroundStyle(Routes05Tokens.darkSurfaceInk)
+                    Routes05HeadingText("Говоріть з Orbit.", tracking: 0).foregroundStyle(Routes05Tokens.darkSurfaceInk)
                     Text("Сесія запускається через існуючий voice lifecycle.").font(.subheadline).foregroundStyle(Routes05Tokens.darkSurfaceInk)
                     Button("ПОЧАТИ ГОЛОС ↗") {}.buttonStyle(.borderedProminent).tint(Routes05Tokens.yellow).foregroundStyle(Routes05Tokens.accentInk)
                 }

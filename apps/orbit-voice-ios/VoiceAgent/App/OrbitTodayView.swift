@@ -45,6 +45,7 @@ struct OrbitTodayView: View {
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .routes05NativeSwipeBack()
             .refreshable { await load() }
             .task { await load() }
         }
@@ -430,7 +431,7 @@ struct NovaScreenHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(eyebrow).font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(NovaTodayTokens.indigo)
-            Text(title).font(.system(.largeTitle, design: .rounded).weight(.bold)).tracking(-0.6)
+            Routes05HeadingText(title, weight: .bold, tracking: -0.6)
             Text(detail).font(.subheadline).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)

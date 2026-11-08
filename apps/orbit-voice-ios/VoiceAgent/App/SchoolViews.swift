@@ -107,21 +107,6 @@ struct SchoolInboxView: View {
             inboxMast
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 9) {
-                        Button { dismiss() } label: {
-                            Image(systemName: "arrow.left")
-                                .font(.system(size: 18, weight: .semibold))
-                                .frame(width: 40, height: 40)
-                                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1.5))
-                        }
-                        .accessibilityLabel("Назад до школи")
-                        .frame(minWidth: 44, minHeight: 44)
-                        Text("Вхідні").font(.system(size: 17, weight: .black, design: .rounded))
-                        Spacer(minLength: 6)
-                        Text("0 / 05").font(.system(size: 10, weight: .black, design: .monospaced))
-                    }
-                    .padding(.top, 14)
-                    .padding(.bottom, 15)
 
                     HStack(spacing: 8) {
                         Text("SCHULMANAGER / ЛИШЕ ЧИТАННЯ")
@@ -138,11 +123,7 @@ struct SchoolInboxView: View {
                     }
 
                     HStack(alignment: .center, spacing: 12) {
-                        Text("Вхідні\nзі школи.")
-                            .font(.system(size: 35, weight: .black, design: .rounded))
-                            .tracking(-1.8)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityAddTraits(.isHeader)
+                        Routes05HeadingText("Вхідні\nзі школи.", basePoints: 35)
                         Spacer(minLength: 6)
                         Text(String(format: "%02d", min(items.filter(\.unread).count, 99)))
                             .font(.system(size: 28, weight: .black, design: .rounded))
@@ -210,7 +191,7 @@ struct SchoolInboxView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(visibleItems.indices, id: \.self) { index in
                             let item = visibleItems[index]
-                            NavigationLink { SchoolDetailView(item: item).toolbar(.visible, for: .navigationBar).navigationBarBackButtonHidden(false) } label: {
+                            NavigationLink { SchoolDetailView(item: item) } label: {
                                 schoolRow(item, index: index)
                             }
                             .buttonStyle(.plain)
@@ -258,6 +239,7 @@ struct SchoolInboxView: View {
 
     private var inboxMast: some View {
         HStack(spacing: 7) {
+            Routes05BackButton(label: "Назад до школи") { dismiss() }
             ZStack {
                 Circle().stroke(Routes05Tokens.ink, lineWidth: 2)
                 Circle().fill(Routes05Tokens.mint).frame(width: 8, height: 8)
@@ -626,16 +608,11 @@ struct SchoolDetailView: View {
     @State private var copyNotice = false
     var body: some View {
         VStack(spacing: 0) {
-            Routes05Mast(section: "school")
+            Routes05Mast(section: "school", backAction: { dismiss() }, backLabel: "Назад до вхідних")
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(spacing: 10) {
-                        Button { dismiss() } label: {
-                            Label("Вхідні", systemImage: "arrow.left")
-                                .font(.callout.weight(.bold))
-                                .frame(minHeight: OrbitSpacing.minTarget)
-                        }.buttonStyle(.plain)
                         Spacer()
                         Text(item.type == "letter" ? "ВІДКРИТИЙ ЛИСТ" : "ПОВІДОМЛЕННЯ")
                             .font(.caption2.weight(.black).monospaced()).tracking(0.8)
@@ -655,7 +632,7 @@ struct SchoolDetailView: View {
                             .background(Routes05Tokens.mint, in: Capsule())
                         if item.unread { Text("НОВЕ В ORBIT").font(.caption2.weight(.black).monospaced()).foregroundStyle(Routes05Tokens.blue) }
                     }
-                    if !displayTitle.isEmpty { Text(displayTitle).font(.system(size: 30, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true).textSelection(.enabled).accessibilityAddTraits(.isHeader) }
+                    if !displayTitle.isEmpty { Routes05HeadingText(displayTitle, tracking: -0.8, basePoints: 30, lineLimit: 3).textSelection(.enabled) }
                     if let original = item.germanTitleCaption { Text(original).font(.footnote).foregroundStyle(Routes05Tokens.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) }
                     VStack(alignment: .leading, spacing: 5) {
                         Label(item.sender.isEmpty ? "Відправника не вказано" : item.sender, systemImage: "building.2.crop.circle")

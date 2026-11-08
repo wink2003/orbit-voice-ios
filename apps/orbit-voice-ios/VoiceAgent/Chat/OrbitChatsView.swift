@@ -98,6 +98,7 @@ struct OrbitChatsView: View {
             }
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .routes05NativeSwipeBack()
             .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
             .navigationDestination(item: $selectedChat) { chat in
                 #if DEBUG
@@ -255,6 +256,12 @@ private struct OrbitConversationView: View {
     @State private var searchText = ""
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
     private let debugMessages: [OrbitChatMessage]?
+
+    /// A prefilled, untouched prompt (contact shortcut) is not user input.
+    private var hasUnsentDraft: Bool {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !text.isEmpty && text != (initialDraft ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     init(conversation: OrbitConversation, initialDraft: String? = nil, debugMessages: [OrbitChatMessage]? = nil) {
         self.conversation = conversation
@@ -424,14 +431,11 @@ private struct OrbitConversationView: View {
         .navigationTitle(OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
+        .routes05UnsavedInput("chat-draft", when: hasUnsentDraft)
         .toolbarBackground(Routes05Tokens.canvas, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Пошук у завантажених")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Розмови") { dismiss() }
-                    .frame(minHeight: OrbitSpacing.minTarget)
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingVoice = true } label: { Image(systemName: "waveform") }
                     .frame(minWidth: OrbitSpacing.minTarget, minHeight: OrbitSpacing.minTarget)

@@ -134,6 +134,7 @@ struct FamilyMessengerView: View {
             .padding()
         }
         .navigationTitle("Родинний чат")
+        .routes05UnsavedInput("family-chat", when: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .task { await load() }

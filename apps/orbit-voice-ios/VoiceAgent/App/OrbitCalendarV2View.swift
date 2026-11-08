@@ -8,6 +8,9 @@ struct OrbitCalendarView: View {
 
     var body: some View {
         OrbitCalendarV2View(onBack: origin.showsBackControl ? { dismiss() } : nil)
+            // The calendar hosts its own NavigationStack and draws its own Back; hide the
+            // outer bar when pushed so exactly one Back control remains.
+            .toolbar(origin.showsBackControl ? .hidden : .automatic, for: .navigationBar)
     }
 }
 
@@ -105,7 +108,7 @@ struct OrbitCalendarV2View: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
-                        Routes05Mast(section: "calendar", action: { showingSources = true }, backAction: onBack, backLabel: "Назад до Інше")
+                        Routes05Mast(section: "calendar", action: { showingSources = true }, backAction: onBack, backLabel: "Назад")
                         hero
                         ForEach(OrbitCalendarV2Logic.sectionOrder, id: \.self) { section in
                             timelineSection(section)
@@ -133,6 +136,7 @@ struct OrbitCalendarV2View: View {
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .foregroundStyle(Routes05Tokens.ink)
             .toolbar(.hidden, for: .navigationBar)
+            .routes05NativeSwipeBack()
             .environment(\.locale, Locale(identifier: "uk_UA"))
             .sheet(isPresented: $showingSources) { sourceManager }
             .sheet(isPresented: $showingCreator) {
@@ -164,10 +168,7 @@ struct OrbitCalendarV2View: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 eyebrow("FAMILY / SHARED TIME")
-                Text("Календар.")
-                    .font(.system(.largeTitle, design: .rounded, weight: .black))
-                    .tracking(-1.5)
-                    .accessibilityAddTraits(.isHeader)
+                Routes05HeadingText("Календар.", tracking: -1.5)
                 Text("Усі важливі події — в одному місці.")
                     .font(.footnote)
                     .foregroundStyle(Routes05Tokens.secondary)

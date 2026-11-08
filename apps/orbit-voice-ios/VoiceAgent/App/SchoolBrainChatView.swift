@@ -44,6 +44,7 @@ struct SchoolBrainView: View {
         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { contentMaxY = $0 }
         .background(Routes05Tokens.canvas.ignoresSafeArea())
         .navigationTitle("")
+        .routes05UnsavedInput("school-brain", when: !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         .navigationBarTitleDisplayMode(.inline)
         .task {
 #if DEBUG
