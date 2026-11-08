@@ -397,7 +397,7 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.isoWeek(of: "2026-12-28") == "2026-W53" && SchoolHubLogic.isoWeek(of: "2027-01-04") == "2027-W01")
         precondition(SchoolHubLogic.addDays(-7, to: "2027-01-04") == "2026-12-28")
         precondition(SchoolHubLogic.timetableMonthLabel(dayKeys: (0..<5).compactMap { SchoolHubLogic.addDays($0, to: "2026-11-02") }) == "листопад", "month comes from the selected weekdays")
-        precondition(SchoolHubLogic.timetableMonthLabel(dayKeys: (0..<5).compactMap { SchoolHubLogic.addDays($0, to: "2026-10-26") }) == "жовтень / листопад", "month transition is represented")
+        precondition(SchoolHubLogic.timetableMonthLabel(dayKeys: (0..<5).compactMap { SchoolHubLogic.addDays($0, to: "2026-11-30") }) == "листопад / грудень", "month transition is represented")
         precondition(SchoolHubLogic.timetableMonthLabel(dayKeys: (0..<5).compactMap { SchoolHubLogic.addDays($0, to: "2026-12-28") }) == "грудень 2026 / січень 2027", "year transition includes both years")
         precondition(SchoolHubLogic.timetableMonthLabel(dayKeys: ["bad"]) == nil, "invalid day keys do not invent a month")
         // TT-04: compact labels never invent data and stay short
