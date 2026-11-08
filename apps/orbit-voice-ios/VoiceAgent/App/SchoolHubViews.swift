@@ -3338,7 +3338,6 @@ private struct Routes05SchoolTasksProductionView: View {
             Routes05Mast(section: "school", backAction: { dismiss() }, backLabel: "Назад до школи")
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    topBar
                     intro
                     hero
                     filters
@@ -3377,19 +3376,31 @@ private struct Routes05SchoolTasksProductionView: View {
         } message: { Text(error ?? "") }
     }
 
-    private var topBar: some View {
-        HStack(spacing: 12) {
-            Text("Справи / школа").font(.system(.headline, design: .rounded).weight(.black)).lineLimit(1)
-            Spacer(minLength: 4)
-            Button { showSearch.toggle(); if !showSearch { query = "" } } label: { Image(systemName: showSearch ? "xmark" : "magnifyingglass").frame(width: 42, height: 44) }.accessibilityLabel(showSearch ? "Закрити пошук" : "Шукати справи")
-            if store.actionCapability.canMutate { Button { showCreate = true } label: { Image(systemName: "plus").frame(width: 42, height: 44) }.accessibilityLabel("Створити сімейну справу") }
-        }
-        .padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 17)
-    }
-
     private var intro: some View {
-        HStack { Text("ЦЕНТР ДІЙ / РОДИНА").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.8); Spacer(); Text("ORBIT / ШКОЛА").font(.system(size: 9, weight: .medium, design: .monospaced)) }
-            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
+        HStack(spacing: 8) {
+            Text("ЦЕНТР ДІЙ / РОДИНА")
+                .font(.system(size: 10, weight: .black, design: .monospaced))
+                .tracking(1.8)
+            Spacer(minLength: 4)
+            Button {
+                showSearch.toggle()
+                if !showSearch { query = "" }
+            } label: {
+                Image(systemName: showSearch ? "xmark" : "magnifyingglass")
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel(showSearch ? "Закрити пошук" : "Шукати справи")
+            if store.actionCapability.canMutate {
+                Button { showCreate = true } label: {
+                    Image(systemName: "plus").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Створити сімейну справу")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
     }
 
     private var hero: some View {
@@ -3517,7 +3528,6 @@ private struct Routes05SchoolTimetableProductionView: View {
             Routes05Mast(section: "school", backAction: { dismiss() }, backLabel: "Назад до школи")
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    header
                     intro
                     hero
                     weekControls
@@ -3537,17 +3547,27 @@ private struct Routes05SchoolTimetableProductionView: View {
         .onChange(of: days) { _, value in if !value.contains(selectedDay ?? "") { selectedDay = value.first } }
     }
 
-    private var header: some View {
-        HStack(spacing: 12) {
-            Text("Розклад").font(.system(.headline, design: .rounded).weight(.black))
-            Spacer()
-            Menu { Button("Огляд", action: onOpenOverview); Button("Іспити", action: onOpenExams) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }.accessibilityLabel("Інші розділи школи")
-        }.padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 17)
-    }
     private var intro: some View {
-        HStack { Text("ТИЖДЕНЬ / \(weekNumber)").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.8); Spacer(); Text(year).font(.system(size: 10, weight: .medium, design: .monospaced)) }
-            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10).overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
+        HStack(spacing: 8) {
+            Text("ТИЖДЕНЬ / \(weekNumber)")
+                .font(.system(size: 10, weight: .black, design: .monospaced))
+                .tracking(1.8)
+            Spacer(minLength: 4)
+            Text(year).font(.system(size: 10, weight: .medium, design: .monospaced))
+            Menu {
+                Button("Огляд", action: onOpenOverview)
+                Button("Іспити", action: onOpenExams)
+            } label: {
+                Image(systemName: "ellipsis").frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Інші розділи школи")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1.5) }
     }
+
     private var hero: some View {
         HStack(alignment: .center, spacing: 12) {
             Routes05HeadingText(title, tracking: -2)
