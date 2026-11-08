@@ -314,6 +314,33 @@ struct Routes05OrbitBadge: View {
     }
 }
 
+/// Voice launch glyph: six rounded equalizer bars (concise "voice" mark, drawn as
+/// a vector so it follows the design tokens in light/dark). Used inside the round
+/// header badge of the Orbit/Розмови screen.
+struct Routes05VoiceBars: View {
+    /// Relative bar heights, left to right.
+    static let heights: [CGFloat] = [0.25, 0.62, 1.0, 0.51, 0.80, 0.33]
+    var body: some View {
+        HStack(spacing: 3.5) {
+            ForEach(Array(Self.heights.enumerated()), id: \.offset) { _, h in
+                Capsule().frame(width: 3.5, height: 30 * h)
+            }
+        }
+        .frame(height: 30)
+        .accessibilityHidden(true)
+    }
+}
+
+struct Routes05VoiceBadge: View {
+    var body: some View {
+        Routes05VoiceBars()
+            .foregroundStyle(Routes05Tokens.accentInk)
+            .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
+            .background(Routes05Tokens.mint, in: Circle())
+            .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+    }
+}
+
 struct Routes05SchoolBadge: View {
     let classLabel: String?
 

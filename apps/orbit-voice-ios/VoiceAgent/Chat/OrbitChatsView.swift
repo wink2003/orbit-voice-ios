@@ -59,7 +59,7 @@ struct OrbitChatsView: View {
                         // Voice launch: the same OrbitVoiceSheet as the mast and the ГОЛОС row
                         // (existing authorized Main Orbit voice flow; no new session path).
                         Button { showingVoice = true } label: {
-                            Routes05OrbitBadge().contentShape(Circle())
+                            Routes05VoiceBadge().contentShape(Circle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Голосова розмова з Orbit")
