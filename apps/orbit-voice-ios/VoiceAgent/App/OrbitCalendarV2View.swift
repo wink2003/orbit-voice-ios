@@ -763,12 +763,21 @@ struct OrbitCalendarV2View: View {
                 selectedKeys = []
             }
             let interval = laterInterval
-            let upcoming = try await MainProductAPI.shared.laterCalendarEvents(
-                from: interval.start,
-                to: interval.end,
-                timeZone: calendar.timeZone,
-                excludingEventKeys: selectedKeys
-            )
+            // A failing "Later" request must not discard sources and the month/week events
+            // that already loaded: keep them, report incomplete coverage and surface the error.
+            var laterFailure: Error?
+            let upcoming: OrbitCalendarLaterResult
+            do {
+                upcoming = try await MainProductAPI.shared.laterCalendarEvents(
+                    from: interval.start,
+                    to: interval.end,
+                    timeZone: calendar.timeZone,
+                    excludingEventKeys: selectedKeys
+                )
+            } catch {
+                laterFailure = error
+                upcoming = OrbitCalendarLaterResult(events: [], horizonEnd: interval.end, complete: false, partialFailure: true, truncated: false)
+            }
             let profiles = (try? await MainProductAPI.shared.familyProfiles()) ?? []
 
             people = profiles.map { ConceptCalendarPerson(id: $0.personId, name: $0.displayName) }
@@ -788,7 +797,7 @@ struct OrbitCalendarV2View: View {
             liveEvents = allAPIEvents
             coverageText = upcoming.coverageDescription
             coverageComplete = upcoming.complete
-            loadError = nil
+            loadError = laterFailure
         } catch {
             loadError = error
         }
