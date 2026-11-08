@@ -13,7 +13,33 @@ permissions:
   contents: read
 
 jobs:
+  # Early, cheap, advisory monotonicity signal (issue #28): on the release branch a candidate build number that is not strictly newer
+  # than the published SideStore Main build fails here in seconds, before the macOS build.  The canonical ipa-plan stays the authority.
+  build-number-gate:
+    if: github.ref == 'refs/heads/release/main-orbit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Candidate build must be newer than the published Main build
+        run: |
+          set -uo pipefail
+          python3 scripts/check_build_monotonic.py \
+            --project apps/orbit-voice-ios/VoiceAgent.xcodeproj/project.pbxproj | tee "$RUNNER_TEMP/build-gate.json"
+          status=${PIPESTATUS[0]}
+          {
+            echo '## Build number gate'
+            echo '```json'
+            cat "$RUNNER_TEMP/build-gate.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
   build:
+    needs: build-number-gate
+    if: ${{ !cancelled() && (needs.build-number-gate.result == 'success' || needs.build-number-gate.result == 'skipped') }}
     runs-on: macos-26
     timeout-minutes: 30
 
