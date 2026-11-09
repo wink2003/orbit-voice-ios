@@ -183,6 +183,7 @@ struct OrbitCalendarV2View: View {
                     .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
             }
             .accessibilityLabel("Додати подію")
+            .orbitRequires(.calendarWrite)
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)

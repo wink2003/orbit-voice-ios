@@ -984,6 +984,11 @@ final class MainProductAPI {
         case "invalid_credentials": "Не вдалося увійти в iCloud. Перевірте Apple ID та пароль для програми."
         case "network_error", "service_unavailable": "Не вдалося підключитися до iCloud. Спробуйте ще раз."
         case "principal_discovery_failed", "calendar_home_discovery_failed", "collection_discovery_failed", "invalid_response", "unsupported_redirect": "Не вдалося отримати список календарів iCloud."
+        case "child_profile_read_only": OrbitPermissionCopy.readOnlyProfile
+        case "proposal_target_not_found", "proposal_target_not_correctable", "proposal_target_not_current": "Цей факт зараз не можна виправити пропозицією."
+        case "proposal_value_invalid", "proposal_value_not_storable": "Перевірте текст: він має бути коротким і без паролів чи кодів."
+        case "proposal_limit_reached": "Забагато пропозицій очікують розгляду. Спробуйте пізніше."
+        case "adult_required", "self_approval_forbidden": "Рішення за пропозицією ухвалює інший дорослий член родини."
         case "calendar_connection_rate_limited": "Забагато спроб. Спробуйте ще раз трохи пізніше."
         case "invalid_calendar_connection": "Перевірте назву, Apple ID і пароль для програми."
         default: "Orbit тимчасово недоступний. Спробуйте ще раз."

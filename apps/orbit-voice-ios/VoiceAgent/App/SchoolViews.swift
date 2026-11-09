@@ -733,6 +733,7 @@ struct SchoolDetailView: View {
                             if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)).font(.caption) }
                             if let location = event.location { Text(location).font(.caption).foregroundStyle(.secondary) }
                             Button("Додати до календаря") { Task { await add(event) } }
+                                .orbitRequires(.calendarWrite)
                                 .font(.callout.weight(.bold))
                                 .foregroundStyle(Routes05Tokens.accentInk)
                                 .frame(maxWidth: .infinity, minHeight: 44)
