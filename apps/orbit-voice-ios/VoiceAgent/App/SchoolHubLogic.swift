@@ -989,3 +989,13 @@ enum SchoolTranslationPlaceholder {
         value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 }
+
+/// ROUTES 05 task status filter. Order is the owner-approved display order
+/// (Відкриті → Завершені → Всі); `defaultFilter` is applied on every entry.
+nonisolated enum Routes05TaskFilter: CaseIterable, Identifiable {
+    case open, completed, all
+    static let defaultFilter: Routes05TaskFilter = .open
+    var id: Self { self }
+    var title: String { self == .all ? "Всі" : self == .open ? "Відкриті" : "Завершені" }
+    func count(_ counts: SchoolTaskCounts) -> Int { self == .all ? counts.all : self == .open ? counts.open : counts.completed }
+}

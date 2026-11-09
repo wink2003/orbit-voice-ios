@@ -56,7 +56,16 @@ struct OrbitChatsView: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                     Routes05Mast(section: "core") { showingVoice = true }
                     Routes05RootHeader("ORBIT / 02", title: "Orbit / розмови", detail: "Ваші розмови, збережені в Orbit.") {
-                        Routes05OrbitBadge()
+                        // Voice launch: the same OrbitVoiceSheet as the mast and the ГОЛОС row
+                        // (existing authorized Main Orbit voice flow; no new session path).
+                        Button { showingVoice = true } label: {
+                            Routes05VoiceBadge().contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Голосова розмова з Orbit")
+                        .accessibilityHint("Відкриває голосову розмову")
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityIdentifier("routes05-orbit-voice-badge")
                     }
                     coreAgentHero
                     Routes05SectionHeader("Розмови", action: "Створити") { createConversation() }
@@ -272,18 +281,9 @@ private struct OrbitConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Routes05ContextHeader(
-                section: "core",
-                eyebrow: "CORE AGENT / CONVERSATION",
-                title: OrbitChatPresentation.displayTitle(kind: conversation.kind, title: conversation.title),
-                detail: "Контекст, джерела й підтвердження — в одному маршруті.",
-                accent: Routes05Tokens.blue
-            )
-            // The parent chat list hides its navigation bar. Reserve the
-            // native conversation toolbar footprint before the fixed route
-            // masthead so the two native layers never overlap.
-            .padding(.top, 24)
-
+            // No in-content masthead/title band: the native inline navigation bar
+            // (back, title, search, voice) is the only header, so the message list
+            // gets the full height. Safe area, keyboard and composer are unchanged.
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 2) {

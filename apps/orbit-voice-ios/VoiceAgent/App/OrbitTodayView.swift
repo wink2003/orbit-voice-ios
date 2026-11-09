@@ -57,13 +57,21 @@ struct OrbitTodayView: View {
             title: "Ваш день.\nБез шуму.",
             detail: "Один маршрут для всього, що має значення."
         ) {
-            Text("↗")
-                .font(.system(size: 29, weight: .black))
-                .foregroundStyle(Routes05Tokens.accentInk)
-                .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
-                .background(Routes05Tokens.mint, in: Circle())
-                .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
-                .accessibilityHidden(true)
+            // Opens the existing Calendar root through the shell's tab selection
+            // (same route as "Увесь день"); no separate calendar view is created.
+            Button { open(OrbitTodayHeroRoute.destination) } label: {
+                Image(systemName: "calendar")
+                    .font(.system(size: 26, weight: .black))
+                    .foregroundStyle(Routes05Tokens.accentInk)
+                    .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
+                    .background(Routes05Tokens.mint, in: Circle())
+                    .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Відкрити календар")
+            .accessibilityHint("Переходить до сімейного календаря")
+            .accessibilityIdentifier("routes05-today-calendar")
         }
         .environment(\.locale, Locale(identifier: "uk_UA"))
     }

@@ -151,3 +151,8 @@ nonisolated enum Routes05HeadingMetrics {
             .joined(separator: " ")
     }
 }
+
+/// Destination of the Today header badge. Kept as data so the routing is testable.
+nonisolated enum OrbitTodayHeroRoute {
+    static let destination: OrbitMainTab = .calendar
+}

@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 protocol OrbitCalendarV2EventLike {
     var id: String { get }
@@ -189,4 +190,11 @@ enum OrbitCalendarV2Logic {
     private static func sourceEventKey<Event: OrbitCalendarV2EventLike>(_ event: Event) -> String {
         "\(event.sourceIdentifier ?? event.sourceType):\(event.id)"
     }
+}
+
+/// Week-strip day card spacing. `weekdayTopInset` is the gap between the card's
+/// top edge and the weekday initial; the min height grows by the same amount.
+nonisolated enum OrbitCalendarCardMetrics {
+    static let weekdayTopInset: CGFloat = 6
+    static let weekCardMinHeight: CGFloat = 50
 }

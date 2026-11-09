@@ -362,7 +362,10 @@ struct OrbitCalendarV2View: View {
                 }
                 .frame(height: 7)
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            // Week strip: keep the weekday initial clear of the card's top edge
+            // (the label sat ~2pt from the border) without shrinking other content.
+            .padding(.top, displayMode == .week ? OrbitCalendarCardMetrics.weekdayTopInset : 0)
+            .frame(maxWidth: .infinity, minHeight: displayMode == .week ? OrbitCalendarCardMetrics.weekCardMinHeight : 44)
             .foregroundStyle(isToday ? Routes05Tokens.accentInk : (inMonth ? Routes05Tokens.ink : Routes05Tokens.secondary.opacity(0.52)))
             .background(isToday ? Routes05Tokens.yellow : (isSelected ? Routes05Tokens.mint.opacity(0.22) : Color.clear))
             .overlay(RoundedRectangle(cornerRadius: 3).stroke(isSelected ? Routes05Tokens.ink : Color.clear, lineWidth: 2))
