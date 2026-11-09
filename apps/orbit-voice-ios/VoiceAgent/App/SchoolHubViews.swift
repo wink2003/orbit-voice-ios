@@ -226,7 +226,8 @@ final class SchoolHubStore {
             let result = try await MainProductAPI.shared.schoolActionTasks(preserveHTTPStatus: true)
             guard gate.accepts(token) else { return }
             actionTasks = result.tasks
-            actionCapability = .available
+            // Readable is not writable: a read-only profile (child) sees the list without edit controls.
+            actionCapability = SchoolActionsCapability.afterReadSucceeded(canWrite: OrbitPermissionStore.shared.allows(.schoolWrite))
             actionTasksPhase = .loaded
         } catch is CancellationError {
             guard gate.accepts(token) else { return }

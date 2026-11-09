@@ -320,6 +320,10 @@ struct SchoolHubLogicTests {
             let eff = SchoolHubLogic.taskSections([letterOverdue, letterNext, unresolved], filter: .open, today: today, sourceDates: [:], now: now)
             precondition(eff.overdue.map(\.id) == ["letterOverdue"] && eff.nextWeek.map(\.id) == ["letterNext"] && eff.later.map(\.id) == ["unresolved"])
             precondition(SchoolHubLogic.usesSourceDate(letterOverdue, sourceDates: [:]) && !SchoolHubLogic.usesSourceDate(unresolved, sourceDates: [:]))
+            // A readable list is not a writable one: read-only profiles get no edit controls and an honest message.
+            precondition(SchoolActionsCapability.afterReadSucceeded(canWrite: true) == .available && SchoolActionsCapability.afterReadSucceeded(canWrite: true).canMutate)
+            precondition(SchoolActionsCapability.afterReadSucceeded(canWrite: false) == .readOnly && !SchoolActionsCapability.readOnly.canMutate)
+            precondition(SchoolActionsCapability.readOnly.message.contains("лише переглядає") && SchoolActionsCapability.readOnly != .forbidden)
             // Row metadata shown on the production "Справи" screen.
             let metaLetter = SchoolHubLogic.dueMeta(letterOverdue, today: today, sourceDates: [:])
             precondition(metaLetter == SchoolTaskDueMeta(day: "2026-10-01", fromLetter: true, overdue: true))

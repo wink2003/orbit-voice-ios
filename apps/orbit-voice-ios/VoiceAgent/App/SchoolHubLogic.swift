@@ -215,8 +215,13 @@ enum SchoolActionsCapability: Equatable {
     case forbidden
     case networkFailure
     case serverFailure
+    /// The list is readable (e.g. via a family read grant) but this profile may not change it (child / read-only profile).
+    case readOnly
 
     var canMutate: Bool { self == .available }
+
+    /// After a successful read: writes are offered only when the effective permissions allow School writes.
+    static func afterReadSucceeded(canWrite: Bool) -> Self { canWrite ? .available : .readOnly }
 
     static func fromHTTPStatus(_ status: Int) -> Self {
         switch status {
@@ -241,6 +246,7 @@ enum SchoolActionsCapability: Equatable {
         case .unavailable: "Сімейні справи Orbit ще не доступні. Шкільні дані можна переглядати."
         case .unauthorized: "Увійдіть в Orbit, щоб користуватися сімейними справами."
         case .forbidden: "Для цього профілю сімейні справи Orbit недоступні."
+        case .readOnly: "Цей профіль лише переглядає справи. Змінювати їх можуть дорослі члени родини."
         case .networkFailure: "Не вдалося перевірити сімейні справи. Перевірте з’єднання й повторіть."
         case .serverFailure: "Сімейні справи тимчасово недоступні. Спробуйте ще раз пізніше."
         }

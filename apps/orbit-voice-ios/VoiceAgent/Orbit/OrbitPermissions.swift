@@ -31,13 +31,14 @@ struct OrbitEffectivePermissions: Decodable, Equatable, Sendable {
     }
 }
 
-enum OrbitWritePermission: Sendable { case calendarWrite, contactsWrite, proposeSharedFact, reviewProposals }
+enum OrbitWritePermission: Sendable { case calendarWrite, contactsWrite, schoolWrite, proposeSharedFact, reviewProposals }
 
 extension OrbitEffectivePermissions {
     func allows(_ permission: OrbitWritePermission) -> Bool {
         switch permission {
         case .calendarWrite: return resources.calendar.write
         case .contactsWrite: return resources.contacts.write
+        case .schoolWrite: return resources.school.write
         case .proposeSharedFact: return memory.proposeSharedFactCorrection
         case .reviewProposals: return memory.reviewProposals
         }
