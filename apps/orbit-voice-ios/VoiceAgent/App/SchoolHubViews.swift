@@ -83,12 +83,13 @@ final class SchoolHubStore {
         if tasksLoadedOnce {
             sourceTasks = canonicalTasks.map { task in
                 let state = actionTasks.first { $0.kind == "source" && $0.sourceItemId == task.sourceItemId && $0.sourceTaskKey == task.key }
+                let effective = SchoolHubLogic.effectiveDue(dueAt: task.dueAt, allDay: task.allDay, planningDate: state?.planningDate)
                 return SchoolHubTask(
                     id: task.id,
                     title: task.title,
                     action: task.action,
-                    dueAt: task.dueAt,
-                    allDay: task.allDay,
+                    dueAt: effective.dueAt,
+                    allDay: effective.allDay,
                     importance: task.importance,
                     target: task.target,
                     confidence: task.confidence,
@@ -99,6 +100,8 @@ final class SchoolHubStore {
                     actionID: state?.id,
                     status: state?.status ?? task.status ?? "open",
                     planningDate: state?.planningDate,
+                    schoolDueAt: effective.schoolDueAt,
+                    schoolDueAllDay: effective.schoolAllDay,
                     identityStable: task.stableIdentity ?? true,
                     calendarEventId: calendarLinks[task.id] ?? task.calendarEventId
                 )
@@ -113,7 +116,8 @@ final class SchoolHubStore {
             }
         }
         let familyTasks = actionTasks.filter { $0.kind == "family" }.map { task in
-            SchoolHubTask(id: "family:\(task.id)", title: task.title, action: task.description.isEmpty ? nil : task.description, dueAt: task.schoolDueAt ?? task.planningDate, allDay: task.schoolDueAt == nil, importance: nil, target: nil, confidence: 1, reason: "Створено родиною в Orbit", sourceItemId: task.sourceItemId ?? "", kind: "family", actionID: task.id, status: task.status, planningDate: task.planningDate)
+            let effective = SchoolHubLogic.effectiveDue(dueAt: task.schoolDueAt, allDay: task.schoolDueAt == nil, planningDate: task.planningDate)
+            return SchoolHubTask(id: "family:\(task.id)", title: task.title, action: task.description.isEmpty ? nil : task.description, dueAt: effective.dueAt, allDay: effective.allDay, importance: nil, target: nil, confidence: 1, reason: "Створено родиною в Orbit", sourceItemId: task.sourceItemId ?? "", kind: "family", actionID: task.id, status: task.status, planningDate: task.planningDate, schoolDueAt: effective.schoolDueAt, schoolDueAllDay: effective.schoolAllDay)
         }
         return sourceTasks + familyTasks
     }
@@ -257,6 +261,32 @@ final class SchoolHubStore {
             actionTasks.append(updated)
         } catch {
             // The outcome of a failed request is unknown; re-read the confirmed state instead of guessing.
+            if let token = gate.token() { await loadActionTasks(token) }
+            throw error
+        }
+    }
+
+    /// Sets/changes the family's planned date (`YYYY-MM-DD`). Orbit-owned: the school's deadline and the source task are untouched.
+    func setPlanningDate(_ task: SchoolHubTask, dayKey: String) async throws {
+        guard actionTasksPhase == .loaded else { throw SchoolHubActionError.unavailable }
+        guard task.identityStable else { throw SchoolHubActionError.unstableIdentity }
+        guard SchoolHubLogic.date(fromDayKey: dayKey) != nil else { return }
+        guard !updatingTaskIDs.contains(task.id) else { return }
+        updatingTaskIDs.insert(task.id)
+        defer { updatingTaskIDs.remove(task.id) }
+        do {
+            let updated: OrbitSchoolActionTask
+            let revision = task.actionID.flatMap { id in actionTasks.first { $0.id == id }?.revision }
+            if task.kind == "family", let actionID = task.actionID {
+                updated = try await MainProductAPI.shared.updateSchoolActionTask(id: actionID, planningDate: dayKey, revision: revision)
+            } else {
+                guard !task.sourceItemId.isEmpty else { return }
+                updated = try await MainProductAPI.shared.planSourceSchoolTask(itemId: task.sourceItemId, taskKey: task.sourceTaskKey, planningDate: dayKey, revision: revision)
+            }
+            actionTasks.removeAll { $0.id == updated.id }
+            actionTasks.append(updated)
+        } catch {
+            // Unknown outcome: re-read the confirmed state instead of guessing.
             if let token = gate.token() { await loadActionTasks(token) }
             throw error
         }
@@ -2138,10 +2168,12 @@ private struct SchoolTaskDetailView: View {
     @State private var updating = false
     @State private var error: String?
     @State private var showCalendar = false
+    @State private var showPlanSheet = false
     @State private var pendingStatusChange: SchoolTaskStatusConfirmation?
 
     private var source: OrbitSchoolItem? { store.item(id: task.sourceItemId) }
-    private var dueKey: String? { SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) }
+    private var dueKey: String? { SchoolHubLogic.dayKey(for: task.schoolDeadlineAt, allDay: task.schoolDeadlineAllDay) }
+    private var canEditPlan: Bool { store.actionTasksPhase == .loaded && store.actionCapability.canMutate && task.identityStable }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2200,7 +2232,23 @@ private struct SchoolTaskDetailView: View {
                 detailCard {
                     Text("02  КОЛИ І КОГО СТОСУЄТЬСЯ").font(.caption.weight(.black).monospaced()).tracking(0.5)
                     Label(dueKey.map { "Термін зі школи: \(SchoolHubFormat.long($0))" } ?? "Термін джерела не вказано", systemImage: dueKey == nil ? "calendar.badge.questionmark" : "calendar.badge.clock")
-                    if let planningDate = task.planningDate, !planningDate.isEmpty { Label("Сімейний план: \(planningDate)", systemImage: "calendar") }
+                    let planKey = task.planningDayKey
+                    Label(planKey.map { "Дата виконання: \(SchoolHubFormat.long($0))" } ?? "Дату виконання не задано", systemImage: planKey == nil ? "calendar.badge.plus" : "calendar.badge.clock")
+                        .font(.callout.weight(.bold))
+                    if canEditPlan {
+                        Button { showPlanSheet = true } label: {
+                            Label(planKey == nil ? "Задати дату виконання" : "Змінити дату виконання", systemImage: "calendar")
+                                .font(.body.weight(.bold))
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                        .foregroundStyle(Routes05Tokens.accentInk)
+                        .padding(.horizontal, 10)
+                        .background(Routes05Tokens.yellow, in: RoundedRectangle(cornerRadius: 4))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1))
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("routes05-task-plan-date")
+                        Text("Дата зберігається лише в Orbit; шкільний термін не змінюється.").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                    }
                     if task.canAddToCalendar {
                         if task.calendarEventId != nil { Label("Подію вже додано до календаря Orbit", systemImage: "calendar.badge.checkmark").foregroundStyle(NovaTodayTokens.teal) }
                         else {
@@ -2263,6 +2311,9 @@ private struct SchoolTaskDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
+        .sheet(isPresented: $showPlanSheet) {
+            SchoolTaskPlanDateSheet(initialDayKey: task.planningDayKey ?? dueKey) { dayKey in try await store.setPlanningDate(task, dayKey: dayKey) }
+        }
         .alert("Стан справи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
         }
     }
@@ -2304,6 +2355,59 @@ private struct SchoolTaskDetailView: View {
             defer { updating = false }
             do { try await store.setTaskStatus(task, completed: completed) }
             catch { self.error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
+        }
+    }
+}
+
+/// Picks the family's planned execution date of a task (Orbit-owned; the school's deadline is never changed).
+private struct SchoolTaskPlanDateSheet: View {
+    let onSave: (String) async throws -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var date: Date
+    @State private var saving = false
+    @State private var error: String?
+
+    init(initialDayKey: String?, onSave: @escaping (String) async throws -> Void) {
+        self.onSave = onSave
+        _date = State(initialValue: initialDayKey.flatMap { SchoolHubLogic.date(fromDayKey: $0) } ?? Date())
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 14) {
+                DatePicker("Дата виконання", selection: $date, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .environment(\.locale, Locale(identifier: "uk_UA"))
+                    .environment(\.timeZone, SchoolHubLogic.schoolTimeZone)
+                Text("Дата зберігається лише в Orbit; шкільний термін не змінюється.").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+                Button { save() } label: {
+                    Group { if saving { ProgressView() } else { Text("Зберегти дату").font(.body.weight(.bold)) } }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .foregroundStyle(Routes05Tokens.accentInk)
+                .background(Routes05Tokens.yellow, in: RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1))
+                .buttonStyle(.plain)
+                .disabled(saving)
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .navigationTitle("Дата виконання")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Скасувати") { dismiss() }.disabled(saving) } }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func save() {
+        guard !saving else { return }
+        saving = true; error = nil
+        let key = SchoolHubLogic.dayKey(of: date)
+        Task {
+            defer { saving = false }
+            do { try await onSave(key); dismiss() }
+            catch { self.error = "Не вдалося зберегти дату. Перевірте з’єднання й повторіть." }
         }
     }
 }

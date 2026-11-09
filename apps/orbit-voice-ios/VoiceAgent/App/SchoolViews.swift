@@ -1,6 +1,16 @@
 import SwiftUI
 import UIKit
 
+/// Opens a Schulmanager universal link in the Schulmanager app when it handles the URL
+/// (`online.schulmanager.app` claims login.schulmanager-online.de), otherwise in the browser.
+@MainActor enum OrbitSchulmanagerOpener {
+    static func open(_ url: URL) {
+        UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { opened in
+            if !opened { UIApplication.shared.open(url) }
+        }
+    }
+}
+
 private let schoolUkrainianCalendar: Calendar = {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -701,7 +711,7 @@ struct SchoolDetailView: View {
                     .background(Routes05Tokens.surface)
                     .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
                     if let sourceURL = sourceLinkURL {
-                        Link(destination: sourceURL) {
+                        Button { OrbitSchulmanagerOpener.open(sourceURL) } label: {
                             Label("Відкрити лист у Schulmanager", systemImage: "arrow.up.right.square")
                                 .font(.subheadline.weight(.bold))
                                 .frame(maxWidth: .infinity, minHeight: 44)
@@ -717,7 +727,7 @@ struct SchoolDetailView: View {
                     if !item.sender.isEmpty { Text("Відправник: \(item.sender)").font(.caption).foregroundStyle(.secondary) }
                     Text(item.unread ? "Стан в Orbit: непрочитано" : "Стан в Orbit: прочитано").font(.caption).foregroundStyle(.secondary)
                     if let sourceURL = sourceLinkURL {
-                        Link(destination: sourceURL) {
+                        Button { OrbitSchulmanagerOpener.open(sourceURL) } label: {
                             Label("Відкрити оригінал у Schulmanager", systemImage: "arrow.up.right.square")
                                 .font(.subheadline.weight(.bold))
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -804,9 +814,10 @@ struct SchoolDetailView: View {
             }
         } else if let fallback = sourceLinkURL {
             // Orbit never stores file bytes or download URLs; the file lives in Schulmanager.
-            Link(destination: fallback) {
+            Button { OrbitSchulmanagerOpener.open(fallback) } label: {
                 attachmentLabel(file).foregroundStyle(.primary)
             }
+            .buttonStyle(.plain)
         } else {
             attachmentLabel(file)
         }

@@ -706,6 +706,12 @@ final class MainProductAPI {
     func completeSchoolActionTask(id: String) async throws -> OrbitSchoolActionTask { try await changeSchoolActionTask(path: "/api/school/actions/tasks/\(id)/complete") }
     func reopenSchoolActionTask(id: String) async throws -> OrbitSchoolActionTask { try await changeSchoolActionTask(path: "/api/school/actions/tasks/\(id)/reopen") }
     func completeSourceSchoolTask(itemId: String, taskKey: String) async throws -> OrbitSchoolActionTask { try await changeSchoolActionTask(path: "/api/school/actions/tasks/source/complete", body: ["sourceItemId": itemId, "sourceTaskKey": taskKey]) }
+    /// Sets/changes the family's planned date (`YYYY-MM-DD`) of a school source task; Orbit-owned state only.
+    func planSourceSchoolTask(itemId: String, taskKey: String, planningDate: String, revision: Int? = nil) async throws -> OrbitSchoolActionTask {
+        struct Payload: Encodable { let sourceItemId: String; let sourceTaskKey: String; let planningDate: String; let revision: Int? }
+        struct Response: Decodable { let task: OrbitSchoolActionTask }
+        return try await request(path: "/api/school/actions/tasks/source/plan", method: "POST", body: try encoder.encode(Payload(sourceItemId: itemId, sourceTaskKey: taskKey, planningDate: planningDate, revision: revision)), as: Response.self).task
+    }
     func reopenSourceSchoolTask(itemId: String, taskKey: String) async throws -> OrbitSchoolActionTask { try await changeSchoolActionTask(path: "/api/school/actions/tasks/source/reopen", body: ["sourceItemId": itemId, "sourceTaskKey": taskKey]) }
     private func changeSchoolActionTask(path: String, body: [String: String] = [:]) async throws -> OrbitSchoolActionTask { struct Response: Decodable { let task: OrbitSchoolActionTask }; let data = try JSONSerialization.data(withJSONObject: body); return try await request(path: path, method: "POST", body: data, as: Response.self).task }
     func schoolActionChecklists() async throws -> OrbitSchoolActionChecklistsResponse { try await request(path: "/api/school/actions/checklists", cachePolicy: .reloadIgnoringLocalCacheData) }
