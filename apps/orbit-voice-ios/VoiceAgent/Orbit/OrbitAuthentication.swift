@@ -104,13 +104,15 @@ final class OrbitAuthentication: ObservableObject {
             isPaired = KeychainStore.readDeviceToken() != nil
         }
         guard let token = KeychainStore.readDeviceToken(), let url = URL(string: "https://voice.orbit.opik.net/api/me") else { identityResolved = true; return }
-        struct Response: Decodable { struct Profile: Decodable { let displayName: String?; let personId: String }; let profile: Profile }
+        struct Response: Decodable { struct Profile: Decodable { let displayName: String?; let personId: String; let isMinor: Bool? }; let profile: Profile; let permissions: OrbitEffectivePermissions? }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         defer { identityResolved = true }
         guard let (data, response) = try? await URLSession.shared.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200,
               let value = try? JSONDecoder().decode(Response.self, from: data) else { return }
         personId = value.profile.personId; principalPersonId = value.profile.personId
+        // Permission-aware UX only; the backend enforces. An unknown profile (no isMinor, no contract) keeps the adult default.
+        OrbitPermissionStore.shared.update(value.permissions, isMinor: value.profile.isMinor)
     }
 
     private func restoreSession(token: String) async -> Bool {
@@ -165,6 +167,7 @@ final class OrbitAuthentication: ObservableObject {
 
     func forgetDevice() {
         KeychainStore.removeSessionToken()
+        OrbitPermissionStore.shared.reset()
         KeychainStore.removeDeviceToken()
         hasAccountSession = false
         UserDefaults.standard.removeObject(forKey: "orbit.displayName")

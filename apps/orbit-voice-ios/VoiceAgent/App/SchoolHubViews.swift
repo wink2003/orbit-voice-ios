@@ -2089,7 +2089,7 @@ private struct SchoolTaskRow: View {
             }
             .contextMenu {
                 if task.canAddToCalendar && task.calendarEventId == nil {
-                    Button { showCalendar = true } label: { Label("Додати до календаря", systemImage: "calendar.badge.plus") }
+                    Button { showCalendar = true } label: { Label("Додати до календаря", systemImage: "calendar.badge.plus") }.orbitRequires(.calendarWrite)
                 }
             }
             .sheet(isPresented: $showCalendar) { SchoolTaskCalendarSheet(store: store, task: task) }
@@ -2262,6 +2262,7 @@ private struct SchoolTaskDetailView: View {
                             .background(Routes05Tokens.mint, in: RoundedRectangle(cornerRadius: 4))
                             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1))
                             .buttonStyle(.plain)
+                            .orbitRequires(.calendarWrite)
                         }
                     }
                 }

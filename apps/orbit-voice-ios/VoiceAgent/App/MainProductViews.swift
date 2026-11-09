@@ -216,7 +216,7 @@ private struct OrbitCalendarLegacyView: View {
             .navigationTitle("Календар")
             .navigationBarTitleDisplayMode(.inline)
             .environment(\.locale, Locale(identifier: "uk_UA"))
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { editingEvent = nil; showingEditor = true } label: { Image(systemName: "plus") } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { editingEvent = nil; showingEditor = true } label: { Image(systemName: "plus") }.orbitRequires(.calendarWrite) } }
             .task { await load() }
             .refreshable { await load() }
             .sheet(isPresented: $showingEditor) {
@@ -327,6 +327,7 @@ private struct OrbitCalendarLegacyView: View {
             Button(role: .destructive) { deleteCandidate = event } label: {
                 Label("Видалити", systemImage: "trash")
             }
+            .orbitRequires(.calendarWrite)
         }
         } else {
             VStack(alignment: .leading, spacing: 5) {
@@ -672,7 +673,7 @@ struct OrbitContactsView: View {
         .searchable(text: $query, prompt: "Знайти контакт")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { editor = nil; showingEditor = true } label: { Image(systemName: "plus") }
+                Button { editor = nil; showingEditor = true } label: { Image(systemName: "plus") }.orbitRequires(.contactsWrite)
             }
         }
         .task { await load() }
@@ -843,8 +844,8 @@ private struct OrbitContactDetailView: View {
                 }
             }
             Section {
-                Button("Редагувати") { showingEditor = true }
-                Button("Архівувати контакт", role: .destructive) { showingArchive = true }
+                Button("Редагувати") { showingEditor = true }.orbitRequires(.contactsWrite)
+                Button("Архівувати контакт", role: .destructive) { showingArchive = true }.orbitRequires(.contactsWrite)
             }
         }
         .navigationTitle(current.displayName)
@@ -889,6 +890,8 @@ struct MemoryCenterView: View {
     @State private var isLoading = true
     @State private var error: Error?
     @State private var correctingAssertion: OrbitMemoryAssertion?
+    @State private var proposingAssertion: OrbitMemoryAssertion?
+    @ObservedObject private var permissions = OrbitPermissionStore.shared
     @AppStorage("orbit.memory.showHistory") private var showHistory = false
 
     var body: some View {
@@ -923,11 +926,16 @@ struct MemoryCenterView: View {
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
                                 .listRowBackground(Color.clear)
                             }
+                            if permissions.allows(.reviewProposals) {
+                                Section {
+                                    NavigationLink { MemoryProposalsReviewView() } label: { Label("Пропозиції від родини", systemImage: "tray.full") }
+                                } footer: { Text("Діти можуть запропонувати виправлення спільних фактів. Затверджений факт змінюється лише після вашого рішення.") }
+                            }
                             if !response.assertions.isEmpty {
                                 Section("Факти та вподобання") {
                                     ForEach(response.assertions) { assertion in
                                         NavigationLink {
-                                            MemoryAssertionDetailView(assertion: assertion) { correctingAssertion = assertion }
+                                            MemoryAssertionDetailView(assertion: assertion, onPropose: { proposingAssertion = assertion }) { correctingAssertion = assertion }
                                         } label: {
                                             MemoryAssertionRow(assertion: assertion)
                                         }
@@ -987,6 +995,11 @@ struct MemoryCenterView: View {
                 MemoryCorrectionSheet(assertion: assertion) {
                     try await MainProductAPI.shared.correctMemoryAssertion(id: assertion.id, correction: $0)
                     await load()
+                }
+            }
+            .sheet(item: $proposingAssertion) { assertion in
+                MemoryCorrectionSheet(assertion: assertion, isProposal: true) {
+                    try await MainProductAPI.shared.proposeMemoryCorrection(targetAssertionId: assertion.id, value: $0, clientRequestId: UUID().uuidString)
                 }
             }
             .alert("Помилка пам’яті", isPresented: .constant(error != nil && response != nil)) {
@@ -1167,7 +1180,9 @@ private struct MemoryAssertionRow: View {
 
 private struct MemoryAssertionDetailView: View {
     let assertion: OrbitMemoryAssertion
+    var onPropose: (() -> Void)? = nil
     let onCorrect: () -> Void
+    @ObservedObject private var permissions = OrbitPermissionStore.shared
 
     var body: some View {
         List {
@@ -1207,6 +1222,15 @@ private struct MemoryAssertionDetailView: View {
                 if let timestamp = assertion.sourceTimestamp { LabeledContent("Дата джерела", value: memoryDateTime(timestamp)) }
                 Text("Orbit зберігає історію змін, щоб старі відомості не ставали поточними непомітно.")
                     .font(.footnote).foregroundStyle(.secondary)
+            }
+            if !assertion.canCorrect, assertion.status == "active", assertion.valueType == "text", let onPropose, permissions.allows(.proposeSharedFact) {
+                Section {
+                    Button { onPropose() } label: {
+                        Label("Запропонувати виправлення", systemImage: "text.badge.plus")
+                    }
+                } footer: {
+                    Text("Затверджений факт не зміниться, доки дорослий не підтвердить пропозицію.")
+                }
             }
             if assertion.canCorrect {
                 Section {
@@ -1253,6 +1277,7 @@ private struct MemorySuccessorDetailView: View {
 private struct MemoryCorrectionSheet: View {
     @Environment(\.dismiss) private var dismiss
     let assertion: OrbitMemoryAssertion
+    var isProposal = false
     let onSave: (String) async throws -> Void
     @State private var correction = ""
     @State private var isSaving = false
@@ -1269,16 +1294,16 @@ private struct MemoryCorrectionSheet: View {
                         .lineLimit(2 ... 5)
                 }
                 Section {
-                    Text("Orbit збереже нове значення як актуальне, а попереднє — як історію.")
+                    Text(isProposal ? "Це лише пропозиція: поточний факт залишиться без змін, доки дорослий не підтвердить її." : "Orbit збереже нове значення як актуальне, а попереднє — як історію.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Виправити пам’ять")
+            .navigationTitle(isProposal ? "Запропонувати виправлення" : "Виправити пам’ять")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Зберегти") { Task { await save() } }
+                    Button(isProposal ? "Надіслати" : "Зберегти") { Task { await save() } }
                         .disabled(correction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
@@ -1294,6 +1319,51 @@ private struct MemoryCorrectionSheet: View {
         do {
             try await onSave(correction.trimmingCharacters(in: .whitespacesAndNewlines))
             dismiss()
+        } catch { self.error = error }
+    }
+}
+
+private struct MemoryProposalsReviewView: View {
+    @State private var proposals: [OrbitMemoryProposal] = []
+    @State private var isLoading = true
+    @State private var error: Error?
+
+    var body: some View {
+        List {
+            if proposals.isEmpty && !isLoading {
+                ContentUnavailableView("Немає пропозицій", systemImage: "tray", description: Text("Нових пропозицій від родини немає."))
+            }
+            ForEach(proposals) { proposal in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(proposal.kind == "correct" ? "Пропозиція виправлення" : "Новий факт").font(.caption).foregroundStyle(.secondary)
+                    Text(proposal.value).font(.body.weight(.medium))
+                    HStack {
+                        Button("Затвердити") { Task { await decide(proposal, approve: true) } }.buttonStyle(.borderedProminent)
+                        Button("Відхилити", role: .destructive) { Task { await decide(proposal, approve: false) } }.buttonStyle(.bordered)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .navigationTitle("Пропозиції")
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay { if isLoading { ProgressView() } }
+        .task { await load() }
+        .alert("Не вдалося виконати", isPresented: .constant(error != nil)) {
+            Button("Гаразд") { error = nil }
+        } message: { Text(error?.localizedDescription ?? "Спробуйте ще раз.") }
+    }
+
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do { proposals = try await MainProductAPI.shared.pendingMemoryProposals() } catch { self.error = error }
+    }
+
+    private func decide(_ proposal: OrbitMemoryProposal, approve: Bool) async {
+        do {
+            try await MainProductAPI.shared.decideMemoryProposal(id: proposal.id, approve: approve)
+            proposals.removeAll { $0.id == proposal.id }
         } catch { self.error = error }
     }
 }
