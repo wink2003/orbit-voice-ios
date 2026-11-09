@@ -922,6 +922,27 @@ extension SchoolHubLogic {
         return dayKey(of: sourceDate)
     }
 
+    /// Civil day of a letter event: all-day events are calendar dates (UTC), timed events use the school time zone.
+    static func eventDayKey(startsAt: Date?, allDay: Bool) -> String? {
+        guard let startsAt else { return nil }
+        if !allDay { return dayKey(of: startsAt) }
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        let parts = utc.dateComponents([.year, .month, .day], from: startsAt)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+
+    /// Tasks of the same letter whose SCHOOL deadline falls on the event's civil day ("Дати / дедлайни" <-> "Що потрібно").
+    /// Matches on the original deadline, so a family-planned date does not break the link; no deadline => no link.
+    static func linkedTasks(eventDay: String?, sourceItemId: String, tasks: [SchoolHubTask]) -> [SchoolHubTask] {
+        guard let eventDay else { return [] }
+        return tasks.filter { task in
+            guard task.sourceItemId == sourceItemId else { return false }
+            let deadline = task.schoolDueAt ?? task.dueAt
+            return dayKey(for: deadline, allDay: task.schoolDueAt != nil ? task.schoolDueAllDay : task.allDay) == eventDay
+        }
+    }
+
     /// What a task row shows about its date: the authoritative effective day, whether it came from the letter, and overdue state.
     static func dueMeta(_ task: SchoolHubTask, today: String, sourceDates: [String: Date]) -> SchoolTaskDueMeta {
         let day = effectiveTaskDay(task, sourceDates: sourceDates)

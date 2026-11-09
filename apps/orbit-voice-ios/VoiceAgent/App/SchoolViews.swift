@@ -609,7 +609,14 @@ struct SchoolDetailView: View {
     let initialItem: OrbitSchoolItem
     @State private var refreshedItem: OrbitSchoolItem?
     private var item: OrbitSchoolItem { refreshedItem ?? initialItem }
-    init(item: OrbitSchoolItem) { self.initialItem = item }
+    /// Shared hub store (tasks + capability). Nil when opened from a surface without one: a private store is then loaded on demand.
+    private let injectedStore: SchoolHubStore?
+    @State private var ownStore: SchoolHubStore?
+    @State private var pendingTask: SchoolHubTask?
+    @State private var calendarTask: SchoolHubTask?
+    @State private var taskError: String?
+    private var hubStore: SchoolHubStore? { injectedStore ?? ownStore }
+    init(item: OrbitSchoolItem, store: SchoolHubStore? = nil) { self.initialItem = item; self.injectedStore = store }
     @Environment(\.dismiss) private var dismiss
     @State private var calendarMessage: String?
     @State private var pendingCalendarEvent: OrbitSchoolEvent?
@@ -656,30 +663,18 @@ struct SchoolDetailView: View {
                     detailHeader("Що потрібно")
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: "list.bullet.circle")
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 19, height: 19)
-                                    .accessibilityHidden(true)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(task.title ?? task.action ?? "Справа").font(.callout.weight(.medium))
-                                    if let action = task.action, action != task.title { Text(action).font(.caption).foregroundStyle(.secondary) }
-                                    Text(task.dueAt.map { $0.count == 10 ? OrbitSchoolCivilDate.formatted($0) : (OrbitSchoolDateDecoding.date(from: $0).map(schoolLocalizedInstant) ?? $0) } ?? "Без дати · лишається відкритою")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
-                                Spacer()
+                            if let hub = hubTask(for: task) {
+                                Routes05TaskRow(task: hub, store: hubStore!, onStatus: { pendingTask = hub }, onCalendar: { calendarTask = hub })
+                            } else {
+                                staticTaskRow(task)
                             }
-                            .padding(.vertical, 9)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel("\(task.title ?? task.action ?? "Справа"). Виконання ще не підтримується.")
-                            if tasks.last?.key != task.key { Divider() }
+                            if tasks.last?.key != task.key { Rectangle().fill(Routes05Tokens.rule).frame(height: 1) }
                         }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
-                    .foregroundStyle(Routes05Tokens.accentInk)
-                    .background(Routes05Tokens.yellow)
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.3))
+                    .background(Routes05Tokens.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.ink, lineWidth: 1.2))
                 } else {
                     detailHeader("Що потрібно")
                     Text("У цьому листі немає справ для батьків.").font(.footnote).foregroundStyle(.secondary)
@@ -742,6 +737,26 @@ struct SchoolDetailView: View {
                             Label(event.title, systemImage: "calendar.badge.plus").font(.callout.weight(.bold))
                             if event.startsAt != nil { Text(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)).font(.caption) }
                             if let location = event.location { Text(location).font(.caption).foregroundStyle(.secondary) }
+                            ForEach(linkedHubTasks(for: event)) { linked in
+                                NavigationLink { SchoolTaskDetailView(store: hubStore!, task: linked) } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "link").font(.caption.weight(.black))
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text("Справа створена").font(.caption2.weight(.black).monospaced())
+                                            Text(linked.title).font(.footnote.weight(.semibold)).lineLimit(2).multilineTextAlignment(.leading)
+                                        }
+                                        Spacer(minLength: 4)
+                                        if linked.calendarEventId != nil { Label("У календарі", systemImage: "calendar.badge.checkmark").font(.caption2.weight(.black)) }
+                                        Image(systemName: "chevron.right").font(.caption.weight(.bold))
+                                    }
+                                    .foregroundStyle(Routes05Tokens.accentInk)
+                                    .padding(.horizontal, 10).padding(.vertical, 8).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                    .background(Routes05Tokens.yellow, in: RoundedRectangle(cornerRadius: 4))
+                                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.2))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Справа створена: \(linked.title)\(linked.calendarEventId != nil ? ", вже в календарі" : "")")
+                            }
                             Button("Додати до календаря") { Task { await add(event) } }
                                 .orbitRequires(.calendarWrite)
                                 .font(.callout.weight(.bold))
@@ -796,6 +811,19 @@ struct SchoolDetailView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
+        .task { await ensureHubStore() }
+        .sheet(item: $calendarTask) { task in if let store = hubStore { SchoolTaskCalendarSheet(store: store, task: task) } }
+        .confirmationDialog(pendingTask.map { $0.status == "completed" ? "Повернути справу у відкриті?" : "Позначити справу виконаною?" } ?? "Змінити стан справи?", isPresented: Binding(get: { pendingTask != nil }, set: { if !$0 { pendingTask = nil } }), titleVisibility: .visible) {
+            if let task = pendingTask, let store = hubStore {
+                Button(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною") {
+                    pendingTask = nil
+                    let completed = task.status != "completed"
+                    Task { do { try await store.setTaskStatus(task, completed: completed) } catch { taskError = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." } }
+                }
+            }
+            Button("Скасувати", role: .cancel) { pendingTask = nil }
+        } message: { Text(pendingTask?.title ?? "") }
+        .alert("Стан справи", isPresented: Binding(get: { taskError != nil }, set: { if !$0 { taskError = nil } })) { Button("Гаразд", role: .cancel) {} } message: { Text(taskError ?? "") }
         .alert("Скопійовано", isPresented: $copyNotice) { Button("Гаразд", role: .cancel) {} } message: { Text("Текст доступний для виділення та копіювання.") }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
@@ -857,6 +885,35 @@ struct SchoolDetailView: View {
         return formatter.string(from: start)
     }
     private var calendarPreviewMessage: String { guard let event = pendingCalendarEvent else { return "" }; var lines = [event.title]; if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location, !location.isEmpty { lines.append(location) }; return lines.joined(separator: "\n") }
+    private func ensureHubStore() async {
+        guard injectedStore == nil, ownStore == nil else { return }
+        let store = SchoolHubStore()
+        ownStore = store
+        await store.load()
+    }
+    /// The hub (Справи) task that corresponds to a task listed in this letter, if one exists.
+    private func hubTask(for task: OrbitSchoolItemTask) -> SchoolHubTask? {
+        guard let store = hubStore, let key = task.key, !key.isEmpty else { return nil }
+        return store.hubTasks.first { $0.sourceItemId == item.id && ($0.sourceTaskKey == key || $0.id == key) }
+    }
+    private func linkedHubTasks(for event: OrbitSchoolEvent) -> [SchoolHubTask] {
+        guard let store = hubStore else { return [] }
+        return SchoolHubLogic.linkedTasks(eventDay: SchoolHubLogic.eventDayKey(startsAt: event.startsAt, allDay: event.allDay), sourceItemId: item.id, tasks: store.hubTasks)
+    }
+    private func staticTaskRow(_ task: OrbitSchoolItemTask) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "list.bullet.circle").foregroundStyle(.secondary).frame(width: 19, height: 19).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title ?? task.action ?? "Справа").font(.callout.weight(.medium))
+                if let action = task.action, action != task.title { Text(action).font(.caption).foregroundStyle(.secondary) }
+                Text(task.dueAt.map { $0.count == 10 ? OrbitSchoolCivilDate.formatted($0) : (OrbitSchoolDateDecoding.date(from: $0).map(schoolLocalizedInstant) ?? $0) } ?? "Без дати · лишається відкритою")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 9)
+        .accessibilityElement(children: .combine)
+    }
     private func add(_ event: OrbitSchoolEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false); if preview.duplicate == true { calendarMessage = "Подію вже додано." } else if preview.requiresConfirmation == true { pendingCalendarEvent = event } else { calendarMessage = "Не вдалося підготувати подію." } } catch { calendarMessage = "Не вдалося додати подію." } }
     private func confirm(_ event: OrbitSchoolEvent) async { do { let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true); calendarMessage = result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.") } catch { calendarMessage = "Не вдалося додати подію." } }
 }

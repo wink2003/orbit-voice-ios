@@ -1932,7 +1932,7 @@ private struct SchoolOverviewView: View {
         return Section {
             if unread.isEmpty { SchoolNotice(text: store.itemsPhase == .loaded ? "Непрочитаних у Orbit немає." : "Листи не завантажено.", systemImage: "envelope.open") }
             ForEach(Array(unread)) { item in
-                NavigationLink { SchoolDetailView(item: item) } label: { SchoolLetterRow(item: item) }
+                NavigationLink { SchoolDetailView(item: item, store: store) } label: { SchoolLetterRow(item: item) }
             }
         } header: {
             SchoolSectionHeader(title: "Нове від школи", count: allUnread.count, linkTitle: "Усе") { navigate(.letters) }
@@ -2176,7 +2176,7 @@ private struct SchoolTaskRow: View {
     }
 }
 
-private struct SchoolTaskDetailView: View {
+struct SchoolTaskDetailView: View {
     let store: SchoolHubStore
     let task: SchoolHubTask
     @Environment(\.dismiss) private var dismiss
@@ -2285,7 +2285,7 @@ private struct SchoolTaskDetailView: View {
                 if task.kind == "source" {
                     detailCard {
                         Text("03  ПОВ’ЯЗАНИЙ ЛИСТ").font(.caption.weight(.black).monospaced())
-                        if let source { NavigationLink { SchoolDetailView(item: source) } label: { Label("Відкрити лист або повідомлення", systemImage: source.type == "letter" ? "envelope.open" : "message") }.foregroundStyle(Routes05Tokens.blue).frame(minHeight: OrbitSpacing.minTarget) }
+                        if let source { NavigationLink { SchoolDetailView(item: source, store: store) } label: { Label("Відкрити лист або повідомлення", systemImage: source.type == "letter" ? "envelope.open" : "message") }.foregroundStyle(Routes05Tokens.blue).frame(minHeight: OrbitSpacing.minTarget) }
                         else { Label("Пов’язаний лист зараз недоступний", systemImage: "exclamationmark.triangle").foregroundStyle(.secondary) }
                     }
                 }
@@ -2868,7 +2868,7 @@ struct LiveSchoolTaskCalendarService: SchoolTaskCalendarService {
     }
 }
 
-private struct SchoolTaskCalendarSheet: View {
+struct SchoolTaskCalendarSheet: View {
     let store: SchoolHubStore
     let task: SchoolHubTask
     @Environment(\.dismiss) private var dismiss
@@ -3295,7 +3295,7 @@ private struct SchoolTimelineView: View {
         switch entry.kind {
         case .letter:
             if let id = entry.sourceItemId, let item = store.item(id: id) {
-                NavigationLink { SchoolDetailView(item: item) } label: { timelineRow(entry) }
+                NavigationLink { SchoolDetailView(item: item, store: store) } label: { timelineRow(entry) }
             } else if let id = entry.sourceItemId {
                 NavigationLink { SchoolDetailLoaderView(itemID: id) } label: { timelineRow(entry) }
             }
@@ -3354,7 +3354,7 @@ private struct SchoolUnifiedSearchView: View {
                 if !letters.isEmpty {
                     Section("Листи й повідомлення · \(letters.count)") {
                         ForEach(letters) { letter in
-                            if let item = store.item(id: letter.id) { NavigationLink { SchoolDetailView(item: item) } label: { searchLetterRow(letter) } }
+                            if let item = store.item(id: letter.id) { NavigationLink { SchoolDetailView(item: item, store: store) } label: { searchLetterRow(letter) } }
                         }
                     }
                 }
@@ -3410,7 +3410,7 @@ private struct SchoolSearchResultsView: View {
                 ContentUnavailableView.search(text: query)
             }
             if !letters.isEmpty {
-                Section { ForEach(letters) { letter in if let item = store.item(id: letter.id) { NavigationLink { SchoolDetailView(item: item) } label: { VStack(alignment: .leading, spacing: 3) { Text(letter.title.isEmpty ? (letter.type == "letter" ? "Лист" : "Повідомлення") : letter.title).font(.headline).lineLimit(2); Text(letter.translation ?? letter.originalText).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }.frame(minHeight: OrbitSpacing.minTarget, alignment: .leading) } } } } header: { SchoolSectionHeader(title: "Листи", systemImage: "envelope", count: letters.count) }
+                Section { ForEach(letters) { letter in if let item = store.item(id: letter.id) { NavigationLink { SchoolDetailView(item: item, store: store) } label: { VStack(alignment: .leading, spacing: 3) { Text(letter.title.isEmpty ? (letter.type == "letter" ? "Лист" : "Повідомлення") : letter.title).font(.headline).lineLimit(2); Text(letter.translation ?? letter.originalText).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }.frame(minHeight: OrbitSpacing.minTarget, alignment: .leading) } } } } header: { SchoolSectionHeader(title: "Листи", systemImage: "envelope", count: letters.count) }
             }
             if !events.isEmpty {
                 Section { ForEach(events) { event in if let source = store.calendarEvent(uid: event.uid) { NavigationLink { SchoolEventDetailView(event: source) } label: { SchoolEventRow(event: event, showDay: true) } } } } header: { SchoolSectionHeader(title: "Події", systemImage: "calendar", count: events.count) }
@@ -3565,7 +3565,7 @@ private struct Routes05SchoolTasksProductionView: View {
 }
 
 
-private struct Routes05TaskRow: View {
+struct Routes05TaskRow: View {
     let task: SchoolHubTask
     let store: SchoolHubStore
     let onStatus: () -> Void

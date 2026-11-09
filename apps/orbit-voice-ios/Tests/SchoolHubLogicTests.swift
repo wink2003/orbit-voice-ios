@@ -507,6 +507,20 @@ struct SchoolHubLogicTests {
         let plain = SchoolHubTask(id: "i1:k2", title: "t", action: nil, dueAt: "2026-11-20", allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "i1")
         precondition(plain.planningDayKey == nil && plain.schoolDeadlineAt == "2026-11-20" && plain.schoolDeadlineAllDay, "school deadline accessor without a plan")
 
+        // Letter event <-> task link: matches the school deadline's civil day within the same letter only.
+        let evDay = Date(timeIntervalSince1970: 1_795_996_800) // 2026-11-29T00:00:00Z... checked via key below
+        let evKey = SchoolHubLogic.eventDayKey(startsAt: evDay, allDay: true)
+        precondition(evKey != nil && evKey!.count == 10, "all-day event day key")
+        precondition(SchoolHubLogic.eventDayKey(startsAt: nil, allDay: true) == nil, "no start -> no day")
+        let linkedA = SchoolHubTask(id: "L1:k1", title: "a", action: nil, dueAt: evKey, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "L1")
+        let otherLetter = SchoolHubTask(id: "L2:k1", title: "b", action: nil, dueAt: evKey, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "L2")
+        let otherDay = SchoolHubTask(id: "L1:k2", title: "c", action: nil, dueAt: "2000-01-01", allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "L1")
+        var planned = SchoolHubTask(id: "L1:k3", title: "d", action: nil, dueAt: "2000-02-02", allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "L1")
+        planned.schoolDueAt = evKey; planned.schoolDueAllDay = true
+        let links = SchoolHubLogic.linkedTasks(eventDay: evKey, sourceItemId: "L1", tasks: [linkedA, otherLetter, otherDay, planned])
+        precondition(links.map(\.id) == ["L1:k1", "L1:k3"], "link by school deadline, same letter only, plan does not break it")
+        precondition(SchoolHubLogic.linkedTasks(eventDay: nil, sourceItemId: "L1", tasks: [linkedA]).isEmpty, "no event day -> no link")
+
         print("school hub logic tests passed")
     }
 }
