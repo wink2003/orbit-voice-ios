@@ -3467,10 +3467,12 @@ private struct Routes05SchoolTasksProductionView: View {
                         ContentUnavailableView(query.isEmpty ? "Справ не знайдено" : "Нічого не знайдено", systemImage: "checklist", description: Text("Оберіть інший фільтр або оновіть дані."))
                             .padding(.vertical, 24)
                     } else {
-                        ForEach(Routes05TaskGroup.allCases, id: \.self) { group in
-                            let groupTasks = tasks.filter { taskGroup($0) == group }
-                            if !groupTasks.isEmpty { taskGroupView(group, tasks: groupTasks) }
-                        }
+                        // Four groups, ascending by the authoritative backend effective date (shared, tested logic).
+                        let sections = SchoolHubLogic.taskSections(tasks, filter: .all, today: today, sourceDates: store.sourceDates, now: Date())
+                        taskGroupView("Прострочені", tasks: sections.overdue)
+                        taskGroupView("Цей тиждень", tasks: sections.thisWeek)
+                        taskGroupView("Наступний тиждень", tasks: sections.nextWeek)
+                        taskGroupView("Далі", tasks: sections.later)
                     }
                     Text("Статус справ і дані зі шкільних джерел відображаються окремо. Зміни виконуються лише після перевірки прав та підтвердження.")
                         .font(.footnote).foregroundStyle(Routes05Tokens.secondary)
@@ -3544,21 +3546,14 @@ private struct Routes05SchoolTasksProductionView: View {
         if !store.actionCapability.canMutate && store.actionCapability != .unknown { Label(store.actionCapability.message, systemImage: "lock").font(.footnote).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.bottom, 8) }
     }
 
-    private func taskGroup(_ task: SchoolHubTask) -> Routes05TaskGroup {
-        guard let key = SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay) else { return .undated }
-        if key == today { return .today }
-        let week = Set(SchoolHubLogic.weekDays(containing: today))
-        return week.contains(key) ? .thisWeek : .later
-    }
-
-    private func taskGroupView(_ group: Routes05TaskGroup, tasks: [SchoolHubTask]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(group.title).font(.system(.title3, design: .rounded).weight(.black)).padding(.bottom, 9)
+    @ViewBuilder private func taskGroupView(_ title: String, tasks: [SchoolHubTask]) -> some View {
+        if !tasks.isEmpty { VStack(alignment: .leading, spacing: 0) {
+            Text(title).font(.system(.title3, design: .rounded).weight(.black)).padding(.bottom, 9)
             ForEach(tasks) { task in
                 Routes05TaskRow(task: task, store: store, onStatus: { pendingTask = task }, onCalendar: { calendarTask = task })
                 Rectangle().fill(Routes05Tokens.rule).frame(height: 1)
             }
-        }.padding(.horizontal, 16).padding(.top, 16)
+        }.padding(.horizontal, 16).padding(.top, 16) }
     }
 
     private func confirm(_ task: SchoolHubTask) {
@@ -3568,13 +3563,17 @@ private struct Routes05SchoolTasksProductionView: View {
     }
 }
 
-private enum Routes05TaskGroup: CaseIterable { case today, thisWeek, later, undated; var title: String { self == .today ? "Сьогодні" : self == .thisWeek ? "Цього тижня" : self == .later ? "Інші дати" : "Без дати" } }
 
 private struct Routes05TaskRow: View {
     let task: SchoolHubTask
     let store: SchoolHubStore
     let onStatus: () -> Void
     let onCalendar: () -> Void
+    private var dueText: String {
+        let meta = SchoolHubLogic.dueMeta(task, today: SchoolHubLogic.dayKey(of: Date()), sourceDates: store.sourceDates)
+        let parts: [String?] = [meta.day.map(SchoolHubFormat.shortDay), meta.fromLetter ? "дата листа" : nil, meta.overdue ? "Прострочено" : nil, task.provenanceLabel, task.target]
+        return parts.compactMap { $0 }.joined(separator: " · ")
+    }
     private var evidence: SchoolEvidence { let item = store.item(id: task.sourceItemId); return SchoolHubLogic.evidence(forTask: task, sourceLoaded: item != nil, activeNames: store.studentNames, sourceText: item?.originalPlainText ?? item?.originalGerman ?? "") }
     var body: some View {
         HStack(spacing: 10) {
@@ -3582,7 +3581,7 @@ private struct Routes05TaskRow: View {
             NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 5) { Text(task.title).font(.system(.body, design: .rounded).weight(.bold)).multilineTextAlignment(.leading); if evidence == .needsVerification { Image(systemName: "exclamationmark.triangle").foregroundStyle(Routes05Tokens.orange) } }
-                    Text([task.dueAt.flatMap { SchoolHubLogic.dayKey(for: $0, allDay: task.allDay).map(SchoolHubFormat.shortDay) }, task.provenanceLabel, task.target].compactMap { $0 }.joined(separator: " · ")).font(.caption).foregroundStyle(Routes05Tokens.secondary).lineLimit(2)
+                    Text(dueText).font(.caption).foregroundStyle(Routes05Tokens.secondary).lineLimit(2)
                 }.frame(maxWidth: .infinity, minHeight: 77, alignment: .leading)
             }.buttonStyle(.plain)
             Image(systemName: "arrow.right").font(.subheadline.weight(.bold)).accessibilityHidden(true)
