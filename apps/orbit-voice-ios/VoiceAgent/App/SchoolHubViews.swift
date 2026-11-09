@@ -3569,10 +3569,23 @@ private struct Routes05TaskRow: View {
     let store: SchoolHubStore
     let onStatus: () -> Void
     let onCalendar: () -> Void
-    private var dueText: String {
+    /// Same colour language as the task detail row: overdue = red, date taken from the letter = orange, the rest secondary.
+    private var dueLine: Text {
         let meta = SchoolHubLogic.dueMeta(task, today: SchoolHubLogic.dayKey(of: Date()), sourceDates: store.sourceDates)
-        let parts: [String?] = [meta.day.map(SchoolHubFormat.shortDay), meta.fromLetter ? "дата листа" : nil, meta.overdue ? "Прострочено" : nil, task.provenanceLabel, task.target]
-        return parts.compactMap { $0 }.joined(separator: " · ")
+        var line = Text("")
+        var first = true
+        func add(_ text: String, _ color: Color, strong: Bool = false) {
+            let piece = Text(first ? text : " · " + text).foregroundColor(color)
+            line = line + (strong ? piece.fontWeight(.semibold) : piece)
+            first = false
+        }
+        if let day = meta.day { add(SchoolHubFormat.shortDay(day), meta.overdue ? .red : (meta.fromLetter ? Routes05Tokens.orange : Routes05Tokens.secondary), strong: meta.overdue || meta.fromLetter) }
+        if meta.fromLetter { add("дата листа", Routes05Tokens.orange, strong: true) }
+        if meta.overdue { add("Прострочено", .red, strong: true) }
+        let label = task.provenanceLabel
+        if !label.isEmpty { add(label, Routes05Tokens.secondary) }
+        if let target = task.target, !target.isEmpty { add(target, Routes05Tokens.secondary) }
+        return line
     }
     private var evidence: SchoolEvidence { let item = store.item(id: task.sourceItemId); return SchoolHubLogic.evidence(forTask: task, sourceLoaded: item != nil, activeNames: store.studentNames, sourceText: item?.originalPlainText ?? item?.originalGerman ?? "") }
     var body: some View {
@@ -3581,7 +3594,7 @@ private struct Routes05TaskRow: View {
             NavigationLink { SchoolTaskDetailView(store: store, task: task) } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 5) { Text(task.title).font(.system(.body, design: .rounded).weight(.bold)).multilineTextAlignment(.leading); if evidence == .needsVerification { Image(systemName: "exclamationmark.triangle").foregroundStyle(Routes05Tokens.orange) } }
-                    Text(dueText).font(.caption).foregroundStyle(Routes05Tokens.secondary).lineLimit(2)
+                    dueLine.font(.caption).lineLimit(2)
                 }.frame(maxWidth: .infinity, minHeight: 77, alignment: .leading)
             }.buttonStyle(.plain)
             Image(systemName: "arrow.right").font(.subheadline.weight(.bold)).accessibilityHidden(true)
