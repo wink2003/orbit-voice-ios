@@ -535,9 +535,9 @@ struct SchoolHubLogicTests {
         precondition(SchoolActionsCapability.afterFailure(current: .available, error: .forbidden) == .forbidden && SchoolActionsCapability.afterFailure(current: .available, error: .unauthorized) == .unauthorized && SchoolActionsCapability.afterFailure(current: .readOnly, error: .unavailable) == .unavailable, "definite refusals apply")
         precondition(SchoolActionsCapability.afterFailure(current: .unknown, error: .networkFailure) == .networkFailure, "no established capability -> failure shown")
         precondition(SchoolHubLogic.keepsLastActionList(after: .networkFailure, loadedOnce: true) && !SchoolHubLogic.keepsLastActionList(after: .networkFailure, loadedOnce: false) && !SchoolHubLogic.keepsLastActionList(after: .forbidden, loadedOnce: true), "keep last list only for transient + loaded before")
-        var gate = SchoolHubLoadGate()
-        gate.advance(); precondition(gate.token() == nil, "no scope -> no token")
-        gate.reset(to: "p|own"); let t1 = gate.token(); gate.advance(); precondition(!gate.accepts(t1) && gate.accepts(gate.token()), "newer load supersedes older token")
+        var supersedeGate = SchoolHubLoadGate()
+        supersedeGate.advance(); precondition(supersedeGate.token() == nil, "no scope -> no token")
+        supersedeGate.reset(to: "p|own"); let t1 = supersedeGate.token(); supersedeGate.advance(); precondition(!supersedeGate.accepts(t1) && supersedeGate.accepts(supersedeGate.token()), "newer load supersedes older token")
 
         print("school hub logic tests passed")
     }
