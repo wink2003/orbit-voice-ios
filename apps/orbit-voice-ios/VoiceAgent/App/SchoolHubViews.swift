@@ -103,7 +103,9 @@ final class SchoolHubStore {
                     schoolDueAt: effective.schoolDueAt,
                     schoolDueAllDay: effective.schoolAllDay,
                     identityStable: task.stableIdentity ?? true,
-                    calendarEventId: calendarLinks[task.id] ?? task.calendarEventId
+                    calendarEventId: calendarLinks[task.id] ?? task.calendarEventId,
+                    effectiveDueAt: state?.planningDate == nil ? task.effectiveDueAt : nil,
+                    effectiveDueDateOrigin: state?.planningDate == nil ? task.effectiveDueDateOrigin : nil
                 )
             }
         } else {
