@@ -292,19 +292,34 @@ struct SchoolHubLogicTests {
             ]
             let counts = SchoolHubLogic.taskCounts(tasks)
             precondition(counts.open == 7 && counts.completed == 3 && counts.all == 10)
+            // Four groups, ascending by the effective date. Overdue wins over the calendar week for open work (Mon 12 < today Tue 13).
             let open = SchoolHubLogic.taskSections(tasks, filter: .open, today: today, sourceDates: [:], now: now)
-            precondition(open.thisWeek.map(\.id) == ["weekOpen"])
-            precondition(open.dated.map(\.id) == ["ancient", "overdue", "soon", "edge", "later"])
-            precondition(open.undated.map(\.id) == ["undated"] && open.undatedOlder.isEmpty)
+            precondition(open.overdue.map(\.id) == ["ancient", "overdue", "weekOpen"])
+            precondition(open.thisWeek.isEmpty)
+            precondition(open.nextWeek.map(\.id) == ["soon"])
+            precondition(open.later.map(\.id) == ["edge", "later", "undated"], "no date sorts last and is never dropped")
             precondition(open.visibleCount == counts.open, "open filter shows exactly the open count")
             let done = SchoolHubLogic.taskSections(tasks, filter: .completed, today: today, sourceDates: [:], now: now)
+            precondition(done.overdue.isEmpty, "completed work is never overdue")
             precondition(done.thisWeek.map(\.id) == ["weekDone"])
-            precondition(done.dated.map(\.id) == ["done"] && done.undated.map(\.id) == ["doneUndated"] && done.visibleCount == counts.completed)
+            precondition(done.later.map(\.id) == ["done", "doneUndated"] && done.visibleCount == counts.completed)
             let every = SchoolHubLogic.taskSections(tasks, filter: .all, today: today, sourceDates: [:], now: now)
             precondition(every.visibleCount == counts.all)
-            precondition(every.thisWeek.map(\.id) == ["weekOpen", "weekDone"])
-            precondition(every.dated.map(\.id) == ["ancient", "overdue", "done", "soon", "edge", "later"])
-            precondition(Set(every.thisWeek + every.dated + every.undated + every.undatedOlder).count == counts.all)
+            precondition(every.overdue.map(\.id) == ["ancient", "overdue", "weekOpen"])
+            precondition(every.thisWeek.map(\.id) == ["weekDone"])
+            precondition(every.nextWeek.map(\.id) == ["soon"])
+            precondition(every.later.map(\.id) == ["done", "edge", "later", "doneUndated", "undated"])
+            precondition(Set((every.overdue + every.thisWeek + every.nextWeek + every.later).map(\.id)).count == counts.all)
+            // The week bucket follows `today`, not the device clock: same data, different `now`, identical groups.
+            let farNow = Date(timeIntervalSince1970: 4_000_000_000)
+            precondition(SchoolHubLogic.taskSections(tasks, filter: .all, today: today, sourceDates: [:], now: farNow) == every)
+            // Authoritative backend effective date wins; a letter-derived date is used and an "unavailable" origin is never guessed.
+            var letterOverdue = t("letterOverdue", due: nil); letterOverdue.effectiveDueAt = "2026-10-01"; letterOverdue.effectiveDueDateOrigin = "source_letter"
+            var letterNext = t("letterNext", due: nil); letterNext.effectiveDueAt = "2026-10-21"; letterNext.effectiveDueDateOrigin = "source_letter"
+            var unresolved = t("unresolved", due: "2026-10-14"); unresolved.effectiveDueAt = nil; unresolved.effectiveDueDateOrigin = "unavailable"
+            let eff = SchoolHubLogic.taskSections([letterOverdue, letterNext, unresolved], filter: .open, today: today, sourceDates: [:], now: now)
+            precondition(eff.overdue.map(\.id) == ["letterOverdue"] && eff.nextWeek.map(\.id) == ["letterNext"] && eff.later.map(\.id) == ["unresolved"])
+            precondition(SchoolHubLogic.usesSourceDate(letterOverdue, sourceDates: [:]) && !SchoolHubLogic.usesSourceDate(unresolved, sourceDates: [:]))
             // Monday/Sunday boundaries, year boundary, DST conversion and stable ties.
             precondition(SchoolHubLogic.weekDays(containing: "2026-01-01") == ["2025-12-29", "2025-12-30", "2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"])
             precondition(SchoolHubLogic.dayKey(for: "2026-10-24T22:30:00Z", allDay: false) == "2026-10-25")
@@ -312,7 +327,7 @@ struct SchoolHubLogicTests {
             precondition(SchoolHubLogic.taskSections(tied, filter: .all, today: today, sourceDates: [:], now: now).thisWeek.map(\.id) == ["a", "z"])
             // equal titles from different sources stay separate rows
             let twins = [t("a", due: nil, source: "s1"), t("b", due: nil, source: "s2")]
-            precondition(SchoolHubLogic.taskSections(twins, filter: .open, today: today, sourceDates: [:], now: now).undated.count == 2)
+            precondition(SchoolHubLogic.taskSections(twins, filter: .open, today: today, sourceDates: [:], now: now).later.count == 2)
             // the user-facing count follows the search subset, not a hidden total
             precondition(SchoolHubLogic.taskCounts(SchoolHubLogic.searchTasks(tasks, query: "Tsoon")).open == 1)
 

@@ -192,6 +192,8 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     var schoolDueAllDay: Bool = true
     var identityStable: Bool = true
     var calendarEventId: String? = nil
+    var effectiveDueAt: String? = nil
+    var effectiveDueDateOrigin: String? = nil
 }
 
 enum SchoolHubActionError: LocalizedError {
@@ -875,12 +877,12 @@ nonisolated enum SchoolTaskFilter: String, CaseIterable, Identifiable {
 }
 
 nonisolated struct SchoolTaskSections: Equatable {
+    var overdue: [SchoolHubTask] = []
     var thisWeek: [SchoolHubTask] = []
-    var dated: [SchoolHubTask] = []
-    var undated: [SchoolHubTask] = []
-    var undatedOlder: [SchoolHubTask] = []
+    var nextWeek: [SchoolHubTask] = []
+    var later: [SchoolHubTask] = []
 
-    var visibleCount: Int { thisWeek.count + dated.count + undated.count + undatedOlder.count }
+    var visibleCount: Int { overdue.count + thisWeek.count + nextWeek.count + later.count }
 }
 
 nonisolated struct SchoolTaskCounts: Equatable {
@@ -902,36 +904,56 @@ extension SchoolHubLogic {
         return counts
     }
 
-    static func taskSections(_ tasks: [SchoolHubTask], filter: SchoolTaskFilter, today: String, sourceDates: [String: Date], now: Date) -> SchoolTaskSections {
-        var sections = SchoolTaskSections()
-        let showOpen = filter != .completed
-        let showCompleted = filter != .open
-        let visible = tasks.filter { task in
-            (isCompleted(task) && showCompleted) || (!isCompleted(task) && showOpen)
-        }
-        let week = Set(weekDays(containing: today))
-        let groups = groupTasks(visible, today: today, sourceDates: sourceDates, now: now)
-        // Recombine overdue and future dated tasks before applying the calendar-week
-        // section: Monday/Tuesday tasks in the current week are overdue relative to
-        // today, but still belong in "Цього тижня".
-        for task in groups.overdue + groups.dated {
-            guard let due = dayKey(for: task.dueAt, allDay: task.allDay) else { continue }
-            if week.contains(due) { sections.thisWeek.append(task) } else { sections.dated.append(task) }
-        }
-        sections.undated = groups.undated
-        sections.undatedOlder = groups.undatedOlder
-        sections.thisWeek.sort(by: stableOrder)
-        sections.dated.sort(by: stableOrder)
-        sections.undated.sort(by: stableOrder)
-        sections.undatedOlder.sort(by: stableOrder)
-        return sections
+    /// Presentation fallback until the backend returns an explicit effective due date.
+    /// A source date is not silently treated as an original school deadline.
+    static func effectiveTaskDay(_ task: SchoolHubTask, sourceDates: [String: Date]) -> String? {
+        if let authoritative = task.effectiveDueAt { return authoritative }
+        if task.effectiveDueDateOrigin == "unavailable" { return nil }
+        if let due = dayKey(for: task.dueAt, allDay: task.allDay) { return due }
+        guard task.kind == "source", let sourceDate = sourceDates[task.sourceItemId] else { return nil }
+        return dayKey(of: sourceDate)
     }
 
-    private static func stableOrder(_ a: SchoolHubTask, _ b: SchoolHubTask) -> Bool {
-        let (da, db) = (dayKey(for: a.dueAt, allDay: a.allDay) ?? "9999-99-99", dayKey(for: b.dueAt, allDay: b.allDay) ?? "9999-99-99")
-        if da != db { return da < db }
-        if a.dueAt != b.dueAt { return (a.dueAt ?? "") < (b.dueAt ?? "") }
-        return a.id < b.id
+    static func usesSourceDate(_ task: SchoolHubTask, sourceDates: [String: Date]) -> Bool {
+        task.effectiveDueDateOrigin == "source_letter" || (task.effectiveDueDateOrigin == nil && task.dueAt == nil && task.kind == "source" && sourceDates[task.sourceItemId] != nil)
+    }
+
+    static func taskSections(_ tasks: [SchoolHubTask], filter: SchoolTaskFilter, today: String, sourceDates: [String: Date], now: Date) -> SchoolTaskSections {
+        var sections = SchoolTaskSections()
+        let visible = tasks.filter { task in
+            filter == .all || (filter == .completed ? isCompleted(task) : !isCompleted(task))
+        }
+        let currentWeek = Set(weekDays(containing: today))
+        // Derived from the same `today` civil day as every other bucket (never from the device clock), so grouping is deterministic.
+        let nextWeek = Set(weekDays(containing: addDays(7, to: today) ?? today))
+
+        for task in visible {
+            guard let due = effectiveTaskDay(task, sourceDates: sourceDates) else {
+                // Never drop a record if the backend has not provided a date yet.
+                sections.later.append(task)
+                continue
+            }
+            if !isCompleted(task) && due < today {
+                sections.overdue.append(task)
+            } else if currentWeek.contains(due) {
+                sections.thisWeek.append(task)
+            } else if nextWeek.contains(due) {
+                sections.nextWeek.append(task)
+            } else {
+                sections.later.append(task)
+            }
+        }
+        func ordered(_ a: SchoolHubTask, _ b: SchoolHubTask) -> Bool {
+            let da = effectiveTaskDay(a, sourceDates: sourceDates) ?? "9999-99-99"
+            let db = effectiveTaskDay(b, sourceDates: sourceDates) ?? "9999-99-99"
+            if da != db { return da < db }
+            return a.id < b.id
+        }
+        sections.overdue.sort(by: ordered)
+        sections.thisWeek.sort(by: ordered)
+        sections.nextWeek.sort(by: ordered)
+        sections.later.sort(by: ordered)
+        return sections
     }
 
     /// A known deadline pre-fills the calendar date (explained as a deadline).
