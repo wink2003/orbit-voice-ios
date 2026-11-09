@@ -320,6 +320,13 @@ struct SchoolHubLogicTests {
             let eff = SchoolHubLogic.taskSections([letterOverdue, letterNext, unresolved], filter: .open, today: today, sourceDates: [:], now: now)
             precondition(eff.overdue.map(\.id) == ["letterOverdue"] && eff.nextWeek.map(\.id) == ["letterNext"] && eff.later.map(\.id) == ["unresolved"])
             precondition(SchoolHubLogic.usesSourceDate(letterOverdue, sourceDates: [:]) && !SchoolHubLogic.usesSourceDate(unresolved, sourceDates: [:]))
+            // Row metadata shown on the production "Справи" screen.
+            let metaLetter = SchoolHubLogic.dueMeta(letterOverdue, today: today, sourceDates: [:])
+            precondition(metaLetter == SchoolTaskDueMeta(day: "2026-10-01", fromLetter: true, overdue: true))
+            precondition(SchoolHubLogic.dueMeta(unresolved, today: today, sourceDates: [:]) == SchoolTaskDueMeta(day: nil, fromLetter: false, overdue: false))
+            var doneLetter = letterOverdue; doneLetter.status = "completed"
+            precondition(SchoolHubLogic.dueMeta(doneLetter, today: today, sourceDates: [:]).overdue == false, "completed is never overdue")
+            precondition(SchoolHubLogic.dueMeta(letterNext, today: today, sourceDates: [:]) == SchoolTaskDueMeta(day: "2026-10-21", fromLetter: true, overdue: false))
             // Monday/Sunday boundaries, year boundary, DST conversion and stable ties.
             precondition(SchoolHubLogic.weekDays(containing: "2026-01-01") == ["2025-12-29", "2025-12-30", "2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"])
             precondition(SchoolHubLogic.dayKey(for: "2026-10-24T22:30:00Z", allDay: false) == "2026-10-25")

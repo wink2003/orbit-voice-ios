@@ -876,6 +876,8 @@ nonisolated enum SchoolTaskFilter: String, CaseIterable, Identifiable {
     }
 }
 
+nonisolated struct SchoolTaskDueMeta: Equatable { let day: String?; let fromLetter: Bool; let overdue: Bool }
+
 nonisolated struct SchoolTaskSections: Equatable {
     var overdue: [SchoolHubTask] = []
     var thisWeek: [SchoolHubTask] = []
@@ -912,6 +914,12 @@ extension SchoolHubLogic {
         if let due = dayKey(for: task.dueAt, allDay: task.allDay) { return due }
         guard task.kind == "source", let sourceDate = sourceDates[task.sourceItemId] else { return nil }
         return dayKey(of: sourceDate)
+    }
+
+    /// What a task row shows about its date: the authoritative effective day, whether it came from the letter, and overdue state.
+    static func dueMeta(_ task: SchoolHubTask, today: String, sourceDates: [String: Date]) -> SchoolTaskDueMeta {
+        let day = effectiveTaskDay(task, sourceDates: sourceDates)
+        return SchoolTaskDueMeta(day: day, fromLetter: usesSourceDate(task, sourceDates: sourceDates), overdue: !isCompleted(task) && (day.map { $0 < today } ?? false))
     }
 
     static func usesSourceDate(_ task: SchoolHubTask, sourceDates: [String: Date]) -> Bool {
