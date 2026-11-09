@@ -2035,9 +2035,11 @@ private struct SchoolTaskRow: View {
     var body: some View {
         let item = store.item(id: task.sourceItemId)
         let evidence = SchoolHubLogic.evidence(forTask: task, sourceLoaded: item != nil, activeNames: store.studentNames, sourceText: item?.originalPlainText ?? item?.originalGerman ?? "")
-        let dueKey = SchoolHubLogic.dayKey(for: task.dueAt, allDay: task.allDay)
+        let dueKey = SchoolHubLogic.effectiveTaskDay(task, sourceDates: store.sourceDates)
+        let fromLetter = SchoolHubLogic.usesSourceDate(task, sourceDates: store.sourceDates)
+        let actuallyOverdue = task.status != "completed" && (dueKey.map { $0 < today } ?? false)
         let days = dueKey.flatMap { SchoolHubFormat.daysFrom(today, to: $0) }
-        let warn = overdue || (days.map { $0 <= 2 } ?? false)
+        let warn = actuallyOverdue || (days.map { $0 <= 2 } ?? false)
         let updating = store.isUpdating(task)
         let row = HStack(alignment: .center, spacing: 10) {
             Button {
@@ -2061,7 +2063,7 @@ private struct SchoolTaskRow: View {
                             Text(task.title).font(.callout.weight(.medium)).lineLimit(2)
                             SchoolTrustGlyph(evidence: evidence)
                         }
-                        metaLine(dueKey: dueKey, days: days, warn: warn, item: item, evidence: evidence)
+                        metaLine(dueKey: dueKey, days: days, warn: warn, overdue: actuallyOverdue, fromLetter: fromLetter, item: item, evidence: evidence)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -2127,7 +2129,7 @@ private struct SchoolTaskRow: View {
         }
     }
 
-    private func metaLine(dueKey: String?, days: Int?, warn: Bool, item: OrbitSchoolItem?, evidence: SchoolEvidence) -> some View {
+    private func metaLine(dueKey: String?, days: Int?, warn: Bool, overdue: Bool, fromLetter: Bool, item: OrbitSchoolItem?, evidence: SchoolEvidence) -> some View {
         var due = "Без дати"
         if let dueKey {
             due = SchoolHubFormat.shortDay(dueKey)
@@ -2138,7 +2140,7 @@ private struct SchoolTaskRow: View {
         if let target = task.target, !target.isEmpty { rest.append(target) }
         if task.calendarEventId != nil { rest.append("у календарі") }
         if evidence == .needsVerification { rest.append("перевірити") }
-        let dueColor: Color = overdue ? .red : (warn ? Color(red: 0.70, green: 0.42, blue: 0.0) : .secondary)
+        let dueColor: Color = overdue ? .red : (fromLetter ? .orange : (warn ? Color(red: 0.70, green: 0.42, blue: 0.0) : .secondary))
         return VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Image(systemName: dueKey == nil ? "calendar.badge.questionmark" : (overdue ? "clock.badge.exclamationmark" : "calendar"))
@@ -2146,9 +2148,19 @@ private struct SchoolTaskRow: View {
                     .accessibilityHidden(true)
                 Text(due)
                     .foregroundStyle(dueColor)
-                    .fontWeight(warn ? .semibold : .regular)
+                    .fontWeight(warn || fromLetter ? .semibold : .regular)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
+                if fromLetter {
+                    Text("дата листа")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.orange)
+                }
+                if overdue {
+                    Text("Прострочено")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
             }
             if !rest.isEmpty {
                 Text(rest.joined(separator: " · "))
@@ -2964,10 +2976,10 @@ private struct SchoolTaskListView: View {
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
             statusSection
-            group("Цього тижня", tasks: sections.thisWeek, today: today)
-            group("Інші дати", tasks: sections.dated, today: today)
-            group("Без дати", tasks: sections.undated, today: today)
-            disclosure("Старіші без дати", tasks: sections.undatedOlder, today: today)
+            group("Прострочені", tasks: sections.overdue, overdue: true, today: today)
+            group("Цей тиждень", tasks: sections.thisWeek, today: today)
+            group("Наступний тиждень", tasks: sections.nextWeek, today: today)
+            group("Далі", tasks: sections.later, today: today)
             if store.tasksPhase == .loaded && sections.visibleCount == 0 {
                 emptyState
             }
