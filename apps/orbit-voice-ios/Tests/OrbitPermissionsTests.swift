@@ -20,11 +20,13 @@ struct OrbitPermissionsTests {
         precondition(child.isChild, "child contract is a child")
         for p in [OrbitWritePermission.calendarWrite, .contactsWrite, .reviewProposals] { precondition(!child.allows(p), "child cannot \(p)") }
         precondition(child.allows(.proposeSharedFact), "child may propose a correction")
+        precondition(!child.allows(.schoolWrite), "child cannot change School")
         precondition(child.resources.calendar.read && child.resources.school.read && child.memory.readOwnPrivate && child.memory.readSharedFamily, "read access stays")
 
         let adult = try decode("adult", adult: true)
         precondition(!adult.isChild, "adult contract")
-        for p in [OrbitWritePermission.calendarWrite, .contactsWrite, .reviewProposals, .proposeSharedFact] { precondition(adult.allows(p), "adult keeps \(p)") }
+        for p in [OrbitWritePermission.calendarWrite, .contactsWrite, .schoolWrite, .reviewProposals, .proposeSharedFact] { precondition(adult.allows(p), "adult keeps \(p)") }
+        precondition(!OrbitEffectivePermissions.fallback(isMinor: true).allows(.schoolWrite) && OrbitEffectivePermissions.fallback(isMinor: false).allows(.schoolWrite), "fallback follows isMinor")
 
         // Fail-closed / compatibility fallbacks
         precondition(!OrbitEffectivePermissions.fallback(isMinor: true).allows(.calendarWrite), "fallback child is read-only")
