@@ -233,11 +233,15 @@ struct Routes05Mast: View {
                 }
                 .frame(width: 27, height: 27)
                 Text("orbit").font(.system(size: 20, weight: .black, design: .rounded)).tracking(-1.2)
+                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
             }
+            .layoutPriority(2)
             Text("/ ROUTES").font(.system(size: 9, weight: .black, design: .monospaced)).tracking(1.1)
-            Spacer(minLength: 8)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Spacer(minLength: 4)
             Text("\(section.uppercased()) / 05")
                 .font(.system(size: 9, weight: .black, design: .monospaced)).tracking(1.1)
+                .lineLimit(1).minimumScaleFactor(0.6)
             if let action {
                 Button(action: action) { Image(systemName: "ellipsis") }
                     .frame(width: 44, height: 44)

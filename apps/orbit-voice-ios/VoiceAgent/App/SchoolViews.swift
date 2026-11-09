@@ -700,6 +700,16 @@ struct SchoolDetailView: View {
                     }
                     .background(Routes05Tokens.surface)
                     .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
+                    if let sourceURL = OrbitSchoolSourceLink.url(source: item.source) {
+                        Link(destination: sourceURL) {
+                            Label("Відкрити лист у Schulmanager", systemImage: "arrow.up.right.square")
+                                .font(.subheadline.weight(.bold))
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .accessibilityHint("Файли вкладень доступні лише в Schulmanager")
+                        Text("Файли зберігаються в Schulmanager; Orbit показує лише список вкладень.")
+                            .font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                    }
                 }
                 detailHeader("Джерело")
                 VStack(alignment: .leading, spacing: 5) {
@@ -782,6 +792,11 @@ struct SchoolDetailView: View {
             Link(destination: safeURL) {
                 attachmentLabel(file).foregroundStyle(.primary)
             }
+        } else if let fallback = OrbitSchoolSourceLink.url(source: item.source) {
+            // Orbit never stores file bytes or download URLs; the file lives in Schulmanager.
+            Link(destination: fallback) {
+                attachmentLabel(file).foregroundStyle(.primary)
+            }
         } else {
             attachmentLabel(file)
         }
@@ -795,12 +810,12 @@ struct SchoolDetailView: View {
                 if let contentType = file.contentType, !contentType.isEmpty { Text(contentType).font(.caption2).foregroundStyle(.secondary) }
             }
             Spacer()
-            if (file.url ?? file.downloadURL) != nil { Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(.secondary) }
+            if (file.url ?? file.downloadURL) != nil || OrbitSchoolSourceLink.url(source: item.source) != nil { Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(.secondary) }
         }
         .padding(.vertical, 10).contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(file.filename)
-        .accessibilityHint((file.url ?? file.downloadURL) == nil ? "Метадані вкладення" : "Відкрити вкладення")
+        .accessibilityHint((file.url ?? file.downloadURL) != nil ? "Відкрити вкладення" : (OrbitSchoolSourceLink.url(source: item.source) != nil ? "Відкрити в Schulmanager" : "Метадані вкладення"))
     }
     private func detailHeader(_ title: String) -> some View {
         Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)

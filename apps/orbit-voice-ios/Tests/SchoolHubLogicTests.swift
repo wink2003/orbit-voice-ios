@@ -460,6 +460,11 @@ struct SchoolHubLogicTests {
         precondition(classOf(",\"className\":\"7A\"") == "7A", "className alias")
         precondition(classOf(",\"schoolClass\":\"  \"") == nil, "blank class ignored")
 
+        // Attachment/letter fallback: only Schulmanager items get a source link (HTTPS), nothing else.
+        precondition(OrbitSchoolSourceLink.url(source: "schulmanager")?.scheme == "https", "schulmanager source link is https")
+        precondition(OrbitSchoolSourceLink.url(source: "Schulmanager") != nil, "source match is case-insensitive")
+        precondition(OrbitSchoolSourceLink.url(source: "orbit") == nil && OrbitSchoolSourceLink.url(source: "") == nil, "no link for other sources")
+
         print("school hub logic tests passed")
     }
 }

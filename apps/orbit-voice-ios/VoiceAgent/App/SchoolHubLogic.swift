@@ -999,3 +999,14 @@ nonisolated enum Routes05TaskFilter: CaseIterable, Identifiable {
     var title: String { self == .all ? "Всі" : self == .open ? "Відкриті" : "Завершені" }
     func count(_ counts: SchoolTaskCounts) -> Int { self == .all ? counts.all : self == .open ? counts.open : counts.completed }
 }
+
+/// Where a School item's original lives. Orbit stores only attachment metadata
+/// (no file bytes, no download URLs), so attachments and letters fall back to the
+/// Schulmanager web/app entry. A per-letter deep link is NOT known, so this opens
+/// the Schulmanager home (the iOS app handles it as a universal link when installed).
+nonisolated enum OrbitSchoolSourceLink {
+    static let schulmanagerHome = URL(string: "https://login.schulmanager-online.de/")!
+    static func url(source: String) -> URL? {
+        source.lowercased() == "schulmanager" ? schulmanagerHome : nil
+    }
+}
