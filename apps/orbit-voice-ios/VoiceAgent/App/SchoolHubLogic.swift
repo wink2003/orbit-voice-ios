@@ -192,6 +192,8 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     var schoolDueAllDay: Bool = true
     var identityStable: Bool = true
     var calendarEventId: String? = nil
+    var effectiveDueAt: String? = nil
+    var effectiveDueDateOrigin: String? = nil
 }
 
 enum SchoolHubActionError: LocalizedError {
@@ -905,13 +907,15 @@ extension SchoolHubLogic {
     /// Presentation fallback until the backend returns an explicit effective due date.
     /// A source date is not silently treated as an original school deadline.
     static func effectiveTaskDay(_ task: SchoolHubTask, sourceDates: [String: Date]) -> String? {
+        if let authoritative = task.effectiveDueAt { return authoritative }
+        if task.effectiveDueDateOrigin == "unavailable" { return nil }
         if let due = dayKey(for: task.dueAt, allDay: task.allDay) { return due }
         guard task.kind == "source", let sourceDate = sourceDates[task.sourceItemId] else { return nil }
         return dayKey(of: sourceDate)
     }
 
     static func usesSourceDate(_ task: SchoolHubTask, sourceDates: [String: Date]) -> Bool {
-        task.dueAt == nil && task.kind == "source" && sourceDates[task.sourceItemId] != nil
+        task.effectiveDueDateOrigin == "source_letter" || (task.effectiveDueDateOrigin == nil && task.dueAt == nil && task.kind == "source" && sourceDates[task.sourceItemId] != nil)
     }
 
     static func taskSections(_ tasks: [SchoolHubTask], filter: SchoolTaskFilter, today: String, sourceDates: [String: Date], now: Date) -> SchoolTaskSections {
