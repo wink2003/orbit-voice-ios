@@ -521,6 +521,12 @@ struct SchoolHubLogicTests {
         precondition(links.map(\.id) == ["L1:k1", "L1:k3"], "link by school deadline, same letter only, plan does not break it")
         precondition(SchoolHubLogic.linkedTasks(eventDay: nil, sourceItemId: "L1", tasks: [linkedA]).isEmpty, "no event day -> no link")
 
+        let tA = SchoolHubTask(id: "L9:x1", title: "Підписати  оцінку", action: nil, dueAt: nil, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "L9")
+        let tB = SchoolHubTask(id: "L9:x2", title: "Інша", action: nil, dueAt: nil, allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "L9")
+        precondition(SchoolHubLogic.matchByTitle(title: "підписати оцінку", among: [tA, tB])?.id == "L9:x1", "title fallback match")
+        precondition(SchoolHubLogic.matchByTitle(title: "Інша", among: [tA, tB, tB]) == nil, "ambiguous title -> no match")
+        precondition(SchoolHubLogic.matchByTitle(title: nil, among: [tA]) == nil && SchoolHubLogic.matchByTitle(title: "  ", among: [tA]) == nil, "empty title -> no match")
+
         print("school hub logic tests passed")
     }
 }

@@ -893,8 +893,11 @@ struct SchoolDetailView: View {
     }
     /// The hub (Справи) task that corresponds to a task listed in this letter, if one exists.
     private func hubTask(for task: OrbitSchoolItemTask) -> SchoolHubTask? {
-        guard let store = hubStore, let key = task.key, !key.isEmpty else { return nil }
-        return store.hubTasks.first { $0.sourceItemId == item.id && ($0.sourceTaskKey == key || $0.id == key) }
+        guard let store = hubStore else { return nil }
+        let mine = store.hubTasks.filter { $0.sourceItemId == item.id }
+        if let key = task.key, !key.isEmpty, let hit = mine.first(where: { $0.sourceTaskKey == key || $0.id == key || $0.sourceTaskKey.hasPrefix(key + "#") }) { return hit }
+        // The letter payload may carry no (or a differently derived) task key: fall back to the title within the same letter.
+        return SchoolHubLogic.matchByTitle(title: task.title ?? task.action, among: mine)
     }
     private func linkedHubTasks(for event: OrbitSchoolEvent) -> [SchoolHubTask] {
         guard let store = hubStore else { return [] }

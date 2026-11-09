@@ -943,6 +943,14 @@ extension SchoolHubLogic {
         }
     }
 
+    /// Same-letter fallback match by normalised title; ambiguous (several equal titles) => nil.
+    static func matchByTitle(title: String?, among tasks: [SchoolHubTask]) -> SchoolHubTask? {
+        func norm(_ s: String) -> String { s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
+        guard let title, !norm(title).isEmpty else { return nil }
+        let hits = tasks.filter { norm($0.title) == norm(title) }
+        return hits.count == 1 ? hits[0] : nil
+    }
+
     /// What a task row shows about its date: the authoritative effective day, whether it came from the letter, and overdue state.
     static func dueMeta(_ task: SchoolHubTask, today: String, sourceDates: [String: Date]) -> SchoolTaskDueMeta {
         let day = effectiveTaskDay(task, sourceDates: sourceDates)
