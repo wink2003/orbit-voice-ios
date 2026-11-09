@@ -467,6 +467,20 @@ struct SchoolHubLogicTests {
         precondition(OrbitSchoolSourceLink.url(source: "schulmanager", type: "message", externalId: "9", subscriptionId: nil) == OrbitSchoolSourceLink.schulmanagerHome, "message without subscription -> home")
         precondition(OrbitSchoolSourceLink.url(source: "orbit", type: "letter", externalId: "1") == nil && OrbitSchoolSourceLink.url(source: "") == nil, "no link for other sources")
 
+        // Planned execution date: Orbit-owned override of the grouping date; the school's deadline is preserved.
+        precondition(SchoolHubLogic.planningDayKey("2026-11-18") == "2026-11-18", "plain day key")
+        precondition(SchoolHubLogic.planningDayKey("2026-11-18T00:00:00.000Z") == "2026-11-18", "ISO planning date -> day key")
+        precondition(SchoolHubLogic.planningDayKey("2026-13-40") == nil && SchoolHubLogic.planningDayKey("x") == nil && SchoolHubLogic.planningDayKey(nil) == nil && SchoolHubLogic.planningDayKey("") == nil, "invalid planning dates ignored")
+        let withPlan = SchoolHubLogic.effectiveDue(dueAt: "2026-11-20T08:00:00+01:00", allDay: false, planningDate: "2026-11-18")
+        precondition(withPlan.dueAt == "2026-11-18" && withPlan.allDay && withPlan.schoolDueAt == "2026-11-20T08:00:00+01:00" && withPlan.schoolAllDay == false, "planned date overrides, school deadline preserved")
+        let noPlan = SchoolHubLogic.effectiveDue(dueAt: "2026-11-20", allDay: true, planningDate: nil)
+        precondition(noPlan.dueAt == "2026-11-20" && noPlan.allDay && noPlan.schoolDueAt == nil, "no planning date -> unchanged")
+        var planTask = SchoolHubTask(id: "i1:k1", title: "t", action: nil, dueAt: withPlan.dueAt, allDay: withPlan.allDay, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "i1")
+        planTask.planningDate = "2026-11-18T00:00:00.000Z"; planTask.schoolDueAt = withPlan.schoolDueAt; planTask.schoolDueAllDay = withPlan.schoolAllDay
+        precondition(planTask.planningDayKey == "2026-11-18" && planTask.schoolDeadlineAt == "2026-11-20T08:00:00+01:00" && planTask.schoolDeadlineAllDay == false, "school deadline accessor with a plan")
+        let plain = SchoolHubTask(id: "i1:k2", title: "t", action: nil, dueAt: "2026-11-20", allDay: true, importance: nil, target: nil, confidence: nil, reason: nil, sourceItemId: "i1")
+        precondition(plain.planningDayKey == nil && plain.schoolDeadlineAt == "2026-11-20" && plain.schoolDeadlineAllDay, "school deadline accessor without a plan")
+
         print("school hub logic tests passed")
     }
 }
