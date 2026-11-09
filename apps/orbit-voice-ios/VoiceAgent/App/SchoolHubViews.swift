@@ -20,6 +20,7 @@ final class SchoolHubStore {
     var taskCoverageTruncated = false
     var tasksPhase: Phase = .idle
     var actionTasksPhase: Phase = .idle
+    private(set) var actionTasksLoadedOnce = false
     var actionTasks: [OrbitSchoolActionTask] = []
     var actionCapability: SchoolActionsCapability = .unknown
     var calendarLinks: [String: String] = [:]
@@ -57,7 +58,7 @@ final class SchoolHubStore {
         items = []; events = []; canonicalTasks = []; actionTasks = []; studentNames = []; studentClass = nil
         actionCapability = .unknown
         calendarLinks = [:]; updatingTaskIDs = []
-        itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false; taskCoverage = nil; taskCoverageTruncated = false
+        itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false; actionTasksLoadedOnce = false; taskCoverage = nil; taskCoverageTruncated = false
         itemsPhase = .idle; calendarPhase = .idle; tasksPhase = .idle; actionTasksPhase = .idle
     }
 
@@ -137,6 +138,9 @@ final class SchoolHubStore {
         #if DEBUG
         if fixture != nil { return }
         #endif
+        guard gate.token() != nil else { return }
+        // The newest load supersedes older in-flight ones: a cancelled/stale request must not overwrite fresher state.
+        gate.advance()
         guard let token = gate.token() else { return }
         itemsPhase = .loading
         calendarPhase = .loading
@@ -157,7 +161,7 @@ final class SchoolHubStore {
             items = result
             itemsLoadedOnce = true
             itemsPhase = .loaded
-        } catch is CancellationError {
+        } catch where SchoolHubErrors.isCancellation(error) {
             guard gate.accepts(token) else { return }
             itemsPhase = itemsLoadedOnce ? .loaded : .idle
         } catch {
@@ -178,7 +182,7 @@ final class SchoolHubStore {
             events = result
             calendarLoadedOnce = true
             calendarPhase = .loaded
-        } catch is CancellationError {
+        } catch where SchoolHubErrors.isCancellation(error) {
             guard gate.accepts(token) else { return }
             calendarPhase = calendarLoadedOnce ? .loaded : .idle
         } catch {
@@ -196,7 +200,7 @@ final class SchoolHubStore {
             taskCoverageTruncated = result.truncated ?? false
             tasksLoadedOnce = true
             tasksPhase = .loaded
-        } catch is CancellationError {
+        } catch where SchoolHubErrors.isCancellation(error) {
             guard gate.accepts(token) else { return }
             tasksPhase = tasksLoadedOnce ? .loaded : .idle
         } catch {
@@ -229,13 +233,16 @@ final class SchoolHubStore {
             // Readable is not writable: a read-only profile (child) sees the list without edit controls.
             actionCapability = SchoolActionsCapability.afterReadSucceeded(canWrite: OrbitPermissionStore.shared.allows(.schoolWrite))
             actionTasksPhase = .loaded
-        } catch is CancellationError {
+            actionTasksLoadedOnce = true
+        } catch where SchoolHubErrors.isCancellation(error) {
             guard gate.accepts(token) else { return }
-            actionTasksPhase = actionTasks.isEmpty ? .idle : .loaded
+            actionTasksPhase = actionTasksLoadedOnce ? .loaded : .idle
         } catch {
             guard gate.accepts(token) else { return }
-            actionTasksPhase = .failed
-            actionCapability = Self.capability(for: error)
+            // A transient failure must not revoke what the last successful read established (write access, loaded list).
+            let failure = Self.capability(for: error)
+            actionTasksPhase = SchoolHubLogic.keepsLastActionList(after: failure, loadedOnce: actionTasksLoadedOnce) ? .loaded : .failed
+            actionCapability = SchoolActionsCapability.afterFailure(current: actionCapability, error: failure)
         }
     }
 
@@ -1182,13 +1189,13 @@ final class SchoolHubV2Store {
         do {
             let response = try await overviewResult
             overview = response.overview; freshness = response.overview.freshness
-        } catch is CancellationError { if phase == .loading { phase = .idle }; return }
+        } catch where SchoolHubErrors.isCancellation(error) { if phase == .loading { phase = .idle }; return }
         catch { overviewFailure = Self.failurePhase(for: error); overviewError = error; firstError = error }
         do {
             let response = try await examsResult
             exams = SchoolHubLogic.chronologicalExams(Dictionary(grouping: response.exams, by: \.id).compactMap { $0.value.first }, dayKey: { $0.dayKey }, id: { $0.id })
             examCoverageEnd = response.to; states += response.states
-        } catch is CancellationError { if phase == .loading { phase = .idle }; return }
+        } catch where SchoolHubErrors.isCancellation(error) { if phase == .loading { phase = .idle }; return }
         catch { examsFailure = Self.failurePhase(for: error); examsError = error; firstError = firstError ?? error }
         do {
             let response = try await timetableResult
@@ -1199,7 +1206,7 @@ final class SchoolHubV2Store {
             }
             timetableCoverageState = SchoolHubLogic.timetableCoverageState(response.timetable.coverage?.state, responseState: response.timetable.state, entryCount: timetable.count)
             if let state = response.timetable.coverage?.state { states.append(state) }
-        } catch is CancellationError { if phase == .loading { phase = .idle }; return }
+        } catch where SchoolHubErrors.isCancellation(error) { if phase == .loading { phase = .idle }; return }
         catch {
             timetableFailure = Self.failurePhase(for: error); timetableError = error; firstError = firstError ?? error
             timetableCoverageState = "UNAVAILABLE"

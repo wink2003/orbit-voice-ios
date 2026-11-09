@@ -612,6 +612,7 @@ struct SchoolDetailView: View {
     /// Shared hub store (tasks + capability). Nil when opened from a surface without one: a private store is then loaded on demand.
     private let injectedStore: SchoolHubStore?
     @State private var ownStore: SchoolHubStore?
+    @EnvironmentObject private var authentication: OrbitAuthentication
     @State private var pendingTask: SchoolHubTask?
     @State private var calendarTask: SchoolHubTask?
     @State private var taskError: String?
@@ -888,6 +889,8 @@ struct SchoolDetailView: View {
     private func ensureHubStore() async {
         guard injectedStore == nil, ownStore == nil else { return }
         let store = SchoolHubStore()
+        // A store without a scope refuses to load (gate.token() == nil): bind it to the signed-in profile first.
+        store.reset(to: SchoolHubLoadGate.scopeKey(personId: authentication.personId, impersonating: authentication.impersonating))
         ownStore = store
         await store.load()
     }
