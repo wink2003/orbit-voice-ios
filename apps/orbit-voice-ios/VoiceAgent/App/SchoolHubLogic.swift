@@ -924,8 +924,8 @@ extension SchoolHubLogic {
             filter == .all || (filter == .completed ? isCompleted(task) : !isCompleted(task))
         }
         let currentWeek = Set(weekDays(containing: today))
-        let nextWeekDate = calendar().date(byAdding: .day, value: 7, to: now) ?? now
-        let nextWeek = Set(weekDays(containing: dayKey(of: nextWeekDate)))
+        // Derived from the same `today` civil day as every other bucket (never from the device clock), so grouping is deterministic.
+        let nextWeek = Set(weekDays(containing: addDays(7, to: today) ?? today))
 
         for task in visible {
             guard let due = effectiveTaskDay(task, sourceDates: sourceDates) else {
