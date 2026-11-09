@@ -460,6 +460,13 @@ struct SchoolHubLogicTests {
         precondition(classOf(",\"className\":\"7A\"") == "7A", "className alias")
         precondition(classOf(",\"schoolClass\":\"  \"") == nil, "blank class ignored")
 
+        // Schulmanager source link: specific letter / thread when ids are numeric, home otherwise, nil for other sources.
+        precondition(OrbitSchoolSourceLink.url(source: "schulmanager", type: "letter", externalId: "123456")?.absoluteString == "https://login.schulmanager-online.de/#/modules/letters/view/view/123456", "letter deep link")
+        precondition(OrbitSchoolSourceLink.url(source: "Schulmanager", type: "message", externalId: "9", subscriptionId: "77")?.absoluteString == "https://login.schulmanager-online.de/#/modules/messenger/messages/77", "message thread link")
+        precondition(OrbitSchoolSourceLink.url(source: "schulmanager", type: "letter", externalId: "12/../x") == OrbitSchoolSourceLink.schulmanagerHome, "non-numeric id falls back to home")
+        precondition(OrbitSchoolSourceLink.url(source: "schulmanager", type: "message", externalId: "9", subscriptionId: nil) == OrbitSchoolSourceLink.schulmanagerHome, "message without subscription -> home")
+        precondition(OrbitSchoolSourceLink.url(source: "orbit", type: "letter", externalId: "1") == nil && OrbitSchoolSourceLink.url(source: "") == nil, "no link for other sources")
+
         print("school hub logic tests passed")
     }
 }

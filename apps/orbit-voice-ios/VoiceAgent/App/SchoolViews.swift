@@ -700,12 +700,30 @@ struct SchoolDetailView: View {
                     }
                     .background(Routes05Tokens.surface)
                     .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
+                    if let sourceURL = sourceLinkURL {
+                        Link(destination: sourceURL) {
+                            Label("Відкрити лист у Schulmanager", systemImage: "arrow.up.right.square")
+                                .font(.subheadline.weight(.bold))
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .accessibilityHint("Файли вкладень доступні лише в Schulmanager")
+                        Text("Файли зберігаються в Schulmanager; Orbit показує лише список вкладень.")
+                            .font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                    }
                 }
                 detailHeader("Джерело")
                 VStack(alignment: .leading, spacing: 5) {
                     Text(item.source == "schulmanager" ? "Schulmanager · лише читання" : item.source).font(.footnote)
                     if !item.sender.isEmpty { Text("Відправник: \(item.sender)").font(.caption).foregroundStyle(.secondary) }
                     Text(item.unread ? "Стан в Orbit: непрочитано" : "Стан в Orbit: прочитано").font(.caption).foregroundStyle(.secondary)
+                    if let sourceURL = sourceLinkURL {
+                        Link(destination: sourceURL) {
+                            Label("Відкрити оригінал у Schulmanager", systemImage: "arrow.up.right.square")
+                                .font(.subheadline.weight(.bold))
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                        .accessibilityHint("Відкриває цей лист у Schulmanager; може знадобитись вхід")
+                    }
                 }
                 if !item.events.isEmpty {
                     detailHeader("Дати / дедлайни")
@@ -772,6 +790,7 @@ struct SchoolDetailView: View {
         .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
     }
     private var displayTitle: String { item.displayTitle }
+    private var sourceLinkURL: URL? { OrbitSchoolSourceLink.url(source: item.source, type: item.type, externalId: item.externalId, subscriptionId: item.subscriptionId) }
     @ViewBuilder private func attachmentRow(_ file: OrbitSchoolAttachment) -> some View {
         let rawURL = file.url ?? file.downloadURL
         let safeURL = rawURL.flatMap { value -> URL? in
@@ -780,6 +799,11 @@ struct SchoolDetailView: View {
         }
         if let safeURL {
             Link(destination: safeURL) {
+                attachmentLabel(file).foregroundStyle(.primary)
+            }
+        } else if let fallback = sourceLinkURL {
+            // Orbit never stores file bytes or download URLs; the file lives in Schulmanager.
+            Link(destination: fallback) {
                 attachmentLabel(file).foregroundStyle(.primary)
             }
         } else {
@@ -795,12 +819,12 @@ struct SchoolDetailView: View {
                 if let contentType = file.contentType, !contentType.isEmpty { Text(contentType).font(.caption2).foregroundStyle(.secondary) }
             }
             Spacer()
-            if (file.url ?? file.downloadURL) != nil { Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(.secondary) }
+            if (file.url ?? file.downloadURL) != nil || sourceLinkURL != nil { Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(.secondary) }
         }
         .padding(.vertical, 10).contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(file.filename)
-        .accessibilityHint((file.url ?? file.downloadURL) == nil ? "Метадані вкладення" : "Відкрити вкладення")
+        .accessibilityHint((file.url ?? file.downloadURL) != nil ? "Відкрити вкладення" : (sourceLinkURL != nil ? "Відкрити в Schulmanager" : "Метадані вкладення"))
     }
     private func detailHeader(_ title: String) -> some View {
         Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
