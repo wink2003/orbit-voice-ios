@@ -1000,13 +1000,30 @@ nonisolated enum Routes05TaskFilter: CaseIterable, Identifiable {
     func count(_ counts: SchoolTaskCounts) -> Int { self == .all ? counts.all : self == .open ? counts.open : counts.completed }
 }
 
-/// Where a School item's original lives. Orbit stores only attachment metadata
-/// (no file bytes, no download URLs), so attachments and letters fall back to the
-/// Schulmanager web/app entry. A per-letter deep link is NOT known, so this opens
-/// the Schulmanager home (the iOS app handles it as a universal link when installed).
+/// Where a School item's original lives in Schulmanager. Orbit stores only
+/// attachment metadata (no file bytes, no download URLs), so attachments fall back
+/// to the original letter/thread in Schulmanager.
+///
+/// Routes come from the Schulmanager web app's own router (hash routing; states
+/// `main.modules.letters.view.details` = `/modules/letters/view/view/:id` and
+/// `main.modules.messenger.messages.thread` = `/modules/messenger/messages/:subscriptionId`).
+/// Verified from the public app bundle only; opening it on a device is unverified.
 nonisolated enum OrbitSchoolSourceLink {
     static let schulmanagerHome = URL(string: "https://login.schulmanager-online.de/")!
-    static func url(source: String) -> URL? {
-        source.lowercased() == "schulmanager" ? schulmanagerHome : nil
+    private static func isNumericID(_ value: String?) -> Bool {
+        guard let value, !value.isEmpty, value.count <= 32 else { return false }
+        return value.allSatisfy { $0 >= "0" && $0 <= "9" }
+    }
+    static func url(source: String, type: String = "", externalId: String? = nil, subscriptionId: String? = nil) -> URL? {
+        guard source.lowercased() == "schulmanager" else { return nil }
+        let base = "https://login.schulmanager-online.de/#"
+        switch type.lowercased() {
+        case "letter" where isNumericID(externalId):
+            return URL(string: "\(base)/modules/letters/view/view/\(externalId!)")
+        case "message" where isNumericID(subscriptionId):
+            return URL(string: "\(base)/modules/messenger/messages/\(subscriptionId!)")
+        default:
+            return schulmanagerHome
+        }
     }
 }
