@@ -187,6 +187,9 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     var actionID: String? = nil
     var status: String = "open"
     var planningDate: String? = nil
+    /// School deadline kept aside when `dueAt` is replaced by the family's planned date.
+    var schoolDueAt: String? = nil
+    var schoolDueAllDay: Bool = true
     var identityStable: Bool = true
     var calendarEventId: String? = nil
 }
@@ -1026,4 +1029,31 @@ nonisolated enum OrbitSchoolSourceLink {
             return schulmanagerHome
         }
     }
+}
+
+extension SchoolHubLogic {
+    /// `YYYY-MM-DD` of an API planning date (`2026-11-18` or `2026-11-18T00:00:00.000Z`), nil if it is not a real day.
+    static func planningDayKey(_ raw: String?) -> String? {
+        guard let raw, raw.count >= 10 else { return nil }
+        let key = String(raw.prefix(10))
+        return date(fromDayKey: key) != nil ? key : nil
+    }
+
+    /// The family's planned date (Orbit-owned) overrides the due date used for grouping and overdue logic;
+    /// the school's own deadline is preserved in `schoolDueAt`.
+    static func effectiveDue(dueAt: String?, allDay: Bool, planningDate: String?) -> (dueAt: String?, allDay: Bool, schoolDueAt: String?, schoolAllDay: Bool) {
+        guard let key = planningDayKey(planningDate) else { return (dueAt, allDay, nil, allDay) }
+        return (key, true, dueAt, allDay)
+    }
+}
+
+extension SchoolHubTask {
+    /// The school's own deadline (read-only), regardless of any family planned date.
+    var schoolDeadlineAt: String? {
+        SchoolHubLogic.planningDayKey(planningDate) == nil ? dueAt : schoolDueAt
+    }
+    var schoolDeadlineAllDay: Bool {
+        SchoolHubLogic.planningDayKey(planningDate) == nil ? allDay : schoolDueAllDay
+    }
+    var planningDayKey: String? { SchoolHubLogic.planningDayKey(planningDate) }
 }
