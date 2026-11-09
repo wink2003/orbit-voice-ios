@@ -220,6 +220,15 @@ enum SchoolActionsCapability: Equatable {
 
     var canMutate: Bool { self == .available }
 
+    /// Definite answers from the server (not signed in / forbidden / not available) always apply; a transient
+    /// network/server failure keeps an already established capability (available / readOnly) instead of revoking it.
+    static func afterFailure(current: Self, error next: Self) -> Self {
+        switch next {
+        case .unauthorized, .forbidden, .unavailable: return next
+        default: return (current == .available || current == .readOnly) ? current : next
+        }
+    }
+
     /// After a successful read: writes are offered only when the effective permissions allow School writes.
     static func afterReadSucceeded(canWrite: Bool) -> Self { canWrite ? .available : .readOnly }
 
@@ -865,6 +874,9 @@ struct SchoolHubLoadGate: Equatable {
     func token() -> Int? { scopeKey == nil ? nil : generation }
 
     func accepts(_ token: Int?) -> Bool { token != nil && token == generation }
+
+    /// A newer load supersedes every outstanding token of the same scope.
+    mutating func advance() { if scopeKey != nil { generation += 1 } }
 }
 
 
@@ -1121,4 +1133,22 @@ extension SchoolHubTask {
         SchoolHubLogic.planningDayKey(planningDate) == nil ? allDay : schoolDueAllDay
     }
     var planningDayKey: String? { SchoolHubLogic.planningDayKey(planningDate) }
+}
+
+
+enum SchoolHubErrors {
+    /// URLSession reports a cancelled request as URLError(.cancelled), not CancellationError: both mean "superseded", never "failed".
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let url = error as? URLError, url.code == .cancelled { return true }
+        let ns = error as NSError
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+    }
+}
+
+extension SchoolHubLogic {
+    /// After a failed re-read of family actions: keep showing the last confirmed list unless the server gave a definite refusal.
+    static func keepsLastActionList(after failure: SchoolActionsCapability, loadedOnce: Bool) -> Bool {
+        loadedOnce && (failure == .networkFailure || failure == .serverFailure)
+    }
 }

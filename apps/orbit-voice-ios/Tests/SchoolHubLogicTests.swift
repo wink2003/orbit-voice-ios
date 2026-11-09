@@ -527,6 +527,18 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.matchByTitle(title: "Інша", among: [tA, tB, tB]) == nil, "ambiguous title -> no match")
         precondition(SchoolHubLogic.matchByTitle(title: nil, among: [tA]) == nil && SchoolHubLogic.matchByTitle(title: "  ", among: [tA]) == nil, "empty title -> no match")
 
+        // Refresh must not revoke access: cancellation is not a failure; transient errors keep an established capability.
+        precondition(SchoolHubErrors.isCancellation(CancellationError()) && SchoolHubErrors.isCancellation(URLError(.cancelled)) && SchoolHubErrors.isCancellation(NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)), "cancellation variants")
+        precondition(!SchoolHubErrors.isCancellation(URLError(.notConnectedToInternet)) && !SchoolHubErrors.isCancellation(URLError(.timedOut)), "real network errors are failures")
+        precondition(SchoolActionsCapability.afterFailure(current: .available, error: .networkFailure) == .available, "transient failure keeps write access")
+        precondition(SchoolActionsCapability.afterFailure(current: .readOnly, error: .serverFailure) == .readOnly, "transient failure keeps read-only")
+        precondition(SchoolActionsCapability.afterFailure(current: .available, error: .forbidden) == .forbidden && SchoolActionsCapability.afterFailure(current: .available, error: .unauthorized) == .unauthorized && SchoolActionsCapability.afterFailure(current: .readOnly, error: .unavailable) == .unavailable, "definite refusals apply")
+        precondition(SchoolActionsCapability.afterFailure(current: .unknown, error: .networkFailure) == .networkFailure, "no established capability -> failure shown")
+        precondition(SchoolHubLogic.keepsLastActionList(after: .networkFailure, loadedOnce: true) && !SchoolHubLogic.keepsLastActionList(after: .networkFailure, loadedOnce: false) && !SchoolHubLogic.keepsLastActionList(after: .forbidden, loadedOnce: true), "keep last list only for transient + loaded before")
+        var gate = SchoolHubLoadGate()
+        gate.advance(); precondition(gate.token() == nil, "no scope -> no token")
+        gate.reset(to: "p|own"); let t1 = gate.token(); gate.advance(); precondition(!gate.accepts(t1) && gate.accepts(gate.token()), "newer load supersedes older token")
+
         print("school hub logic tests passed")
     }
 }
