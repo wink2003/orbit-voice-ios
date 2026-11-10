@@ -902,8 +902,8 @@ nonisolated struct SchoolTaskSections: Equatable {
     var nextWeek: [SchoolHubTask] = []
     var later: [SchoolHubTask] = []
 
-    var laterOpen: [SchoolHubTask] { later.filter { !SchoolHubLogic.isCompleted($0) } }
-    var laterCompleted: [SchoolHubTask] { later.filter(SchoolHubLogic.isCompleted) }
+    var laterOpen: [SchoolHubTask] { later.filter { $0.status != "completed" } }
+    var laterCompleted: [SchoolHubTask] { later.filter { $0.status == "completed" } }
 
     var visibleCount: Int { overdue.count + thisWeek.count + nextWeek.count + later.count }
 }
