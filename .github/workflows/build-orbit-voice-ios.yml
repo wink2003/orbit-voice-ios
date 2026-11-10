@@ -315,6 +315,18 @@ jobs:
           if grep -n "TabView\|\.tabItem" apps/orbit-voice-ios/VoiceAgent/App/SchoolHubViews.swift apps/orbit-voice-ios/VoiceAgent/App/SchoolViews.swift; then
             echo "School Hub must not add a second tab bar"; exit 1
           fi
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("apps/orbit-voice-ios/VoiceAgent/App/SchoolHubViews.swift").read_text()
+          helper = source.split("@ViewBuilder private func taskGroupView(", 1)[1].split("@ViewBuilder private func laterTaskGroup(", 1)[0]
+          assert "if !tasks.isEmpty {" in helper, "Task groups must remain hidden when empty"
+          assert "showsEmpty" not in helper, "Empty groups must not be force-shown"
+          for title, section in (("Цей тиждень", "thisWeek"), ("Наступний тиждень", "nextWeek")):
+              call = next(line for line in source.splitlines() if f'taskGroupView("{title}"' in line)
+              assert f"tasks: sections.{section}" in call, f"{title} must use its grouped tasks"
+              assert "completedCount:" in call, f"{title} must retain its completed/total count"
+              assert "showsEmpty" not in call, f"{title} must not force an empty heading"
+          PY
 
       - name: Test School task calendar model
         run: |

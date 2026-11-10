@@ -3482,8 +3482,8 @@ private struct Routes05SchoolTasksProductionView: View {
                         // Four groups, ascending by the authoritative backend effective date (shared, tested logic).
                         let sections = SchoolHubLogic.taskSections(tasks, filter: .all, today: today, sourceDates: store.sourceDates, now: Date())
                         taskGroupView("Прострочені", tasks: sections.overdue)
-                        taskGroupView("Цей тиждень", tasks: sections.thisWeek, completedCount: sections.thisWeek.filter(SchoolHubLogic.isCompleted).count, showsEmpty: true)
-                        taskGroupView("Наступний тиждень", tasks: sections.nextWeek, completedCount: sections.nextWeek.filter(SchoolHubLogic.isCompleted).count, showsEmpty: true)
+                        taskGroupView("Цей тиждень", tasks: sections.thisWeek, completedCount: sections.thisWeek.filter(SchoolHubLogic.isCompleted).count)
+                        taskGroupView("Наступний тиждень", tasks: sections.nextWeek, completedCount: sections.nextWeek.filter(SchoolHubLogic.isCompleted).count)
                         laterTaskGroup(openTasks: sections.laterOpen, completedTasks: sections.laterCompleted)
                     }
                     Text("Статус справ і дані зі шкільних джерел відображаються окремо. Зміни виконуються лише після перевірки прав та підтвердження.")
@@ -3558,8 +3558,8 @@ private struct Routes05SchoolTasksProductionView: View {
         if !store.actionCapability.canMutate && store.actionCapability != .unknown { Label(store.actionCapability.message, systemImage: "lock").font(.footnote).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.bottom, 8) }
     }
 
-    @ViewBuilder private func taskGroupView(_ title: String, tasks: [SchoolHubTask], completedCount: Int? = nil, showsEmpty: Bool = false) -> some View {
-        if !tasks.isEmpty || showsEmpty { VStack(alignment: .leading, spacing: 0) {
+    @ViewBuilder private func taskGroupView(_ title: String, tasks: [SchoolHubTask], completedCount: Int? = nil) -> some View {
+        if !tasks.isEmpty { VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title).font(.system(.title3, design: .rounded).weight(.black))
                 Spacer(minLength: 8)
