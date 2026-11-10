@@ -2193,6 +2193,8 @@ struct SchoolTaskDetailView: View {
     @State private var showPlanSheet = false
     @State private var pendingStatusChange: SchoolTaskStatusConfirmation?
 
+    private var currentTask: SchoolHubTask { store.hubTasks.first { $0.id == task.id } ?? task }
+    private var taskIsCompleted: Bool { currentTask.status == "completed" }
     private var source: OrbitSchoolItem? { store.item(id: task.sourceItemId) }
     private var dueKey: String? { SchoolHubLogic.dayKey(for: task.schoolDeadlineAt, allDay: task.schoolDeadlineAllDay) }
     private var canEditPlan: Bool { store.actionTasksPhase == .loaded && store.actionCapability.canMutate && task.identityStable }
@@ -2209,7 +2211,7 @@ struct SchoolTaskDetailView: View {
                 }
                 HStack(spacing: 8) {
                     detailTag(task.kind == "family" ? "ORBIT · FAMILY" : "SOURCE · SCHOOL", tint: task.kind == "family" ? Routes05Tokens.lilac : Routes05Tokens.mint)
-                    detailTag(task.status == "completed" ? "ВИКОНАНО" : "ВІДКРИТО", tint: task.status == "completed" ? Routes05Tokens.mint : Routes05Tokens.yellow)
+                    detailTag(taskIsCompleted ? "ВИКОНАНО" : "ВІДКРИТО", tint: taskIsCompleted ? Routes05Tokens.mint : Routes05Tokens.yellow)
                 }
                 HStack(alignment: .top, spacing: 12) {
                     Routes05HeadingText(task.title, tracking: -0.8, basePoints: 30, lineLimit: 3).textSelection(.enabled)
@@ -2229,15 +2231,15 @@ struct SchoolTaskDetailView: View {
                     if let target = task.target, !target.isEmpty { Text("Кого стосується: \(target)").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
                     if let importance = task.importance, !importance.isEmpty { Text("Позначка джерела: \(importance)").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
                 }
-                mainActionCard(background: task.status == "completed" ? Routes05Tokens.mint : Routes05Tokens.orange) {
+                mainActionCard(background: taskIsCompleted ? Routes05Tokens.mint : Routes05Tokens.orange) {
                     HStack {
                         Text("01  СТАН ORBIT").font(.caption.weight(.black).monospaced())
                         Spacer()
-                        Text(task.status == "completed" ? "ВИКОНАНО" : "ВІДКРИТО").font(.caption2.weight(.black).monospaced())
+                        Text(taskIsCompleted ? "ВИКОНАНО" : "ВІДКРИТО").font(.caption2.weight(.black).monospaced())
                     }
                     if store.actionTasksPhase == .loaded && store.actionCapability.canMutate && task.identityStable {
-                        Button { pendingStatusChange = SchoolTaskStatusConfirmation(completed: task.status == "completed") } label: {
-                            Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle")
+                        Button { pendingStatusChange = SchoolTaskStatusConfirmation(completed: taskIsCompleted) } label: {
+                            Label(taskIsCompleted ? "Повернути у відкриті" : "Позначити виконаною", systemImage: taskIsCompleted ? "arrow.uturn.backward.circle" : "checkmark.circle")
                                 .font(.body.weight(.bold))
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                                 .padding(.horizontal, 12)
