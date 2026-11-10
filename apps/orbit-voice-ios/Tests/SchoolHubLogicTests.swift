@@ -317,6 +317,12 @@ struct SchoolHubLogicTests {
             let weeklySections = SchoolHubLogic.taskSections(weeklyMixed, filter: .all, today: today, sourceDates: [:], now: now)
             let weeklyCounts = SchoolHubLogic.taskCounts(weeklySections.thisWeek)
             precondition(weeklyCounts.completed == 1 && weeklyCounts.all == 2, "weekly completion counter uses actual grouped tasks")
+            let completedWeek = [t("done1", due: "2026-10-14", status: "completed"), t("done2", due: "2026-10-18", status: "completed")]
+            let completedWeekSections = SchoolHubLogic.taskSections(completedWeek, filter: .all, today: today, sourceDates: [:], now: now)
+            let completedWeekCounts = SchoolHubLogic.taskCounts(completedWeekSections.thisWeek)
+            precondition(completedWeekCounts.completed == 2 && completedWeekCounts.all == 2, "fully completed week is N/N")
+            let completedLaterSections = SchoolHubLogic.taskSections([t("laterDone", due: "2026-10-30", status: "completed"), t("laterDoneUndated", due: nil, status: "completed")], filter: .completed, today: today, sourceDates: [:], now: now)
+            precondition(completedLaterSections.laterOpen.isEmpty && completedLaterSections.laterCompleted.count == 2, "completed-only filter retains completed Later tasks")
             let searchedWeek = SchoolHubLogic.searchTasks(weeklyMixed, query: "TweekDone")
             let searchedSections = SchoolHubLogic.taskSections(searchedWeek, filter: .all, today: today, sourceDates: [:], now: now)
             let searchedCounts = SchoolHubLogic.taskCounts(searchedSections.thisWeek)
