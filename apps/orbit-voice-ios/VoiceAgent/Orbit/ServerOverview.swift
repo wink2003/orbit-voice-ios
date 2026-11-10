@@ -47,12 +47,53 @@ struct OpenRouterStats: Decodable {
     let source: String?
 }
 
+struct AzureSpeechStats: Decodable {
+    struct Tier: Decodable { let name: String; let enforcement: String; let limits: [String: Double] }
+    struct TaskUsage: Decodable, Identifiable {
+        let taskId: String; let policyVersion: Int?; let calls: Int; let tier: Tier?; let usage: [String: Double]; let remaining: [String: Double]?
+        var id: String { taskId }
+    }
+    let status: String
+    let currency: String?
+    let costUsd: Double
+    let billing: String?
+    let updatedAt: String?
+    let periodStart: String?
+    let resetsAt: String?
+    let tasks: [TaskUsage]
+}
+
+enum AzureSpeechLabels {
+    struct Row { let title: String; let value: String; let fraction: Double? }
+    static func task(_ id: String) -> String {
+        switch id { case "speech.interpreter": return "Перекладач"; case "speech.voice_fallback": return "Резервна голосова лінія"; default: return id }
+    }
+    private static func title(_ key: String) -> String {
+        switch key { case "stt_seconds": return "Розпізнавання мови"; case "tts_characters": return "Озвучення (символи)"; case "token_issues": return "Сесії (токени)"; default: return key }
+    }
+    private static func format(_ key: String, _ value: Double) -> String {
+        if key == "stt_seconds" { let minutes = Int(value / 60); return minutes >= 60 ? "\(minutes / 60) год \(minutes % 60) хв" : "\(minutes) хв" }
+        return String(Int(value))
+    }
+    static func rows(_ task: AzureSpeechStats.TaskUsage) -> [Row] {
+        guard let tier = task.tier else { return [] }
+        let keys = tier.limits.keys.sorted()
+        if keys.isEmpty { return [Row(title: "Ліміт", value: "без обліку", fraction: nil)] }
+        return keys.map { key in
+            let limit = tier.limits[key] ?? 0
+            let used = task.usage[key] ?? 0
+            return Row(title: title(key), value: "\(format(key, used)) із \(format(key, limit))", fraction: limit > 0 ? used / limit : nil)
+        }
+    }
+}
+
 @MainActor final class ServerOverviewStore: ObservableObject {
     @Published private(set) var overview: ServerOverview?
     @Published private(set) var isLoading = false
     @Published private(set) var error: String?
     @Published private(set) var backups: BackupStatus?
     @Published private(set) var openRouter: OpenRouterStats?
+    @Published private(set) var azureSpeech: AzureSpeechStats?
     private var lastLoaded: Date?
     private var task: Task<Void, Never>?
     func loadIfNeeded(force: Bool = false) {
@@ -75,6 +116,10 @@ struct OpenRouterStats: Decodable {
             if let statsURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/openrouter") {
                 var statsRequest = URLRequest(url: statsURL); statsRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 if let (statsData, statsResponse) = try? await URLSession.shared.data(for: statsRequest), (statsResponse as? HTTPURLResponse)?.statusCode == 200 { openRouter = try? decoder.decode(OpenRouterStats.self, from: statsData) }
+            }
+            if let azureURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/azure-speech") {
+                var azureRequest = URLRequest(url: azureURL); azureRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                if let (azureData, azureResponse) = try? await URLSession.shared.data(for: azureRequest), (azureResponse as? HTTPURLResponse)?.statusCode == 200 { azureSpeech = try? JSONDecoder().decode(AzureSpeechStats.self, from: azureData) }
             }
             lastLoaded = Date()
         } catch { self.error = "Не вдалося оновити огляд сервера." }

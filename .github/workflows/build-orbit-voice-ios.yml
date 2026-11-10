@@ -122,6 +122,18 @@ jobs:
             -o "$RUNNER_TEMP/orbit-school-item-status-tests"
           "$RUNNER_TEMP/orbit-school-item-status-tests"
 
+      - name: Test Azure Speech admin stats decoding
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'import Foundation' > "$RUNNER_TEMP/orbit-azure-models.swift"
+          awk '/^struct AzureSpeechStats/ { emit=1 } /^@MainActor final class ServerOverviewStore/ { emit=0 } emit { print }' \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/ServerOverview.swift >> "$RUNNER_TEMP/orbit-azure-models.swift"
+          xcrun swiftc \
+            "$RUNNER_TEMP/orbit-azure-models.swift" \
+            apps/orbit-voice-ios/Tests/OrbitAzureSpeechStatsTests.swift \
+            -o "$RUNNER_TEMP/orbit-azure-stats-tests"
+          "$RUNNER_TEMP/orbit-azure-stats-tests"
+
       - name: Test Main timezone hint
         run: |
           set -euo pipefail

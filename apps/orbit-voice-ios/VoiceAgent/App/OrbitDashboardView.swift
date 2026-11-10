@@ -27,6 +27,11 @@ struct OrbitDashboardView: View {
             } else {
                 section("OpenRouter", icon: "chart.bar.fill") { Text("Статистика недоступна").foregroundStyle(.secondary) }
             }
+            if let azure = store.azureSpeech {
+                NavigationLink { AzureSpeechDetailView(stats: azure) } label: { azureSpeechCard(azure) }.buttonStyle(.plain)
+            } else {
+                section("Azure Speech", icon: "waveform") { Text("Статистика недоступна").foregroundStyle(.secondary) }
+            }
             NavigationLink { ServerOverviewDetailView(section: .cpu) } label: { section("CPU", icon: "cpu") { Text(value.cpu.model ?? "CPU").font(.headline); Text("\(value.cpu.logicalCpus) vCPU").foregroundStyle(.secondary); if let usage = value.cpu.utilizationPercent { LabeledContent("Навантаження", value: "\(String(format: "%.1f", usage))%") }; LabeledContent("Load", value: "\(String(format: "%.2f", value.cpu.loadAverage.one)) / \(String(format: "%.2f", value.cpu.loadAverage.five)) / \(String(format: "%.2f", value.cpu.loadAverage.fifteen))") } }.buttonStyle(.plain)
             NavigationLink { ServerOverviewDetailView(section: .memory) } label: { resource("Оперативна памʼять", icon: "memorychip.fill", used: value.memory.usedBytes, total: value.memory.totalBytes, available: value.memory.availableBytes, percent: value.memory.usedPercent) }.buttonStyle(.plain)
             if value.memory.swapTotalBytes > 0 { section("Swap", icon: "arrow.left.arrow.right") { Text("\(bytes(value.memory.swapUsedBytes)) із \(bytes(value.memory.swapTotalBytes))") } }
@@ -41,6 +46,23 @@ struct OrbitDashboardView: View {
     private func backupCard(_ backup: BackupStatus) -> some View { section("Резервні копії", icon: "externaldrive.badge.checkmark") { HStack { Image(systemName: backup.status == "success" ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(backup.status == "success" ? .green : .orange); Text(backupStatusLabel(backup.status)).font(.subheadline.weight(.medium)) }; if let date = backup.lastSuccessAt { Text("Остання копія: \(date.formatted(date: .abbreviated, time: .shortened))").font(.subheadline) }; Text(backup.remote.status == "pending_configuration" ? "Локально · Хмара: очікує налаштування" : "Локально · Хмара: \(backup.remote.status)").font(.caption).foregroundStyle(.secondary); Text("Щодня о \(backup.schedule.timeUtc) UTC").font(.caption).foregroundStyle(.secondary) } }
     private func backupStatusLabel(_ status: String) -> String { switch status { case "success": "Успішно"; case "stale": "Потрібна увага"; case "failed": "Помилка"; case "running": "Виконується"; default: "Недоступно" } }
     private func openRouterCard(_ stats: OpenRouterStats) -> some View { section("OpenRouter", icon: "chart.bar.fill") { HStack { Image(systemName: stats.status == "ok" ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(stats.status == "ok" ? .green : .orange); Text(stats.status == "ok" ? "Використання та витрати" : "Статистика недоступна").font(.subheadline.weight(.medium)) }; HStack { metric("Сьогодні", stats.today.cost, currency: stats.currency); metric("30 днів", stats.last30Days.cost, currency: stats.currency); metric("За весь час Orbit", stats.allTime.cost, currency: stats.currency) }; Text(balanceLabel(stats)).font(.caption).foregroundStyle(.secondary) } }
+    private func azureSpeechCard(_ stats: AzureSpeechStats) -> some View {
+        section("Azure Speech", icon: "waveform") {
+            HStack {
+                Image(systemName: stats.status == "ok" ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(stats.status == "ok" ? .green : .orange)
+                Text("Безкоштовний тариф F0 · $0.00").font(.subheadline.weight(.medium))
+            }
+            ForEach(stats.tasks) { task in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(AzureSpeechLabels.task(task.taskId)).font(.subheadline)
+                    ForEach(AzureSpeechLabels.rows(task), id: \.title) { row in
+                        HStack { Text(row.title).font(.caption).foregroundStyle(.secondary); Spacer(); Text(row.value).font(.caption.monospacedDigit()) }
+                        if let fraction = row.fraction { ProgressView(value: min(max(fraction, 0), 1)).tint(fraction > 0.85 ? .red : .indigo) }
+                    }
+                }
+            }
+        }
+    }
     private func balanceLabel(_ stats: OpenRouterStats) -> String { if stats.balance.status == "available", let amount = stats.balance.amount { return stats.balance.type == "key_remaining_limit" ? "Залишок ліміту ключа: \(money(amount, currency: stats.currency))" : "Баланс: \(money(amount, currency: stats.currency))" }; return "Баланс: недоступний для цього джерела" }
     private func metric(_ title: String, _ value: Double, currency: String?) -> some View { VStack(alignment: .leading, spacing: 2) { Text(title).font(.caption).foregroundStyle(.secondary); Text(money(value, currency: currency)).font(.headline.monospacedDigit()) } }
     private func money(_ value: Double, currency: String?) -> String { "\(currency == "USD" ? "$" : "")\(String(format: "%.2f", value)) \(currency ?? "")".trimmingCharacters(in: .whitespaces) }
@@ -60,6 +82,30 @@ struct OpenRouterStatsDetailView: View {
     var body: some View { ScrollView { VStack(alignment: .leading, spacing: 16) { detailSection("OpenRouter", icon: "chart.bar.fill") { row("Сьогодні", money(stats.today.cost)); row("7 днів", money(stats.last7Days.cost)); row("30 днів", money(stats.last30Days.cost)); row("Баланс", balanceText); }; detailSection("За весь час OpenRouter", icon: "infinity") { row("Витрати", money(stats.allTime.cost)); row("Запити", "\(stats.allTime.requests)"); row("Вхідні токени", "\(stats.allTime.inputTokens)"); row("Вихідні токени", "\(stats.allTime.outputTokens)") }; if !stats.models90Days.isEmpty { detailSection("Моделі за 3 місяці", icon: "list.number") { ForEach(stats.models90Days) { model in VStack(alignment: .leading, spacing: 2) { row(model.model, "\(model.requests ?? 0) запитів · \(money(model.cost))"); if let input = model.inputTokens, let output = model.outputTokens { Text("\(input) вхідних · \(output) вихідних токенів").font(.caption).foregroundStyle(.secondary) } } } } }; detailSection("Джерело й оновлення", icon: "clock") { row("Використання", "OpenRouter API"); row("Баланс", "OpenRouter API"); if let date = stats.updatedAt { row("Оновлено", date.formatted(date: .abbreviated, time: .shortened)) }; Text("Статистика використання та витрат надана OpenRouter для цього акаунта.").font(.caption).foregroundStyle(.secondary) } }.padding(16) }.background(Color(uiColor: .systemGroupedBackground)).navigationTitle("OpenRouter") }
     private var balanceText: String { if stats.balance.status == "available", let amount = stats.balance.amount { return stats.balance.type == "key_remaining_limit" ? "Залишок ліміту ключа: \(money(amount))" : money(amount) }; return "Недоступний" }
     private func money(_ value: Double) -> String { "\(stats.currency == "USD" ? "$" : "")\(String(format: "%.2f", value)) \(stats.currency ?? "")".trimmingCharacters(in: .whitespaces) }
+    private func row(_ title: String, _ value: String) -> some View { HStack { Text(title); Spacer(); Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing) } }
+    private func detailSection<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View { VStack(alignment: .leading, spacing: 10) { Label(title, systemImage: icon).font(.headline); content() }.frame(maxWidth: .infinity, alignment: .leading).padding().background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous)) }
+}
+
+struct AzureSpeechDetailView: View {
+    let stats: AzureSpeechStats
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                detailSection("Azure Speech", icon: "waveform") {
+                    row("Тариф", "Безкоштовний F0"); row("Витрати", "$0.00"); row("Статус", stats.status == "ok" ? "Працює" : "Недоступно")
+                    if let reset = stats.resetsAt { row("Скидання ліміту", String(reset.prefix(10))) }
+                }
+                ForEach(stats.tasks) { task in
+                    detailSection(AzureSpeechLabels.task(task.taskId), icon: "gauge.with.dots.needle.33percent") {
+                        row("Запитів цього місяця", "\(task.calls)")
+                        if let tier = task.tier { row("Правило", tier.enforcement == "hard_stop" ? "Жорсткий ліміт" : "Без обліку") }
+                        ForEach(AzureSpeechLabels.rows(task), id: \.title) { item in row(item.title, item.value) }
+                    }
+                }
+                Text("Ліміти задає менеджер моделей Orbit. Після ліміту нові сесії не видаються, платних списань немає.").font(.footnote).foregroundStyle(.secondary)
+            }.padding()
+        }.navigationTitle("Azure Speech")
+    }
     private func row(_ title: String, _ value: String) -> some View { HStack { Text(title); Spacer(); Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing) } }
     private func detailSection<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View { VStack(alignment: .leading, spacing: 10) { Label(title, systemImage: icon).font(.headline); content() }.frame(maxWidth: .infinity, alignment: .leading).padding().background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous)) }
 }
