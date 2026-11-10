@@ -309,7 +309,24 @@ struct SchoolHubLogicTests {
             precondition(every.thisWeek.map(\.id) == ["weekDone"])
             precondition(every.nextWeek.map(\.id) == ["soon"])
             precondition(every.later.map(\.id) == ["done", "edge", "later", "doneUndated", "undated"])
+            precondition(every.laterOpen.map(\.id) == ["edge", "later", "undated"])
+            precondition(every.laterCompleted.map(\.id) == ["done", "doneUndated"])
             precondition(Set((every.overdue + every.thisWeek + every.nextWeek + every.later).map(\.id)).count == counts.all)
+            precondition(SchoolHubLogic.taskCounts([]) == SchoolTaskCounts(), "empty weekly counter is 0/0")
+            let weeklyMixed = [t("weekOpen", due: "2026-10-14"), t("weekDone", due: "2026-10-18", status: "completed")]
+            let weeklySections = SchoolHubLogic.taskSections(weeklyMixed, filter: .all, today: today, sourceDates: [:], now: now)
+            let weeklyCounts = SchoolHubLogic.taskCounts(weeklySections.thisWeek)
+            precondition(weeklyCounts.completed == 1 && weeklyCounts.all == 2, "weekly completion counter uses actual grouped tasks")
+            let completedWeek = [t("done1", due: "2026-10-14", status: "completed"), t("done2", due: "2026-10-18", status: "completed")]
+            let completedWeekSections = SchoolHubLogic.taskSections(completedWeek, filter: .all, today: today, sourceDates: [:], now: now)
+            let completedWeekCounts = SchoolHubLogic.taskCounts(completedWeekSections.thisWeek)
+            precondition(completedWeekCounts.completed == 2 && completedWeekCounts.all == 2, "fully completed week is N/N")
+            let completedLaterSections = SchoolHubLogic.taskSections([t("laterDone", due: "2026-10-30", status: "completed"), t("laterDoneUndated", due: nil, status: "completed")], filter: .completed, today: today, sourceDates: [:], now: now)
+            precondition(completedLaterSections.laterOpen.isEmpty && completedLaterSections.laterCompleted.count == 2, "completed-only filter retains completed Later tasks")
+            let searchedWeek = SchoolHubLogic.searchTasks(weeklyMixed, query: "TweekDone")
+            let searchedSections = SchoolHubLogic.taskSections(searchedWeek, filter: .all, today: today, sourceDates: [:], now: now)
+            let searchedCounts = SchoolHubLogic.taskCounts(searchedSections.thisWeek)
+            precondition(searchedCounts.completed == 1 && searchedCounts.all == 1, "weekly counter follows search results")
             // The week bucket follows `today`, not the device clock: same data, different `now`, identical groups.
             let farNow = Date(timeIntervalSince1970: 4_000_000_000)
             precondition(SchoolHubLogic.taskSections(tasks, filter: .all, today: today, sourceDates: [:], now: farNow) == every)
@@ -468,9 +485,9 @@ struct SchoolHubLogicTests {
         precondition(SchoolTranslationPlaceholder.message(translation: nil, status: "body_pending")?.contains("не отримано") == true)
         precondition(SchoolTranslationPlaceholder.message(translation: nil, status: nil)?.contains("недоступний") == true)
 
-        // Tasks filter: owner order Відкриті → Завершені → Всі, default Відкриті.
-        precondition(Routes05TaskFilter.allCases.map(\.title) == ["Відкриті", "Завершені", "Всі"], "task filter order")
-        precondition(Routes05TaskFilter.defaultFilter == .open && Routes05TaskFilter.allCases.first == .open, "task filter default")
+        // Tasks filter: owner order Всі → Відкриті → Завершені, default Всі.
+        precondition(Routes05TaskFilter.allCases.map(\.title) == ["Всі", "Відкриті", "Завершені"], "task filter order")
+        precondition(Routes05TaskFilter.defaultFilter == .all && Routes05TaskFilter.allCases.first == .all, "task filter default")
         var taskCounts = SchoolTaskCounts(); taskCounts.open = 3; taskCounts.completed = 2
         precondition(Routes05TaskFilter.open.count(taskCounts) == 3 && Routes05TaskFilter.completed.count(taskCounts) == 2 && Routes05TaskFilter.all.count(taskCounts) == 5, "task filter counts unchanged")
 

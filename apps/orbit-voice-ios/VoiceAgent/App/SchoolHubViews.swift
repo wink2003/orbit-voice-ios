@@ -2193,6 +2193,8 @@ struct SchoolTaskDetailView: View {
     @State private var showPlanSheet = false
     @State private var pendingStatusChange: SchoolTaskStatusConfirmation?
 
+    private var currentTask: SchoolHubTask { store.hubTasks.first { $0.id == task.id } ?? task }
+    private var taskIsCompleted: Bool { currentTask.status == "completed" }
     private var source: OrbitSchoolItem? { store.item(id: task.sourceItemId) }
     private var dueKey: String? { SchoolHubLogic.dayKey(for: task.schoolDeadlineAt, allDay: task.schoolDeadlineAllDay) }
     private var canEditPlan: Bool { store.actionTasksPhase == .loaded && store.actionCapability.canMutate && task.identityStable }
@@ -2209,7 +2211,7 @@ struct SchoolTaskDetailView: View {
                 }
                 HStack(spacing: 8) {
                     detailTag(task.kind == "family" ? "ORBIT · FAMILY" : "SOURCE · SCHOOL", tint: task.kind == "family" ? Routes05Tokens.lilac : Routes05Tokens.mint)
-                    detailTag(task.status == "completed" ? "ВИКОНАНО" : "ВІДКРИТО", tint: task.status == "completed" ? Routes05Tokens.mint : Routes05Tokens.yellow)
+                    detailTag(taskIsCompleted ? "ВИКОНАНО" : "ВІДКРИТО", tint: taskIsCompleted ? Routes05Tokens.mint : Routes05Tokens.yellow)
                 }
                 HStack(alignment: .top, spacing: 12) {
                     Routes05HeadingText(task.title, tracking: -0.8, basePoints: 30, lineLimit: 3).textSelection(.enabled)
@@ -2229,15 +2231,15 @@ struct SchoolTaskDetailView: View {
                     if let target = task.target, !target.isEmpty { Text("Кого стосується: \(target)").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
                     if let importance = task.importance, !importance.isEmpty { Text("Позначка джерела: \(importance)").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
                 }
-                mainActionCard {
+                mainActionCard(background: taskIsCompleted ? Routes05Tokens.mint : Routes05Tokens.orange) {
                     HStack {
                         Text("01  СТАН ORBIT").font(.caption.weight(.black).monospaced())
                         Spacer()
-                        Text(task.status == "completed" ? "ВИКОНАНО" : "ВІДКРИТО").font(.caption2.weight(.black).monospaced())
+                        Text(taskIsCompleted ? "ВИКОНАНО" : "ВІДКРИТО").font(.caption2.weight(.black).monospaced())
                     }
                     if store.actionTasksPhase == .loaded && store.actionCapability.canMutate && task.identityStable {
-                        Button { pendingStatusChange = SchoolTaskStatusConfirmation(completed: task.status == "completed") } label: {
-                            Label(task.status == "completed" ? "Повернути у відкриті" : "Позначити виконаною", systemImage: task.status == "completed" ? "arrow.uturn.backward.circle" : "checkmark.circle")
+                        Button { pendingStatusChange = SchoolTaskStatusConfirmation(completed: taskIsCompleted) } label: {
+                            Label(taskIsCompleted ? "Повернути у відкриті" : "Позначити виконаною", systemImage: taskIsCompleted ? "arrow.uturn.backward.circle" : "checkmark.circle")
                                 .font(.body.weight(.bold))
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                                 .padding(.horizontal, 12)
@@ -2347,13 +2349,13 @@ struct SchoolTaskDetailView: View {
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
     }
 
-    @ViewBuilder private func mainActionCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    @ViewBuilder private func mainActionCard<Content: View>(background: Color = Routes05Tokens.orange, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10, content: content)
             .padding(14).frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(Routes05Tokens.accentInk)
             .background {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Routes05Tokens.orange)
+                    .fill(background)
                     .shadow(color: Routes05Tokens.accentInk, radius: 0, x: 3, y: 3)
             }
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.accentInk, lineWidth: 1.5))
@@ -3443,6 +3445,8 @@ private struct Routes05SchoolTasksProductionView: View {
     @State private var calendarTask: SchoolHubTask?
     @State private var pendingTask: SchoolHubTask?
     @State private var error: String?
+    @State private var laterOpenExpanded = true
+    @State private var laterCompletedExpanded = false
 
     private var tasks: [SchoolHubTask] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3478,9 +3482,9 @@ private struct Routes05SchoolTasksProductionView: View {
                         // Four groups, ascending by the authoritative backend effective date (shared, tested logic).
                         let sections = SchoolHubLogic.taskSections(tasks, filter: .all, today: today, sourceDates: store.sourceDates, now: Date())
                         taskGroupView("Прострочені", tasks: sections.overdue)
-                        taskGroupView("Цей тиждень", tasks: sections.thisWeek)
-                        taskGroupView("Наступний тиждень", tasks: sections.nextWeek)
-                        taskGroupView("Далі", tasks: sections.later)
+                        taskGroupView("Цей тиждень", tasks: sections.thisWeek, completedCount: sections.thisWeek.filter(SchoolHubLogic.isCompleted).count)
+                        taskGroupView("Наступний тиждень", tasks: sections.nextWeek, completedCount: sections.nextWeek.filter(SchoolHubLogic.isCompleted).count)
+                        laterTaskGroup(openTasks: sections.laterOpen, completedTasks: sections.laterCompleted)
                     }
                     Text("Статус справ і дані зі шкільних джерел відображаються окремо. Зміни виконуються лише після перевірки прав та підтвердження.")
                         .font(.footnote).foregroundStyle(Routes05Tokens.secondary)
@@ -3543,7 +3547,7 @@ private struct Routes05SchoolTasksProductionView: View {
     private var filters: some View {
         ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) { ForEach(Routes05TaskFilter.allCases) { item in
             let selected = item == filter
-            Button { filter = item } label: { Text("\(item.title) \(item.count(counts))").font(.system(.subheadline, design: .rounded).weight(.bold)).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).padding(.horizontal, 15).frame(minHeight: 42).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface, in: Capsule()).overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: selected ? 1 : 1)) }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+            Button { filter = item; if item == .completed { laterCompletedExpanded = true } } label: { Text("\(item.title) \(item.count(counts))").font(.system(.subheadline, design: .rounded).weight(.bold)).foregroundStyle(selected ? Routes05Tokens.accentInk : Routes05Tokens.ink).padding(.horizontal, 15).frame(minHeight: 42).background(selected ? Routes05Tokens.yellow : Routes05Tokens.surface, in: Capsule()).overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: selected ? 1 : 1)) }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
         } }.padding(.horizontal, 16) }.padding(.bottom, 16)
     }
 
@@ -3554,9 +3558,18 @@ private struct Routes05SchoolTasksProductionView: View {
         if !store.actionCapability.canMutate && store.actionCapability != .unknown { Label(store.actionCapability.message, systemImage: "lock").font(.footnote).foregroundStyle(Routes05Tokens.secondary).padding(.horizontal, 16).padding(.bottom, 8) }
     }
 
-    @ViewBuilder private func taskGroupView(_ title: String, tasks: [SchoolHubTask]) -> some View {
+    @ViewBuilder private func taskGroupView(_ title: String, tasks: [SchoolHubTask], completedCount: Int? = nil) -> some View {
         if !tasks.isEmpty { VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(.system(.title3, design: .rounded).weight(.black)).padding(.bottom, 9)
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(.system(.title3, design: .rounded).weight(.black))
+                Spacer(minLength: 8)
+                if let completedCount {
+                    Text("\(completedCount)/\(tasks.count)")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Routes05Tokens.secondary)
+                        .accessibilityLabel("Виконано \(completedCount) із \(tasks.count) справ")
+                }
+            }.padding(.bottom, 9)
             ForEach(tasks) { task in
                 Routes05TaskRow(task: task, store: store, onStatus: { pendingTask = task }, onCalendar: { calendarTask = task })
                 Rectangle().fill(Routes05Tokens.rule).frame(height: 1)
@@ -3564,10 +3577,52 @@ private struct Routes05SchoolTasksProductionView: View {
         }.padding(.horizontal, 16).padding(.top, 16) }
     }
 
+    @ViewBuilder private func laterTaskGroup(openTasks: [SchoolHubTask], completedTasks: [SchoolHubTask]) -> some View {
+        if !openTasks.isEmpty || !completedTasks.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Далі").font(.system(.title3, design: .rounded).weight(.black)).padding(.bottom, 9)
+                laterSubgroup("Невиконані", tasks: openTasks, expanded: $laterOpenExpanded)
+                laterSubgroup("Виконані", tasks: completedTasks, expanded: $laterCompletedExpanded)
+            }.padding(.horizontal, 16).padding(.top, 16)
+        }
+    }
+
+    private func laterSubgroup(_ title: String, tasks: [SchoolHubTask], expanded: Binding<Bool>) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { expanded.wrappedValue.toggle() } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: expanded.wrappedValue ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.bold)).accessibilityHidden(true)
+                    Text(title).font(.headline.weight(.bold))
+                    Text("\(tasks.count)").font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(Routes05Tokens.secondary)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Routes05Tokens.ink)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(title), \(tasks.count) справ, \(expanded.wrappedValue ? "розгорнуто" : "згорнуто")")
+            .accessibilityHint("Подвійно торкніться, щоб \(expanded.wrappedValue ? "згорнути" : "розгорнути") список")
+
+            if expanded.wrappedValue {
+                ForEach(tasks) { task in
+                    Routes05TaskRow(task: task, store: store, onStatus: { pendingTask = task }, onCalendar: { calendarTask = task })
+                    Rectangle().fill(Routes05Tokens.rule).frame(height: 1)
+                }
+            }
+        }
+    }
+
     private func confirm(_ task: SchoolHubTask) {
         pendingTask = nil
         let completed = task.status != "completed"
-        Task { do { try await store.setTaskStatus(task, completed: completed) } catch { self.error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." } }
+        Task {
+            do {
+                try await store.setTaskStatus(task, completed: completed)
+                if completed { laterCompletedExpanded = true }
+            } catch { self.error = "Не вдалося зберегти стан справи. Перевірте з’єднання й повторіть." }
+        }
     }
 }
 

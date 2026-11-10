@@ -902,6 +902,9 @@ nonisolated struct SchoolTaskSections: Equatable {
     var nextWeek: [SchoolHubTask] = []
     var later: [SchoolHubTask] = []
 
+    var laterOpen: [SchoolHubTask] { later.filter { $0.status != "completed" } }
+    var laterCompleted: [SchoolHubTask] { later.filter { $0.status == "completed" } }
+
     var visibleCount: Int { overdue.count + thisWeek.count + nextWeek.count + later.count }
 }
 
@@ -1070,11 +1073,10 @@ enum SchoolTranslationPlaceholder {
     }
 }
 
-/// ROUTES 05 task status filter. Order is the owner-approved display order
-/// (Відкриті → Завершені → Всі); `defaultFilter` is applied on every entry.
+/// ROUTES 05 task status filter. `defaultFilter` is applied on every entry.
 nonisolated enum Routes05TaskFilter: CaseIterable, Identifiable {
-    case open, completed, all
-    static let defaultFilter: Routes05TaskFilter = .open
+    case all, open, completed
+    static let defaultFilter: Routes05TaskFilter = .all
     var id: Self { self }
     var title: String { self == .all ? "Всі" : self == .open ? "Відкриті" : "Завершені" }
     func count(_ counts: SchoolTaskCounts) -> Int { self == .all ? counts.all : self == .open ? counts.open : counts.completed }
