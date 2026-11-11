@@ -42,6 +42,7 @@ struct OrbitCalendarV2View: View {
     @State private var loadError: Error?
     @State private var showingSources = false
     @State private var showingCreator = false
+    @State private var providerEditing: OrbitCalendarEvent?
     @State private var selectedEvent: ConceptCalendarEvent?
     @State private var editingEvent: OrbitCalendarEvent?
 
@@ -143,6 +144,9 @@ struct OrbitCalendarV2View: View {
                 CalendarEventEditor(event: editingEvent) { _ in await load() }
             }
             .sheet(item: $selectedEvent) { event in eventDetail(event) }
+            .sheet(item: $providerEditing) { event in
+                ProviderEventEditor(event: event) { await load() }
+            }
             .task { await load() }
             .refreshable {
                 // Detached from SwiftUI's refresh task: a state change during the reload used to cancel it ("cancelled" alert).
@@ -186,7 +190,7 @@ struct OrbitCalendarV2View: View {
                     .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
             }
             .accessibilityLabel("Додати подію")
-            .orbitRequires(.calendarWrite)
+            .orbitRequires(.calendarProviderWrite)
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)
@@ -732,6 +736,11 @@ struct OrbitCalendarV2View: View {
                 if let live, live.sourceType == "orbit_family" {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Редагувати") { editingEvent = live; selectedEvent = nil; showingCreator = true }
+                    }
+                }
+                if let live, live.mirrorEventId != nil, live.capabilities?.edit.isEmpty == false || live.capabilities?.delete == true {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Змінити") { providerEditing = live; selectedEvent = nil }
                     }
                 }
             }

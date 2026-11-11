@@ -31,12 +31,14 @@ struct OrbitEffectivePermissions: Decodable, Equatable, Sendable {
     }
 }
 
-enum OrbitWritePermission: Sendable { case calendarWrite, contactsWrite, schoolWrite, proposeSharedFact, reviewProposals }
+enum OrbitWritePermission: Sendable { case calendarWrite, calendarProviderWrite, contactsWrite, schoolWrite, proposeSharedFact, reviewProposals }
 
 extension OrbitEffectivePermissions {
     func allows(_ permission: OrbitWritePermission) -> Bool {
         switch permission {
         case .calendarWrite: return resources.calendar.write
+        // Provider (iCloud) calendars: adults write anywhere, a child only in their own calendar / the location of invited events. The server decides per request, so the control stays visible.
+        case .calendarProviderWrite: return true
         case .contactsWrite: return resources.contacts.write
         case .schoolWrite: return resources.school.write
         case .proposeSharedFact: return memory.proposeSharedFactCorrection
