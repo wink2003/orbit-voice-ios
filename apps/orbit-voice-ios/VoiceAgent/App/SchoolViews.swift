@@ -601,6 +601,16 @@ struct SchoolDetailView: View {
     let initialItem: OrbitSchoolItem
     @State private var refreshedItem: OrbitSchoolItem?
     private var item: OrbitSchoolItem { refreshedItem ?? initialItem }
+    /// True while an attachment's translation is pending, or is ready on the server but its text has not been loaded yet.
+    private var attachmentTranslationsPending: Bool {
+        item.attachments.contains { file in
+            file.translationStatus == "pending" || (file.translationStatus == "ready" && (file.translation ?? "").isEmpty)
+        }
+    }
+    private func reloadDetail() async {
+        guard let fresh = try? await MainProductAPI.shared.schoolItem(id: initialItem.id) else { return }
+        refreshedItem = fresh
+    }
     /// Shared hub store (tasks + capability). Nil when opened from a surface without one: a private store is then loaded on demand.
     private let injectedStore: SchoolHubStore?
     @State private var ownStore: SchoolHubStore?
@@ -788,11 +798,24 @@ struct SchoolDetailView: View {
             }
             }
             }
+        .refreshable { await reloadDetail() }
         .background(Routes05Tokens.canvas)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaPadding(.bottom, 16)
         .task { try? await MainProductAPI.shared.markSchoolItemRead(id: initialItem.id) }
+        // The list payload carries no attachment translation text; the detail payload does. Load it once on open.
+        .task { await reloadDetail() }
+        // Bounded refresh while any attachment translation is still being prepared.
+        .task(id: attachmentTranslationsPending) {
+            guard attachmentTranslationsPending else { return }
+            for _ in 0..<6 {
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                if Task.isCancelled { return }
+                await reloadDetail()
+                if !attachmentTranslationsPending { return }
+            }
+        }
         // Bounded refresh (6 x 20 s) while the backend reports the translation as pending,
         // so a finished translation appears without leaving and reopening the letter.
         .task(id: item.translationStatus ?? "unknown") {
