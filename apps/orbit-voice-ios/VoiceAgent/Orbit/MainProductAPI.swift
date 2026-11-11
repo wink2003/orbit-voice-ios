@@ -794,6 +794,12 @@ final class MainProductAPI {
     func schoolBrainConversation() async throws -> OrbitSchoolBrainConversationResponse { try await request(path: "/api/school/brain/conversation") }
     func askSchool(_ content: String) async throws -> OrbitSchoolBrainMessage { struct Payload: Encodable { let content: String }; struct Response: Decodable { let message: OrbitSchoolBrainMessage }; return try await request(path: "/api/school/brain/messages", method: "POST", body: try encoder.encode(Payload(content: content)), as: Response.self).message }
     func addSchoolCalendarEvent(uid: String, key: String = "default", confirm: Bool) async throws -> SchoolCalendarResult { struct Payload: Encodable { let key: String; let confirm: Bool }; return try await request(path: "/api/school/calendar/\(uid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? uid)/proposal", method: "POST", body: try encoder.encode(Payload(key: key, confirm: confirm))) }
+    /// School "add to calendar" into a CHOSEN iCloud calendar with optional invitees (server: adults; idempotent per School event).
+    func addSchoolCalendarEventToProvider(uid: String, key: String = "default", targetId: String, attendees: [String]) async throws -> OrbitProviderWriteResult {
+        struct Payload: Encodable { let key: String; let confirm: Bool; let targetId: String; let attendees: [String] }
+        let path = "/api/school/calendar/\(uid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? uid)/proposal"
+        return try await providerWrite(path: path, method: "POST", body: try encoder.encode(Payload(key: key, confirm: true, targetId: targetId, attendees: attendees)))
+    }
     func createSchoolTaskCalendarEvent(_ request: SchoolTaskCalendarRequest) async throws -> SchoolCalendarResult {
         struct Payload: Encodable { let taskKey: String; let title: String; let date: String; let time: String?; let notes: String; let confirm: Bool }
         let body = try encoder.encode(Payload(taskKey: request.taskKey, title: request.title, date: request.date, time: request.time, notes: request.notes, confirm: true))

@@ -3218,16 +3218,15 @@ struct SchoolEventDetailView: View {
                 LabeledContent("UID", value: event.uid)
             }
             Section {
-                Button("Запропонувати додати до сімейного календаря") { Task { await propose() } }.frame(minHeight: OrbitSpacing.minTarget)
-            } footer: { Text("Подію буде створено лише в сімейному календарі Orbit, не в зовнішніх календарях.") }
+                Button("Додати до календаря…") { Task { await propose() } }.frame(minHeight: OrbitSpacing.minTarget)
+            } footer: { Text("Оберіть календар (Orbit або iCloud) і, за потреби, кого запросити.") }
         }
         .navigationTitle("Подія")
         .navigationBarTitleDisplayMode(.inline)
         .novaDockAwareScrollContent()
         .alert("Календар школи", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("Гаразд") { message = nil } } message: { Text(message ?? "") }
-        .confirmationDialog("Додати подію до сімейного календаря Orbit?", isPresented: $pending, titleVisibility: .visible) {
-            Button("Додати «\(event.title)»") { Task { await confirm() } }
-            Button("Скасувати", role: .cancel) { pending = false }
+        .sheet(isPresented: $pending) {
+            SchoolCalendarChoiceSheet(eventTitle: event.title, uid: event.uid) { message = $0 }
         }
     }
 
@@ -3236,13 +3235,6 @@ struct SchoolEventDetailView: View {
             let preview = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: event.uid, confirm: false)
             if preview.duplicate == true { message = "Цю подію вже додано." } else if preview.requiresConfirmation == true { pending = true } else { message = "Не вдалося підготувати додавання події." }
         } catch { message = "Не вдалося підготувати додавання події." }
-    }
-    private func confirm() async {
-        pending = false
-        do {
-            let result = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: event.uid, confirm: true)
-            message = result.duplicate == true ? "Цю подію вже додано." : (result.created ? "Подію додано до сімейного календаря." : "Не вдалося додати подію.")
-        } catch { message = "Не вдалося додати подію." }
     }
 }
 
