@@ -2192,11 +2192,31 @@ struct SchoolTaskDetailView: View {
     @State private var showCalendar = false
     @State private var showPlanSheet = false
     @State private var pendingStatusChange: SchoolTaskStatusConfirmation?
+    @State private var history: [OrbitSchoolActionHistoryEntry] = []
 
     private var currentTask: SchoolHubTask { store.hubTasks.first { $0.id == task.id } ?? task }
     private var taskIsCompleted: Bool { currentTask.status == "completed" }
     private var source: OrbitSchoolItem? { store.item(id: task.sourceItemId) }
     private var dueKey: String? { SchoolHubLogic.dayKey(for: task.schoolDeadlineAt, allDay: task.schoolDeadlineAllDay) }
+    private func loadHistory() async {
+        guard let id = currentTask.actionID, !id.isEmpty else { history = []; return }
+        if let result = try? await MainProductAPI.shared.schoolActionHistory(entityId: id) { history = result.history.sorted { $0.createdAt > $1.createdAt } }
+    }
+    private static let historyFormatter: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "uk_UA"); f.timeZone = SchoolHubLogic.schoolTimeZone; f.dateFormat = "d MMM yyyy, HH:mm"; return f
+    }()
+    static func historyLine(_ entry: OrbitSchoolActionHistoryEntry) -> String {
+        let what: String
+        switch entry.action {
+        case "created": what = "Створено"
+        case "completed": what = "Виконано"
+        case "reopened": what = "Повернуто у відкриті"
+        case "updated": what = "Змінено"
+        default: what = entry.action
+        }
+        let who = (entry.actorName ?? "").isEmpty ? "" : " · \(entry.actorName ?? "")"
+        return "\(what): \(historyFormatter.string(from: entry.createdAt))\(who)"
+    }
     private var canEditPlan: Bool { store.actionTasksPhase == .loaded && store.actionCapability.canMutate && task.identityStable }
 
     var body: some View {
@@ -2212,6 +2232,9 @@ struct SchoolTaskDetailView: View {
                 HStack(spacing: 8) {
                     detailTag(task.kind == "family" ? "ORBIT · FAMILY" : "SOURCE · SCHOOL", tint: task.kind == "family" ? Routes05Tokens.lilac : Routes05Tokens.mint)
                     detailTag(taskIsCompleted ? "ВИКОНАНО" : "ВІДКРИТО", tint: taskIsCompleted ? Routes05Tokens.mint : Routes05Tokens.yellow)
+                }
+                if let last = history.first(where: { $0.action == (taskIsCompleted ? "completed" : "reopened") }) {
+                    Text(Self.historyLine(last)).font(.caption).foregroundStyle(Routes05Tokens.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(alignment: .top, spacing: 12) {
                     Routes05HeadingText(task.title, tracking: -0.8, basePoints: 30, lineLimit: 3).textSelection(.enabled)
@@ -2301,6 +2324,14 @@ struct SchoolTaskDetailView: View {
                 if store.actionCapability.canMutate {
                     SchoolTaskInlinePreparation(store: store, task: task)
                 } else { detailCard { Label(store.actionCapability.message, systemImage: "lock.slash").foregroundStyle(.secondary) } }
+                if !history.isEmpty {
+                    detailCard {
+                        Text("ІСТОРІЯ ЗМІН").font(.caption.weight(.black).monospaced())
+                        ForEach(history) { entry in
+                            Text(Self.historyLine(entry)).font(.callout).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
                 HStack(spacing: 10) {
                     futureTile(title: "Доручити", detail: "Майбутня функція")
                     futureTile(title: "Нагадати", detail: "Майбутня функція")
@@ -2325,6 +2356,7 @@ struct SchoolTaskDetailView: View {
         }
         }
         .background(Routes05Tokens.canvas)
+        .task(id: "\(currentTask.actionID ?? "")|\(currentTask.status)") { await loadHistory() }
         .confirmationDialog(pendingStatusChange?.title ?? "Змінити стан справи?", isPresented: Binding(get: { pendingStatusChange != nil }, set: { if !$0 { pendingStatusChange = nil } }), titleVisibility: .visible) {
             if let pendingStatusChange { Button(pendingStatusChange.actionTitle) { confirmStatusChange(pendingStatusChange) } }
             Button("Скасувати", role: .cancel) { pendingStatusChange = nil }
@@ -2896,7 +2928,7 @@ struct SchoolTaskCalendarSheet: View {
         self.task = task
         _model = State(initialValue: SchoolTaskCalendarModel(
             itemID: task.sourceItemId, taskKey: task.sourceTaskKey, title: task.title, notes: task.action == task.title ? "" : (task.action ?? ""),
-            knownDeadline: SchoolHubLogic.calendarPrefillDay(for: task), service: LiveSchoolTaskCalendarService()
+            knownDeadline: SchoolHubLogic.calendarPrefillDay(for: task), knownTime: SchoolHubLogic.calendarPrefillTime(for: task), service: LiveSchoolTaskCalendarService()
         ))
     }
 
@@ -2923,13 +2955,19 @@ struct SchoolTaskCalendarSheet: View {
                             if model.hasTime {
                                 DatePicker("Час", selection: $model.time, displayedComponents: .hourAndMinute)
                                     .environment(\.timeZone, SchoolHubLogic.schoolTimeZone)
+                                Toggle("Вказати завершення", isOn: $model.hasEndTime)
+                                if model.hasEndTime {
+                                    DatePicker("Завершення", selection: $model.endTime, displayedComponents: .hourAndMinute)
+                                        .environment(\.timeZone, SchoolHubLogic.schoolTimeZone)
+                                    if !model.endIsValid { Text("Завершення має бути пізніше початку.").font(.footnote).foregroundStyle(.red) }
+                                }
                             }
                         }
                     } header: { Text("Коли") } footer: {
                         if model.knownDeadline != nil {
-                            Text("Це крайній термін зі шкільного джерела. Час не вигадується — додайте його, якщо потрібно.")
+                            Text(model.hasTime ? "Дату й час взято зі шкільного джерела." : "Це крайній термін зі шкільного джерела. Час не вигадується — додайте його, якщо потрібно.")
                         } else {
-                            Text("У справи немає терміну. Оберіть дату самостійно.")
+                            Text("У справи немає терміну — поставлено сьогодні. Змініть дату, якщо потрібно.")
                         }
                     }
                     Section("Нотатки") {

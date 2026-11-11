@@ -21,13 +21,23 @@ struct SchoolTaskCalendarModelTests {
         precondition(dated.hasDate && dated.dayKey == "2026-10-20" && dated.timeText == nil)
         precondition(dated.canSave && service.requests.isEmpty)
 
-        // Undated tasks require the user to choose a date before saving.
+        // Undated tasks default to today (owner decision) and stay editable.
         let undated = SchoolTaskCalendarModel(itemID: "i1", taskKey: "i1:x", title: "X", notes: "", knownDeadline: nil, service: service)
-        precondition(!undated.hasDate && !undated.canSave)
+        precondition(undated.hasDate && undated.canSave && undated.dayKey == SchoolHubLogic.dayKey(of: Date()))
+        undated.hasDate = false
+        precondition(!undated.canSave)
         await undated.save()
         precondition(service.requests.isEmpty && undated.state == .editing, "save without a date does nothing")
-        undated.hasDate = true
-        precondition(undated.canSave)
+
+        // A timed deadline carries its time into the event; the range end is optional and must be after the start.
+        let timed = SchoolTaskCalendarModel(itemID: "i1", taskKey: "i1:t", title: "T", notes: "", knownDeadline: "2026-10-20", knownTime: "14:30", service: service)
+        precondition(timed.hasTime && timed.timeText == "14:30" && timed.endTimeText == nil && timed.endIsValid)
+        timed.hasEndTime = true
+        precondition(timed.endTimeText == "15:30" && timed.endIsValid)
+        timed.endTime = timed.time.addingTimeInterval(-1800)
+        precondition(!timed.endIsValid && !timed.canSave)
+        timed.endTime = timed.time.addingTimeInterval(5400)
+        precondition(timed.endTimeText == "16:00" && timed.canSave)
 
         // Empty title cannot be saved.
         dated.title = "   "

@@ -1019,6 +1019,19 @@ extension SchoolHubLogic {
     static func calendarPrefillDay(for task: SchoolHubTask) -> String? {
         dayKey(for: task.dueAt, allDay: task.allDay)
     }
+    /// Exact "HH:mm" (school timezone) of a timed deadline; nil for all-day, date-only or midnight (ambiguous) values.
+    static func calendarPrefillTime(for task: SchoolHubTask) -> String? {
+        guard !task.allDay, let value = task.dueAt, value.count > 10, let instant = instant(from: value) else { return nil }
+        let parts = calendar().dateComponents([.hour, .minute], from: instant)
+        guard let hour = parts.hour, let minute = parts.minute, hour != 0 || minute != 0 else { return nil }
+        return String(format: "%02d:%02d", hour, minute)
+    }
+
+    static func minutes(fromTimeKey key: String) -> Int? {
+        let parts = key.split(separator: ":")
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]), (0..<24).contains(h), (0..<60).contains(m) else { return nil }
+        return h * 60 + m
+    }
 }
 
 extension SchoolHubTask {
