@@ -415,6 +415,7 @@ struct CalendarEventEditor: View {
                 }
             }
             .navigationTitle(existing == nil ? "Нова подія" : "Редагувати")
+            .environment(\.locale, Locale(identifier: "uk_UA"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Зберегти") { Task { await save() } }.disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || saving || (existing == nil && targetsLoaded && targets.isEmpty)) }
@@ -504,8 +505,9 @@ struct ProviderEventEditor: View {
                     Section { Button("Видалити подію", role: .destructive) { confirmDelete = true }.disabled(saving) }
                 }
             }
-            .navigationTitle("Змінити подію")
+            .navigationTitle("Редагувати")
             .navigationBarTitleDisplayMode(.inline)
+            .environment(\.locale, Locale(identifier: "uk_UA"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Зберегти") { Task { await save() } }.disabled(saving || editable.isEmpty || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
@@ -637,8 +639,9 @@ struct SchoolCalendarChoiceSheet: View {
                 CalendarChoiceSections(targetId: $targetId, invitees: $invitees)
                 if let message { Section { Text(message).font(.footnote).foregroundStyle(.red) } }
             }
-            .navigationTitle("Додати до календаря")
+            .navigationTitle("До календаря")
             .navigationBarTitleDisplayMode(.inline)
+            .environment(\.locale, Locale(identifier: "uk_UA"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Додати") { Task { await add() } }.disabled(saving) }

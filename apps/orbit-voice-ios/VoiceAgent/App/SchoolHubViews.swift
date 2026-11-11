@@ -2945,8 +2945,9 @@ struct SchoolTaskCalendarSheet: View {
                     }
                 }
             }
-            .navigationTitle("Додати до календаря")
+            .navigationTitle("До календаря")
             .navigationBarTitleDisplayMode(.inline)
+            .environment(\.locale, Locale(identifier: "uk_UA"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(model.isSaved ? "Закрити" : "Скасувати") { dismiss() } }
                 if !model.isSaved {
