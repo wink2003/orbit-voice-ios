@@ -453,14 +453,13 @@ struct SchoolCalendarView: View {
                     Text(event.allDay ? OrbitSchoolCivilDate.inclusiveRange(start: event.startsAt, end: event.endsAt) : (event.startsAt.map(schoolLocalizedDate) ?? "Дата не визначена")).font(.subheadline)
                     if let badge = calendarBadge(event) { Text(badge.label).font(.caption.weight(.semibold)).foregroundStyle(badge.color).padding(.horizontal, 8).padding(.vertical, 4).background(badge.color.opacity(0.16), in: Capsule()).overlay(Capsule().stroke(badge.color.opacity(0.45))) }
                     if !event.location.isEmpty { Text(event.location).foregroundStyle(.secondary) }
-                    Button("Запропонувати додати до сімейного календаря") { Task { await propose(event) } }.buttonStyle(.borderedProminent).frame(minHeight: 44)
+                    Button("Додати до календаря…") { Task { await propose(event) } }.buttonStyle(.borderedProminent).frame(minHeight: 44)
                 }
             }
         }.navigationTitle("Календар школи").task { await load() }.onChange(of: scope) { _, _ in Task { await load() } }.alert("Календар школи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
-        .confirmationDialog("Додати подію до сімейного календаря Orbit?", isPresented: Binding(get: { pendingEvent != nil }, set: { if !$0 { pendingEvent = nil } }), titleVisibility: .visible, presenting: pendingEvent) { event in
-            Button("Додати «\(event.title)»") { Task { await confirm(event) } }
-            Button("Скасувати", role: .cancel) { pendingEvent = nil }
-        } message: { _ in Text("Подію буде створено лише в сімейному календарі Orbit, не в зовнішніх календарях.") }
+        .sheet(item: $pendingEvent) { event in
+            SchoolCalendarChoiceSheet(eventTitle: event.title, uid: event.uid) { error = $0 }
+        }
     }
     private func calendarBadge(_ event: OrbitSchulmanagerCalendarEvent) -> (label: String, color: Color)? {
         if event.audienceClass == "STAFF_ONLY" { return ("Для працівників", .secondary) }
@@ -481,13 +480,6 @@ struct SchoolCalendarView: View {
             else if preview.requiresConfirmation == true { pendingEvent = event }
             else { error = "Не вдалося підготувати додавання події." }
         } catch { self.error = "Не вдалося підготувати додавання події." }
-    }
-    private func confirm(_ event: OrbitSchulmanagerCalendarEvent) async {
-        pendingEvent = nil
-        do {
-            let result = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: event.uid, confirm: true)
-            error = result.duplicate == true ? "Цю подію вже додано." : (result.created ? "Подію додано до сімейного календаря." : "Не вдалося додати подію.")
-        } catch { self.error = "Не вдалося додати подію." }
     }
 }
 

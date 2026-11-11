@@ -372,6 +372,52 @@ struct OrbitFamilyProfile: Decodable, Identifiable {
     var id: String { personId }
 }
 
+/// What the signed-in person may do with one provider event (server decides; the UI only reflects it).
+struct OrbitCalendarCapabilities: Codable, Hashable { let edit: [String]; let delete: Bool }
+struct OrbitCalendarOrganizer: Codable, Hashable { let personId: String?; let external: Bool? }
+struct OrbitCalendarAttendee: Codable, Hashable { let personId: String?; let name: String?; let status: String? }
+
+/// A calendar the signed-in person may create events in (server decides: adults every family calendar, a child only their own).
+struct OrbitCalendarTarget: Decodable, Identifiable, Hashable { let id: String; let name: String; let kind: String?; let access: String? }
+/// A family member who has a stored calendar address and can be invited.
+struct OrbitInviteOption: Decodable, Identifiable, Hashable { let personId: String; let name: String; var id: String { personId } }
+struct OrbitCalendarTargetsResponse: Decodable { let targets: [OrbitCalendarTarget]; let inviteOptions: [OrbitInviteOption]? }
+/// Honest outcome of a write to iCloud: accepted | conflict | refused | failed | outcome_unknown | already_requested.
+struct OrbitProviderWriteResult: Decodable { let state: String; let code: String? }
+
+enum OrbitProviderWriteCopy {
+    static func text(_ result: OrbitProviderWriteResult) -> String {
+        switch result.state {
+        case "accepted": return "Готово."
+        case "already_requested": return "Цю подію вже створювали. Перевірте календар."
+        case "conflict": return result.code == "gone_in_provider" ? "Цієї події вже немає в iCloud. Оновіть календар." : "Подію змінили в iCloud. Оновіть календар і повторіть."
+        case "outcome_unknown": return "iCloud не підтвердив результат вчасно. Перевірте календар за кілька хвилин і не повторюйте дію."
+        case "failed": return "iCloud відхилив запит. Спробуйте пізніше."
+        case "refused": return refused(result.code)
+        default: return "Не вдалося виконати дію."
+        }
+    }
+
+    private static func refused(_ code: String?) -> String {
+        switch code ?? "" {
+        case "ui_write_disabled", "provider_write_disabled": return "Запис в iCloud з Orbit поки вимкнено для цього профілю."
+        case "source_access_denied", "minor_or_unknown_actor", "forbidden": return "У вас немає права змінювати цей календар."
+        case "invites_disabled": return "Запрошення поки вимкнені."
+        case "invites_not_allowed_in_calendar": return "У цьому календарі запрошення неможливі. Оберіть календар для запрошень."
+        case "invitee_not_allowed": return "Цю людину поки не можна запрошувати."
+        case "invitee_address_missing": return "Для цієї людини не вказано адресу календаря."
+        case "organizer_address_missing": return "Не вказано адресу організатора."
+        case "minor_cannot_invite": return "Запрошувати можуть лише дорослі."
+        case "recurring_unsupported": return "Повторювані події поки не можна змінювати з Orbit."
+        case "ui_rate_limited": return "Забагато змін за годину. Спробуйте пізніше."
+        case "write_in_flight": return "Ця подія вже змінюється. Зачекайте хвилину."
+        case "etag_missing_resync": return "Подію ще синхронізують. Оновіть календар і спробуйте знову."
+        case "invalid_invitation": return "Некоректний список запрошених."
+        default: return "Дію відхилено сервером."
+        }
+    }
+}
+
 struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     let id: String
     let familyId: String
@@ -391,11 +437,19 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     var startDate: String? = nil
     var endDate: String? = nil
     var timeZone: String? = nil
+    // Additive, backend-provided (calendar mirror). Absent on older backends.
+    var location: String? = nil
+    var mirrorEventId: String? = nil
+    var capabilities: OrbitCalendarCapabilities? = nil
+    var organizer: OrbitCalendarOrganizer? = nil
+    var attendees: [OrbitCalendarAttendee]? = nil
+    var calendarOwners: [String]? = nil
 
     private enum CodingKeys: String, CodingKey {
         case id, familyId, ownerPersonId, title, notes, startsAt, endsAt, allDay
         case sourceType, sourceIdentifier, sourceName, sourceColor, createdAt, updatedAt
         case occurrenceId, startDate, endDate, timeZone
+        case location, mirrorEventId, capabilities, organizer, attendees, calendarOwners
     }
 
     init(
@@ -456,6 +510,12 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
         startDate = try values.decodeIfPresent(String.self, forKey: .startDate)
         endDate = try values.decodeIfPresent(String.self, forKey: .endDate)
         timeZone = try values.decodeIfPresent(String.self, forKey: .timeZone)
+        location = try values.decodeIfPresent(String.self, forKey: .location)
+        mirrorEventId = try values.decodeIfPresent(String.self, forKey: .mirrorEventId)
+        capabilities = try values.decodeIfPresent(OrbitCalendarCapabilities.self, forKey: .capabilities)
+        organizer = try values.decodeIfPresent(OrbitCalendarOrganizer.self, forKey: .organizer)
+        attendees = try values.decodeIfPresent([OrbitCalendarAttendee].self, forKey: .attendees)
+        calendarOwners = try values.decodeIfPresent([String].self, forKey: .calendarOwners)
 
         let eventCalendarTimeZone = timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
         if allDay, let startDate, let localStart = OrbitCalendarV2Logic.localCalendarDate(startDate, timeZone: eventCalendarTimeZone) {
@@ -734,6 +794,12 @@ final class MainProductAPI {
     func schoolBrainConversation() async throws -> OrbitSchoolBrainConversationResponse { try await request(path: "/api/school/brain/conversation") }
     func askSchool(_ content: String) async throws -> OrbitSchoolBrainMessage { struct Payload: Encodable { let content: String }; struct Response: Decodable { let message: OrbitSchoolBrainMessage }; return try await request(path: "/api/school/brain/messages", method: "POST", body: try encoder.encode(Payload(content: content)), as: Response.self).message }
     func addSchoolCalendarEvent(uid: String, key: String = "default", confirm: Bool) async throws -> SchoolCalendarResult { struct Payload: Encodable { let key: String; let confirm: Bool }; return try await request(path: "/api/school/calendar/\(uid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? uid)/proposal", method: "POST", body: try encoder.encode(Payload(key: key, confirm: confirm))) }
+    /// School "add to calendar" into a CHOSEN iCloud calendar with optional invitees (server: adults; idempotent per School event).
+    func addSchoolCalendarEventToProvider(uid: String, key: String = "default", targetId: String, attendees: [String]) async throws -> OrbitProviderWriteResult {
+        struct Payload: Encodable { let key: String; let confirm: Bool; let targetId: String; let attendees: [String] }
+        let path = "/api/school/calendar/\(uid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? uid)/proposal"
+        return try await providerWrite(path: path, method: "POST", body: try encoder.encode(Payload(key: key, confirm: true, targetId: targetId, attendees: attendees)))
+    }
     func createSchoolTaskCalendarEvent(_ request: SchoolTaskCalendarRequest) async throws -> SchoolCalendarResult {
         struct Payload: Encodable { let taskKey: String; let title: String; let date: String; let time: String?; let notes: String; let confirm: Bool }
         let body = try encoder.encode(Payload(taskKey: request.taskKey, title: request.title, date: request.date, time: request.time, notes: request.notes, confirm: true))
@@ -826,6 +892,18 @@ final class MainProductAPI {
         let _: Response = try await request(path: "/api/calendar/connections/\(id)", method: "DELETE", body: nil)
     }
 
+    /// Best-effort, read-only: asks the server to refresh its iCloud mirror for the visible window now (pull-to-refresh). Failures are ignored.
+    func refreshCalendarNow(from: Date, to: Date) async {
+        struct Payload: Encodable { let from: String; let to: String }
+        struct Response: Decodable { let refreshed: Int?; let skipped: Int?; let errors: Int? }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let body = try? encoder.encode(Payload(from: formatter.string(from: from), to: formatter.string(from: to))) else { return }
+        let _: Response? = try? await request(path: "/api/calendar/refresh-now", method: "POST", body: body)
+    }
+
     func calendarSources() async throws -> [OrbitCalendarSource] {
         try await request(path: "/api/calendar/sources", as: CalendarSourcesResponse.self).sources
     }
@@ -841,6 +919,72 @@ final class MainProductAPI {
         let body = try encoder.encode(Payload(sourceId: sourceId))
         struct Response: Decodable { let defaultWritableSourceId: String }
         _ = try await request(path: "/api/calendar/default-writable-source", method: "PUT", body: body, as: Response.self)
+    }
+
+    func calendarTargets() async throws -> OrbitCalendarTargetsResponse {
+        try await request(path: "/api/calendar/targets", as: OrbitCalendarTargetsResponse.self)
+    }
+
+    private static func localDayString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    /// Creates ONE event in the chosen iCloud calendar (adults any family calendar, a child only their own). A fixed idempotency key makes a repeated tap safe.
+    func createProviderEvent(targetId: String, title: String, notes: String, location: String, startsAt: Date, endsAt: Date, allDay: Bool, attendees: [String], idempotencyKey: String) async throws -> OrbitProviderWriteResult {
+        struct Payload: Encodable {
+            let targetId: String
+            let title: String
+            let notes: String
+            let location: String
+            let allDay: Bool
+            let startsAt: Date?
+            let endsAt: Date?
+            let startDate: String?
+            let endDate: String?
+            let attendees: [String]
+            let idempotencyKey: String
+        }
+        let body = try encoder.encode(Payload(
+            targetId: targetId, title: title, notes: notes, location: location, allDay: allDay,
+            startsAt: allDay ? nil : startsAt, endsAt: allDay ? nil : endsAt,
+            startDate: allDay ? Self.localDayString(startsAt) : nil, endDate: allDay ? Self.localDayString(max(endsAt, startsAt)) : nil,
+            attendees: attendees, idempotencyKey: idempotencyKey
+        ))
+        return try await providerWrite(path: "/api/calendar/events", method: "POST", body: body)
+    }
+
+    /// Edits a mirrored iCloud event. Only the fields the server allows for this person are sent; a changed ETag in iCloud means NOT applied (conflict).
+    func updateProviderEvent(mirrorEventId: String, title: String?, notes: String?, location: String?, startsAt: Date?, endsAt: Date?) async throws -> OrbitProviderWriteResult {
+        struct Payload: Encodable { let title: String?; let notes: String?; let location: String?; let startsAt: Date?; let endsAt: Date? }
+        let body = try encoder.encode(Payload(title: title, notes: notes, location: location, startsAt: startsAt, endsAt: endsAt))
+        return try await providerWrite(path: "/api/calendar/events/\(mirrorEventId)", method: "PATCH", body: body)
+    }
+
+    func deleteProviderEvent(mirrorEventId: String) async throws -> OrbitProviderWriteResult {
+        try await providerWrite(path: "/api/calendar/events/\(mirrorEventId)", method: "DELETE", body: nil)
+    }
+
+    /// Writes answer with {state, code} on every status (200 accepted, 202 unknown, 403 refused, 409 conflict, 422 failed); that body is the result.
+    private func providerWrite(path: String, method: String, body: Data?) async throws -> OrbitProviderWriteResult {
+        guard let token = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
+        guard let url = URL(string: path, relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = method
+        urlRequest.timeoutInterval = 75
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body { urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type"); urlRequest.httpBody = body }
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
+        if let result = try? decoder.decode(OrbitProviderWriteResult.self, from: data) { return result }
+        if http.statusCode == 403 { return OrbitProviderWriteResult(state: "refused", code: "forbidden") }
+        let code = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
+        throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
     }
 
     func createCalendarEvent(title: String, notes: String, startsAt: Date, endsAt: Date, allDay: Bool) async throws -> OrbitCalendarEvent {
