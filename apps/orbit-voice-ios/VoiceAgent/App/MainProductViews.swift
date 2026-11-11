@@ -552,56 +552,36 @@ struct ProviderEventEditor: View {
     }
 }
 
-/// School "add to calendar": choose the calendar (Orbit family calendar or an iCloud calendar) and, for iCloud, whom to invite.
-struct SchoolCalendarChoiceSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let eventTitle: String
-    let uid: String
-    let onResult: (String) -> Void
+/// Calendar choice (Orbit family calendar or an iCloud calendar from the server list) and, for iCloud, whom to invite. Reused inside forms.
+struct CalendarChoiceSections: View {
+    @Binding var targetId: String
+    @Binding var invitees: Set<String>
     @State private var targets: [OrbitCalendarTarget] = []
     @State private var inviteOptions: [OrbitInviteOption] = []
     @State private var loaded = false
-    @State private var targetId = "orbit_local"
-    @State private var invitees = Set<String>()
-    @State private var saving = false
-    @State private var message: String?
-
-    private var isProviderTarget: Bool { targetId != "orbit_local" }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section { Text(eventTitle).font(.headline) }
-                Section("Календар") {
-                    if !loaded {
-                        ProgressView()
-                    } else if targets.isEmpty {
-                        Text("Немає календарів, у які ви можете додавати події.").font(.footnote).foregroundStyle(.secondary)
-                    } else {
-                        Picker("Календар", selection: $targetId) {
-                            ForEach(targets) { target in Text(target.name).tag(target.id) }
-                        }
-                    }
+        Section("Календар") {
+            if !loaded {
+                ProgressView()
+            } else if targets.isEmpty {
+                Text("Немає календарів, у які ви можете додавати події.").font(.footnote).foregroundStyle(.secondary)
+            } else {
+                Picker("Календар", selection: $targetId) {
+                    ForEach(targets) { target in Text(target.name).tag(target.id) }
                 }
-                if isProviderTarget && !inviteOptions.isEmpty {
-                    Section("Запросити") {
-                        ForEach(inviteOptions) { person in
-                            Toggle(person.name, isOn: Binding(
-                                get: { invitees.contains(person.id) },
-                                set: { isOn in if isOn { invitees.insert(person.id) } else { invitees.remove(person.id) } }
-                            ))
-                        }
-                    }
+            }
+        }
+        .task { await load() }
+        if targetId != "orbit_local" && !inviteOptions.isEmpty {
+            Section("Запросити") {
+                ForEach(inviteOptions) { person in
+                    Toggle(person.name, isOn: Binding(
+                        get: { invitees.contains(person.id) },
+                        set: { isOn in if isOn { invitees.insert(person.id) } else { invitees.remove(person.id) } }
+                    ))
                 }
-                if let message { Section { Text(message).font(.footnote).foregroundStyle(.red) } }
             }
-            .navigationTitle("Додати до календаря")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Додати") { Task { await add() } }.disabled(saving || !loaded || targets.isEmpty) }
-            }
-            .task { await load() }
         }
     }
 
@@ -614,20 +594,70 @@ struct SchoolCalendarChoiceSheet: View {
         }
         loaded = true
     }
+}
+
+/// School "add to calendar" sheet. The caller supplies what happens for the Orbit calendar and for an iCloud calendar (+ invitees).
+struct SchoolCalendarChoiceSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let eventTitle: String
+    let addLocal: () async throws -> String
+    let addProvider: (String, [String]) async throws -> OrbitProviderWriteResult
+    let onResult: (String) -> Void
+    @State private var targetId = "orbit_local"
+    @State private var invitees = Set<String>()
+    @State private var saving = false
+    @State private var message: String?
+
+    init(eventTitle: String, addLocal: @escaping () async throws -> String, addProvider: @escaping (String, [String]) async throws -> OrbitProviderWriteResult, onResult: @escaping (String) -> Void) {
+        self.eventTitle = eventTitle
+        self.addLocal = addLocal
+        self.addProvider = addProvider
+        self.onResult = onResult
+    }
+
+    /// School calendar events (by Schulmanager uid).
+    init(eventTitle: String, uid: String, onResult: @escaping (String) -> Void) {
+        self.init(
+            eventTitle: eventTitle,
+            addLocal: {
+                let result = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: uid, confirm: true)
+                return result.duplicate == true ? "Цю подію вже додано." : (result.created ? "Подію додано до сімейного календаря Orbit." : "Не вдалося додати подію.")
+            },
+            addProvider: { target, people in
+                try await MainProductAPI.shared.addSchoolCalendarEventToProvider(uid: uid, targetId: target, attendees: people)
+            },
+            onResult: onResult
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section { Text(eventTitle).font(.headline) }
+                CalendarChoiceSections(targetId: $targetId, invitees: $invitees)
+                if let message { Section { Text(message).font(.footnote).foregroundStyle(.red) } }
+            }
+            .navigationTitle("Додати до календаря")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Додати") { Task { await add() } }.disabled(saving) }
+            }
+        }
+    }
 
     private func add() async {
         saving = true; defer { saving = false }
         message = nil
         do {
-            if isProviderTarget {
-                let result = try await MainProductAPI.shared.addSchoolCalendarEventToProvider(uid: uid, targetId: targetId, attendees: Array(invitees).sorted())
+            if targetId != "orbit_local" {
+                let result = try await addProvider(targetId, Array(invitees).sorted())
                 if result.state == "accepted" || result.state == "already_requested" || result.state == "outcome_unknown" {
                     onResult(result.state == "accepted" ? "Подію додано до обраного календаря." : OrbitProviderWriteCopy.text(result))
                     dismiss()
                 } else { message = OrbitProviderWriteCopy.text(result) }
             } else {
-                let result = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: uid, confirm: true)
-                onResult(result.duplicate == true ? "Цю подію вже додано." : (result.created ? "Подію додано до сімейного календаря Orbit." : "Не вдалося додати подію."))
+                onResult(try await addLocal())
                 dismiss()
             }
         } catch { message = "Не вдалося додати подію. Спробуйте ще раз." }

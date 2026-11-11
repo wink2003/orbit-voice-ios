@@ -806,6 +806,20 @@ final class MainProductAPI {
         let itemPath = request.itemID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? request.itemID
         return try await self.request(path: "/api/school/items/\(itemPath)/calendar-proposal", method: "POST", body: body, preserveHTTPStatus: true, as: SchoolCalendarResult.self)
     }
+    /// School task -> a CHOSEN iCloud calendar (server: adults; idempotent per item + task).
+    func createSchoolTaskCalendarEventToProvider(_ request: SchoolTaskCalendarRequest, targetId: String) async throws -> OrbitProviderWriteResult {
+        struct Payload: Encodable { let taskKey: String; let title: String; let date: String; let time: String?; let notes: String; let confirm: Bool; let targetId: String; let attendees: [String] }
+        let body = try encoder.encode(Payload(taskKey: request.taskKey, title: request.title, date: request.date, time: request.time, notes: request.notes, confirm: true, targetId: targetId, attendees: request.attendees))
+        let itemPath = request.itemID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? request.itemID
+        return try await providerWrite(path: "/api/school/items/\(itemPath)/calendar-proposal", method: "POST", body: body)
+    }
+    /// School letter/message event -> a CHOSEN iCloud calendar with optional invitees.
+    func addSchoolEventToProvider(itemID: String, event: OrbitSchoolEvent, targetId: String, attendees: [String]) async throws -> OrbitProviderWriteResult {
+        struct Payload: Encodable { let key: String; let title: String; let startsAt: Date?; let endsAt: Date?; let allDay: Bool; let location: String?; let confirm: Bool; let targetId: String; let attendees: [String] }
+        let body = try encoder.encode(Payload(key: event.key, title: event.title, startsAt: event.startsAt, endsAt: event.endsAt, allDay: event.allDay, location: event.location, confirm: true, targetId: targetId, attendees: attendees))
+        let itemPath = itemID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemID
+        return try await providerWrite(path: "/api/school/items/\(itemPath)/calendar-proposal", method: "POST", body: body)
+    }
     func schoolItem(id: String) async throws -> OrbitSchoolItem { try await request(path: "/api/school/items/\(id)", as: SchoolItemResponse.self).item }
     func markSchoolItemRead(id: String) async throws { struct Response: Decodable { let ok: Bool }; _ = try await request(path: "/api/school/items/\(id)/read", method: "POST", body: nil, as: Response.self) }
     func addSchoolEvent(itemID: String, event: OrbitSchoolEvent, confirm: Bool) async throws -> SchoolCalendarResult {

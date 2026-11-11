@@ -819,7 +819,19 @@ struct SchoolDetailView: View {
         .alert("Стан справи", isPresented: Binding(get: { taskError != nil }, set: { if !$0 { taskError = nil } })) { Button("Гаразд", role: .cancel) {} } message: { Text(taskError ?? "") }
         .alert("Скопійовано", isPresented: $copyNotice) { Button("Гаразд", role: .cancel) {} } message: { Text("Текст доступний для виділення та копіювання.") }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
-        .alert("Додати до календаря?", isPresented: Binding(get: { pendingCalendarEvent != nil }, set: { if !$0 { pendingCalendarEvent = nil } })) { Button("Додати") { if let event = pendingCalendarEvent { pendingCalendarEvent = nil; Task { await confirm(event) } } }; Button("Скасувати", role: .cancel) { pendingCalendarEvent = nil } } message: { Text(calendarPreviewMessage) }
+        .sheet(item: $pendingCalendarEvent) { event in
+            SchoolCalendarChoiceSheet(
+                eventTitle: event.title,
+                addLocal: {
+                    let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true)
+                    return result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.")
+                },
+                addProvider: { target, people in
+                    try await MainProductAPI.shared.addSchoolEventToProvider(itemID: item.id, event: event, targetId: target, attendees: people)
+                },
+                onResult: { calendarMessage = $0 }
+            )
+        }
     }
     private var displayTitle: String { item.displayTitle }
     private var sourceLinkURL: URL? { OrbitSchoolSourceLink.url(source: item.source, type: item.type, externalId: item.externalId, subscriptionId: item.subscriptionId) }
@@ -913,5 +925,4 @@ struct SchoolDetailView: View {
         .accessibilityElement(children: .combine)
     }
     private func add(_ event: OrbitSchoolEvent) async { do { let preview = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: false); if preview.duplicate == true { calendarMessage = "Подію вже додано." } else if preview.requiresConfirmation == true { pendingCalendarEvent = event } else { calendarMessage = "Не вдалося підготувати подію." } } catch { calendarMessage = "Не вдалося додати подію." } }
-    private func confirm(_ event: OrbitSchoolEvent) async { do { let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true); calendarMessage = result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.") } catch { calendarMessage = "Не вдалося додати подію." } }
 }
