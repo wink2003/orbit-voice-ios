@@ -2872,6 +2872,14 @@ private struct SchoolFamilyTaskEditorView: View {
 
 struct LiveSchoolTaskCalendarService: SchoolTaskCalendarService {
     func createEvent(_ request: SchoolTaskCalendarRequest) async throws -> SchoolTaskCalendarOutcome {
+        if let target = request.targetId {
+            let result = try await MainProductAPI.shared.createSchoolTaskCalendarEventToProvider(request, targetId: target)
+            switch result.state {
+            case "accepted": return SchoolTaskCalendarOutcome(created: true, duplicate: false, eventID: nil)
+            case "already_requested": return SchoolTaskCalendarOutcome(created: false, duplicate: true, eventID: nil)
+            default: return SchoolTaskCalendarOutcome(created: false, duplicate: false, eventID: nil, failure: OrbitProviderWriteCopy.text(result))
+            }
+        }
         let result = try await MainProductAPI.shared.createSchoolTaskCalendarEvent(request)
         return SchoolTaskCalendarOutcome(created: result.created, duplicate: result.duplicate ?? false, eventID: result.eventId)
     }
@@ -2927,17 +2935,19 @@ struct SchoolTaskCalendarSheet: View {
                     Section("Нотатки") {
                         TextField("Нотатки (необов’язково)", text: $model.notes, axis: .vertical).lineLimit(2...6)
                     }
+                    CalendarChoiceSections(targetId: $model.targetId, invitees: $model.invitees)
                     Section("Джерело") {
                         Label("Лист або повідомлення Schulmanager", systemImage: "envelope")
-                        Text("Подія з’явиться в календарі Orbit вашої родини.").font(.footnote).foregroundStyle(.secondary)
+                        Text(model.targetId == "orbit_local" ? "Подія з’явиться в календарі Orbit вашої родини." : "Подію буде додано в обраний календар iCloud.").font(.footnote).foregroundStyle(.secondary)
                     }
                     if case .failed(let message) = model.state {
                         Section { SchoolNotice(text: message, systemImage: "exclamationmark.triangle.fill") }
                     }
                 }
             }
-            .navigationTitle("Додати до календаря")
+            .navigationTitle("До календаря")
             .navigationBarTitleDisplayMode(.inline)
+            .environment(\.locale, Locale(identifier: "uk_UA"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(model.isSaved ? "Закрити" : "Скасувати") { dismiss() } }
                 if !model.isSaved {

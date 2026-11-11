@@ -11,12 +11,17 @@ struct SchoolTaskCalendarRequest: Equatable, Sendable {
     let date: String
     let time: String?
     let notes: String
+    /// nil = the Orbit family calendar; otherwise the id of the chosen iCloud calendar.
+    var targetId: String? = nil
+    var attendees: [String] = []
 }
 
 struct SchoolTaskCalendarOutcome: Equatable, Sendable {
     let created: Bool
     let duplicate: Bool
     let eventID: String?
+    /// Set when the server refused or could not complete the write (user-facing text).
+    var failure: String? = nil
 }
 
 protocol SchoolTaskCalendarService: Sendable {
@@ -64,6 +69,8 @@ final class SchoolTaskCalendarModel {
     var date: Date
     var hasTime = false
     var time: Date
+    var targetId = "orbit_local"
+    var invitees = Set<String>()
     private(set) var state: SchoolTaskCalendarState = .editing
 
     @ObservationIgnored private let service: SchoolTaskCalendarService
@@ -96,9 +103,10 @@ final class SchoolTaskCalendarModel {
     func save() async {
         guard canSave, let day = dayKey else { return }
         state = .saving
-        let request = SchoolTaskCalendarRequest(itemID: itemID, taskKey: taskKey, title: trimmedTitle, date: day, time: timeText, notes: notes.trimmingCharacters(in: .whitespacesAndNewlines))
+        let request = SchoolTaskCalendarRequest(itemID: itemID, taskKey: taskKey, title: trimmedTitle, date: day, time: timeText, notes: notes.trimmingCharacters(in: .whitespacesAndNewlines), targetId: targetId == "orbit_local" ? nil : targetId, attendees: targetId == "orbit_local" ? [] : Array(invitees).sorted())
         do {
             let outcome = try await service.createEvent(request)
+            if let failure = outcome.failure { state = .failed(failure); return }
             guard outcome.created || outcome.duplicate else { state = .failed("Сервер не підтвердив створення події."); return }
             state = .saved(eventID: outcome.eventID, duplicate: outcome.duplicate && !outcome.created)
         } catch is CancellationError {
