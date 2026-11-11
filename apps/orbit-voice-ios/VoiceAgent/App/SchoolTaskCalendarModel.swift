@@ -10,6 +10,8 @@ struct SchoolTaskCalendarRequest: Equatable, Sendable {
     let title: String
     let date: String
     let time: String?
+    /// Optional range end ("HH:mm", same day, after `time`).
+    var endTime: String? = nil
     let notes: String
     /// nil = the Orbit family calendar; otherwise the id of the chosen iCloud calendar.
     var targetId: String? = nil
@@ -69,13 +71,15 @@ final class SchoolTaskCalendarModel {
     var date: Date
     var hasTime = false
     var time: Date
+    var hasEndTime = false
+    var endTime: Date
     var targetId = "orbit_local"
     var invitees = Set<String>()
     private(set) var state: SchoolTaskCalendarState = .editing
 
     @ObservationIgnored private let service: SchoolTaskCalendarService
 
-    init(itemID: String, taskKey: String, title: String, notes: String, knownDeadline: String?, service: SchoolTaskCalendarService, now: Date = Date()) {
+    init(itemID: String, taskKey: String, title: String, notes: String, knownDeadline: String?, knownTime: String? = nil, service: SchoolTaskCalendarService, now: Date = Date()) {
         self.itemID = itemID
         self.taskKey = taskKey
         self.taskTitle = title
@@ -84,9 +88,22 @@ final class SchoolTaskCalendarModel {
         self.knownDeadline = knownDeadline
         self.service = service
         let prefilled = knownDeadline.flatMap { SchoolHubLogic.date(fromDayKey: $0) }
-        self.hasDate = prefilled != nil
+        // No known date -> today (owner decision); the user can still change it.
+        self.hasDate = true
         self.date = prefilled ?? now
-        self.time = SchoolHubLogic.date(fromDayKey: SchoolHubLogic.dayKey(of: now)).map { $0.addingTimeInterval(-3 * 3600) } ?? now
+        let defaultTime = SchoolHubLogic.date(fromDayKey: SchoolHubLogic.dayKey(of: now)).map { $0.addingTimeInterval(-3 * 3600) } ?? now
+        // An exact time from the school source is carried into the event.
+        let day = SchoolHubLogic.date(fromDayKey: SchoolHubLogic.dayKey(of: prefilled ?? now))   // civil day (noon anchor)
+        let known = knownTime.flatMap { SchoolHubLogic.minutes(fromTimeKey: $0) }
+        let at = { (minutes: Int) -> Date? in day.flatMap { SchoolHubLogic.calendar().date(bySettingHour: minutes / 60 % 24, minute: minutes % 60, second: 0, of: $0) } }
+        if let known, let start = at(known), let end = at(min(known + 60, 23 * 60 + 59)) {
+            self.hasTime = true
+            self.time = start
+            self.endTime = end
+        } else {
+            self.time = defaultTime
+            self.endTime = defaultTime.addingTimeInterval(3600)
+        }
     }
 
     var dayKey: String? { hasDate ? SchoolHubLogic.dayKey(of: date) : nil }
@@ -95,15 +112,22 @@ final class SchoolTaskCalendarModel {
         let parts = SchoolHubLogic.calendar().dateComponents([.hour, .minute], from: time)
         return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
     }
+    var endTimeText: String? {
+        guard hasTime, hasEndTime else { return nil }
+        let parts = SchoolHubLogic.calendar().dateComponents([.hour, .minute], from: endTime)
+        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+    }
+    /// The range end must be after the start (same day).
+    var endIsValid: Bool { guard let start = timeText, let end = endTimeText else { return true }; return end > start }
     var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
-    var canSave: Bool { hasDate && !trimmedTitle.isEmpty && state != .saving && !isSaved }
+    var canSave: Bool { hasDate && !trimmedTitle.isEmpty && endIsValid && state != .saving && !isSaved }
     var isSaved: Bool { if case .saved = state { return true } else { return false } }
     var isSaving: Bool { state == .saving }
 
     func save() async {
         guard canSave, let day = dayKey else { return }
         state = .saving
-        let request = SchoolTaskCalendarRequest(itemID: itemID, taskKey: taskKey, title: trimmedTitle, date: day, time: timeText, notes: notes.trimmingCharacters(in: .whitespacesAndNewlines), targetId: targetId == "orbit_local" ? nil : targetId, attendees: targetId == "orbit_local" ? [] : Array(invitees).sorted())
+        let request = SchoolTaskCalendarRequest(itemID: itemID, taskKey: taskKey, title: trimmedTitle, date: day, time: timeText, endTime: endTimeText, notes: notes.trimmingCharacters(in: .whitespacesAndNewlines), targetId: targetId == "orbit_local" ? nil : targetId, attendees: targetId == "orbit_local" ? [] : Array(invitees).sorted())
         do {
             let outcome = try await service.createEvent(request)
             if let failure = outcome.failure { state = .failed(failure); return }

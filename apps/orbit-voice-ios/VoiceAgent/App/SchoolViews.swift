@@ -699,6 +699,12 @@ struct SchoolDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("ШІ ORBIT", systemImage: "sparkles").font(.caption.weight(.black).monospaced()).foregroundStyle(Routes05Tokens.accentInk).padding(.horizontal, 9).padding(.vertical, 6).background(Routes05Tokens.lilac, in: Capsule())
                     Text(item.important ?? "Підсумок відсутній — перевірте оригінал листа.").font(.callout).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    ForEach(Array((item.attachmentSummaries ?? []).enumerated()), id: \.offset) { _, entry in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Label((entry.filename ?? "").isEmpty ? "З вкладення" : "З вкладення: \(entry.filename ?? "")", systemImage: "paperclip").font(.caption.weight(.semibold)).foregroundStyle(Routes05Tokens.secondary)
+                            Text(entry.summary).font(.callout).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        }.padding(.top, 4)
+                    }
                     Text("Це інтерпретація Orbit, а не офіційні слова школи.").font(.caption).foregroundStyle(Routes05Tokens.secondary)
                 }.padding(15).background(Routes05Tokens.surface).overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
                 if !item.attachments.isEmpty {

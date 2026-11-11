@@ -37,6 +37,8 @@ struct OrbitSchoolItem: Decodable, Identifiable, Hashable {
     let tasks: [OrbitSchoolItemTask]?
     // Additive, backend-provided: ready | pending | failed | original_only. Absent on older backends.
     var translationStatus: String? = nil
+    /// Additive: summaries of the letter's attachments (backend, from attachment text). Absent when none.
+    var attachmentSummaries: [OrbitSchoolAttachmentSummary]? = nil
     // Additive, backend-provided Ukrainian rendering of `title`. Absent on older backends or before translation.
     var titleUkrainian: String? = nil
 }
@@ -52,6 +54,7 @@ extension OrbitSchoolItem {
     /// The German original, shown as a caption only when a different Ukrainian title is displayed.
     var germanTitleCaption: String? { Self.nonBlank(titleUkrainian) != nil && germanTitle != displayTitle && !germanTitle.isEmpty ? germanTitle : nil }
 }
+struct OrbitSchoolAttachmentSummary: Decodable, Hashable { let filename: String?; let summary: String }
 struct OrbitSchoolItemTask: Decodable, Hashable { let key: String?; let title: String?; let action: String?; let dueAt: String?; let allDay: Bool?; let importance: String?; let target: String?; let confidence: Double?; let reason: String? }
 struct OrbitSchoolAttachment: Decodable, Hashable {
     let id: String?
@@ -354,6 +357,7 @@ struct OrbitSchoolActionHistoryEntry: Decodable, Identifiable, Hashable {
     let entityId: String
     let action: String
     let actorPersonId: String
+    var actorName: String? = nil
     let metadata: String?
     let createdAt: Date
 }
@@ -794,7 +798,10 @@ final class MainProductAPI {
     }
     func createSchoolActionNote(entityType: String, entityId: String, content: String, clientRequestId: String = UUID().uuidString) async throws -> OrbitSchoolActionNote { struct Payload: Encodable { let entityType: String; let entityId: String; let content: String; let clientRequestId: String }; struct Response: Decodable { let note: OrbitSchoolActionNote }; return try await request(path: "/api/school/actions/notes", method: "POST", body: try encoder.encode(Payload(entityType: entityType, entityId: entityId, content: content, clientRequestId: clientRequestId)), preserveHTTPStatus: true, as: Response.self).note }
     func updateSchoolActionNote(id: String, content: String, revision: Int) async throws -> OrbitSchoolActionNote { struct Payload: Encodable { let content: String; let revision: Int }; struct Response: Decodable { let note: OrbitSchoolActionNote }; return try await request(path: "/api/school/actions/notes/\(id)", method: "PATCH", body: try encoder.encode(Payload(content: content, revision: revision)), preserveHTTPStatus: true, as: Response.self).note }
-    func schoolActionHistory() async throws -> OrbitSchoolActionHistoryResponse { try await request(path: "/api/school/actions/history", cachePolicy: .reloadIgnoringLocalCacheData) }
+    func schoolActionHistory(entityId: String? = nil) async throws -> OrbitSchoolActionHistoryResponse {
+        let query = entityId.map { "?entityId=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)" } ?? ""
+        return try await request(path: "/api/school/actions/history\(query)", cachePolicy: .reloadIgnoringLocalCacheData)
+    }
     func schoolBriefing(classifyUnavailable: Bool = false) async throws -> OrbitSchoolBriefingResponse { try await request(path: "/api/school/brain/briefing", classifyUnavailable: classifyUnavailable, as: OrbitSchoolBriefingResponse.self) }
     func schoolBrainConversation() async throws -> OrbitSchoolBrainConversationResponse { try await request(path: "/api/school/brain/conversation") }
     func askSchool(_ content: String) async throws -> OrbitSchoolBrainMessage { struct Payload: Encodable { let content: String }; struct Response: Decodable { let message: OrbitSchoolBrainMessage }; return try await request(path: "/api/school/brain/messages", method: "POST", body: try encoder.encode(Payload(content: content)), as: Response.self).message }
@@ -806,15 +813,15 @@ final class MainProductAPI {
         return try await providerWrite(path: path, method: "POST", body: try encoder.encode(Payload(key: key, confirm: true, targetId: targetId, attendees: attendees)))
     }
     func createSchoolTaskCalendarEvent(_ request: SchoolTaskCalendarRequest) async throws -> SchoolCalendarResult {
-        struct Payload: Encodable { let taskKey: String; let title: String; let date: String; let time: String?; let notes: String; let confirm: Bool }
-        let body = try encoder.encode(Payload(taskKey: request.taskKey, title: request.title, date: request.date, time: request.time, notes: request.notes, confirm: true))
+        struct Payload: Encodable { let taskKey: String; let title: String; let date: String; let time: String?; let endTime: String?; let notes: String; let confirm: Bool }
+        let body = try encoder.encode(Payload(taskKey: request.taskKey, title: request.title, date: request.date, time: request.time, endTime: request.endTime, notes: request.notes, confirm: true))
         let itemPath = request.itemID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? request.itemID
         return try await self.request(path: "/api/school/items/\(itemPath)/calendar-proposal", method: "POST", body: body, preserveHTTPStatus: true, as: SchoolCalendarResult.self)
     }
     /// School task -> a CHOSEN iCloud calendar (server: adults; idempotent per item + task).
     func createSchoolTaskCalendarEventToProvider(_ request: SchoolTaskCalendarRequest, targetId: String) async throws -> OrbitProviderWriteResult {
-        struct Payload: Encodable { let taskKey: String; let title: String; let date: String; let time: String?; let notes: String; let confirm: Bool; let targetId: String; let attendees: [String] }
-        let body = try encoder.encode(Payload(taskKey: request.taskKey, title: request.title, date: request.date, time: request.time, notes: request.notes, confirm: true, targetId: targetId, attendees: request.attendees))
+        struct Payload: Encodable { let taskKey: String; let title: String; let date: String; let time: String?; let endTime: String?; let notes: String; let confirm: Bool; let targetId: String; let attendees: [String] }
+        let body = try encoder.encode(Payload(taskKey: request.taskKey, title: request.title, date: request.date, time: request.time, endTime: request.endTime, notes: request.notes, confirm: true, targetId: targetId, attendees: request.attendees))
         let itemPath = request.itemID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? request.itemID
         return try await providerWrite(path: "/api/school/items/\(itemPath)/calendar-proposal", method: "POST", body: body)
     }
