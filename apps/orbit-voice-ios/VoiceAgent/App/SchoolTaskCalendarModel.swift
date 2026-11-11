@@ -93,12 +93,13 @@ final class SchoolTaskCalendarModel {
         self.date = prefilled ?? now
         let defaultTime = SchoolHubLogic.date(fromDayKey: SchoolHubLogic.dayKey(of: now)).map { $0.addingTimeInterval(-3 * 3600) } ?? now
         // An exact time from the school source is carried into the event.
-        let dayStart = SchoolHubLogic.date(fromDayKey: SchoolHubLogic.dayKey(of: prefilled ?? now))
+        let day = SchoolHubLogic.date(fromDayKey: SchoolHubLogic.dayKey(of: prefilled ?? now))   // civil day (noon anchor)
         let known = knownTime.flatMap { SchoolHubLogic.minutes(fromTimeKey: $0) }
-        if let known, let dayStart {
+        let at = { (minutes: Int) -> Date? in day.flatMap { SchoolHubLogic.calendar().date(bySettingHour: minutes / 60 % 24, minute: minutes % 60, second: 0, of: $0) } }
+        if let known, let start = at(known), let end = at(min(known + 60, 23 * 60 + 59)) {
             self.hasTime = true
-            self.time = dayStart.addingTimeInterval(TimeInterval(known * 60))
-            self.endTime = dayStart.addingTimeInterval(TimeInterval((known + 60) * 60))
+            self.time = start
+            self.endTime = end
         } else {
             self.time = defaultTime
             self.endTime = defaultTime.addingTimeInterval(3600)
