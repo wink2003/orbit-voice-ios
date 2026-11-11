@@ -144,7 +144,10 @@ struct OrbitCalendarV2View: View {
             }
             .sheet(item: $selectedEvent) { event in eventDetail(event) }
             .task { await load() }
-            .refreshable { await load() }
+            .refreshable {
+                // Detached from SwiftUI's refresh task: a state change during the reload used to cancel it ("cancelled" alert).
+                await Task { await refreshMirrorThenLoad() }.value
+            }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 referenceDate = .now
@@ -563,8 +566,8 @@ struct OrbitCalendarV2View: View {
 
     private func upcomingRow(_ event: ConceptCalendarEvent, inTodaySection: Bool = false) -> some View {
         let origin = source(event)
-        let involved = names(for: event.involvedPersonIDs)
-        let associated = names(for: origin.relatedPersonIDs)
+        let involved = names(for: event.involvedPersonIDs) + attendeeLabels(event)
+        let associated = ownerNames(event, origin: origin)
 
         return Button { selectedEvent = event } label: {
             HStack(alignment: .top, spacing: 11) {
@@ -589,14 +592,14 @@ struct OrbitCalendarV2View: View {
                             .lineLimit(1)
                         Spacer(minLength: 2)
                     }
-                    Text("Власник календаря: \(associated.isEmpty ? "Не надано сервером" : associated.joined(separator: ", "))")
+                    Text("Власник календаря: \(associated.isEmpty ? "Спільний календар" : associated.joined(separator: ", "))")
                         .font(.caption)
                         .foregroundStyle(Routes05Tokens.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("Учасники / запрошені:")
                             .font(.caption.weight(.semibold))
-                        Text(involved.isEmpty ? "Не вказано" : involved.joined(separator: ", "))
+                        Text(involved.isEmpty ? "Немає" : involved.joined(separator: ", "))
                             .font(.caption)
                             .foregroundStyle(Routes05Tokens.secondary)
                     }
@@ -710,9 +713,12 @@ struct OrbitCalendarV2View: View {
                     LabeledContent("Час", value: event.allDay ? "Увесь день" : ConceptCalendarDates.time(event.startsAt))
                     LabeledContent("Календар", value: source(event).name)
                     LabeledContent("Акаунт", value: source(event).accountLabel)
-                    LabeledContent("Власник календаря", value: "Не надано сервером")
-                    LabeledContent("Власник / організатор", value: live.flatMap { names(for: [$0.ownerPersonId]).first } ?? "Не вказано")
-                    LabeledContent("Учасники / запрошені", value: "Не вказано — API не повертає ці дані")
+                    LabeledContent("Власник календаря", value: ownerNames(event, origin: source(event)).isEmpty ? "Спільний календар" : ownerNames(event, origin: source(event)).joined(separator: ", "))
+                    LabeledContent("Організатор", value: organizerText(live))
+                    LabeledContent("Учасники / запрошені", value: attendeeLabels(event).isEmpty ? "Немає" : attendeeLabels(event).joined(separator: ", "))
+                    if let place = live?.location, !place.isEmpty {
+                        LabeledContent("Місце", value: place)
+                    }
                     LabeledContent("Доступ", value: source(event).writable ? "Редагування дозволене" : "Лише перегляд")
                 }
                 if !event.notes.isEmpty {
@@ -880,6 +886,47 @@ struct OrbitCalendarV2View: View {
         ids.compactMap { id in people.first(where: { $0.id == id })?.name }
     }
 
+    /// Calendar owner(s): people linked to the calendar plus the owner the server reports for the event (e.g. Alex's own calendar).
+    private func ownerNames(_ event: ConceptCalendarEvent, origin: ConceptCalendarSource) -> [String] {
+        var ids = origin.relatedPersonIDs
+        for id in event.calendarOwnerIDs where !ids.contains(id) { ids.append(id) }
+        return names(for: ids)
+    }
+
+    private static func attendeeStatusText(_ status: String?) -> String {
+        switch (status ?? "").uppercased() {
+        case "ACCEPTED": return "прийняв(ла)"
+        case "DECLINED": return "відхилив(ла)"
+        case "TENTATIVE": return "можливо"
+        case "NEEDS-ACTION": return "очікує відповіді"
+        default: return ""
+        }
+    }
+
+    /// Invited people with their reply status; family members by name, others by the display name the calendar provided.
+    private func attendeeLabels(_ event: ConceptCalendarEvent) -> [String] {
+        event.attendees.map { attendee in
+            let name = attendee.personId.flatMap { id in people.first(where: { $0.id == id })?.name } ?? attendee.name ?? "Гість"
+            let status = Self.attendeeStatusText(attendee.status)
+            return status.isEmpty ? name : "\(name) (\(status))"
+        }
+    }
+
+    private func organizerText(_ live: OrbitCalendarEvent?) -> String {
+        guard let organizer = live?.organizer else { return "Не вказано" }
+        if let id = organizer.personId, let name = names(for: [id]).first { return name }
+        return organizer.external == true ? "Зовнішній організатор" : "Не вказано"
+    }
+
+    /// Pull-to-refresh: ask the server to refresh its iCloud mirror for the visible window first (read-only, rate limited), then reload.
+    private func refreshMirrorThenLoad() async {
+        let start = calendar.startOfDay(for: referenceDate)
+        let from = calendar.date(byAdding: .day, value: -7, to: start) ?? start
+        let to = calendar.date(byAdding: .day, value: 62, to: start) ?? start
+        await MainProductAPI.shared.refreshCalendarNow(from: from, to: to)
+        await load()
+    }
+
     private func jumpToToday() {
         visibleMonth = ConceptCalendarDates.monthStart(referenceDate)
         selectedDate = calendar.startOfDay(for: referenceDate)
@@ -949,6 +996,8 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
     let involvedPersonIDs: [String]
     let notes: String
     let occurrenceId: String?
+    let calendarOwnerIDs: [String]
+    let attendees: [OrbitCalendarAttendee]
 
     var sourceType: String { sourceID }
     var sourceIdentifier: String? { nil }
@@ -964,6 +1013,8 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
         self.involvedPersonIDs = involvedPersonIDs
         self.notes = notes
         self.occurrenceId = nil
+        self.calendarOwnerIDs = []
+        self.attendees = []
     }
 
     init(apiEvent: OrbitCalendarEvent) {
@@ -976,6 +1027,8 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
         involvedPersonIDs = []
         notes = apiEvent.notes
         occurrenceId = apiEvent.occurrenceId
+        calendarOwnerIDs = apiEvent.calendarOwners ?? []
+        attendees = apiEvent.attendees ?? []
     }
 }
 

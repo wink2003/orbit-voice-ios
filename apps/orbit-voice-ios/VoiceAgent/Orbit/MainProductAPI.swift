@@ -372,6 +372,11 @@ struct OrbitFamilyProfile: Decodable, Identifiable {
     var id: String { personId }
 }
 
+/// What the signed-in person may do with one provider event (server decides; the UI only reflects it).
+struct OrbitCalendarCapabilities: Codable, Hashable { let edit: [String]; let delete: Bool }
+struct OrbitCalendarOrganizer: Codable, Hashable { let personId: String?; let external: Bool? }
+struct OrbitCalendarAttendee: Codable, Hashable { let personId: String?; let name: String?; let status: String? }
+
 struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     let id: String
     let familyId: String
@@ -391,11 +396,19 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     var startDate: String? = nil
     var endDate: String? = nil
     var timeZone: String? = nil
+    // Additive, backend-provided (calendar mirror). Absent on older backends.
+    var location: String? = nil
+    var mirrorEventId: String? = nil
+    var capabilities: OrbitCalendarCapabilities? = nil
+    var organizer: OrbitCalendarOrganizer? = nil
+    var attendees: [OrbitCalendarAttendee]? = nil
+    var calendarOwners: [String]? = nil
 
     private enum CodingKeys: String, CodingKey {
         case id, familyId, ownerPersonId, title, notes, startsAt, endsAt, allDay
         case sourceType, sourceIdentifier, sourceName, sourceColor, createdAt, updatedAt
         case occurrenceId, startDate, endDate, timeZone
+        case location, mirrorEventId, capabilities, organizer, attendees, calendarOwners
     }
 
     init(
@@ -456,6 +469,12 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
         startDate = try values.decodeIfPresent(String.self, forKey: .startDate)
         endDate = try values.decodeIfPresent(String.self, forKey: .endDate)
         timeZone = try values.decodeIfPresent(String.self, forKey: .timeZone)
+        location = try values.decodeIfPresent(String.self, forKey: .location)
+        mirrorEventId = try values.decodeIfPresent(String.self, forKey: .mirrorEventId)
+        capabilities = try values.decodeIfPresent(OrbitCalendarCapabilities.self, forKey: .capabilities)
+        organizer = try values.decodeIfPresent(OrbitCalendarOrganizer.self, forKey: .organizer)
+        attendees = try values.decodeIfPresent([OrbitCalendarAttendee].self, forKey: .attendees)
+        calendarOwners = try values.decodeIfPresent([String].self, forKey: .calendarOwners)
 
         let eventCalendarTimeZone = timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
         if allDay, let startDate, let localStart = OrbitCalendarV2Logic.localCalendarDate(startDate, timeZone: eventCalendarTimeZone) {
@@ -824,6 +843,18 @@ final class MainProductAPI {
     func disconnectCalendarConnection(id: String) async throws {
         struct Response: Decodable { let disconnected: Bool }
         let _: Response = try await request(path: "/api/calendar/connections/\(id)", method: "DELETE", body: nil)
+    }
+
+    /// Best-effort, read-only: asks the server to refresh its iCloud mirror for the visible window now (pull-to-refresh). Failures are ignored.
+    func refreshCalendarNow(from: Date, to: Date) async {
+        struct Payload: Encodable { let from: String; let to: String }
+        struct Response: Decodable { let refreshed: Int?; let skipped: Int?; let errors: Int? }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let body = try? encoder.encode(Payload(from: formatter.string(from: from), to: formatter.string(from: to))) else { return }
+        let _: Response? = try? await request(path: "/api/calendar/refresh-now", method: "POST", body: body)
     }
 
     func calendarSources() async throws -> [OrbitCalendarSource] {
