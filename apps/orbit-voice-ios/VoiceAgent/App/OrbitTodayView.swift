@@ -386,7 +386,8 @@ struct NovaTodayFixture {
             dueAt: ISO8601DateFormatter().string(from: now), endsAt: nil, allDay: false,
             importance: "normal", target: nil, confidence: 1, reason: "Synthetic fixture",
             location: nil, sourceItemId: item.id, sourceType: "demo", sourceExternalId: item.externalId,
-            bucket: nil, status: nil, completedAt: nil, actionTaskId: nil, calendarEventId: nil
+            bucket: nil, status: nil, completedAt: nil, actionTaskId: nil, calendarEventId: nil,
+            effectiveDueAt: nil, effectiveDueDateOrigin: nil, group: nil
         )
         return NovaTodayFixture(
             calendar: [event], school: OrbitSchoolItemsResponse(items: [item], unreadCount: 1),

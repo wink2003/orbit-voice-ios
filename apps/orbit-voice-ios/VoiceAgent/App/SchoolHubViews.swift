@@ -3565,7 +3565,7 @@ private struct Routes05SchoolTasksProductionView: View {
                 Spacer(minLength: 8)
                 if let completedCount {
                     Text("\(completedCount)/\(tasks.count)")
-                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .font(.footnote.weight(.semibold).monospacedDigit())
                         .foregroundStyle(Routes05Tokens.secondary)
                         .accessibilityLabel("Виконано \(completedCount) із \(tasks.count) справ")
                 }
