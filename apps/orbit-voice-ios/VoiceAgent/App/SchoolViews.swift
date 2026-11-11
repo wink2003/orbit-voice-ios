@@ -694,7 +694,10 @@ struct SchoolDetailView: View {
                 if !item.attachments.isEmpty {
                     detailHeader("Вкладення")
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in attachmentRow(file) }
+                        ForEach(Array(item.attachments.enumerated()), id: \.offset) { _, file in
+                            attachmentRow(file)
+                            attachmentTranslation(file)
+                        }
                     }
                     .background(Routes05Tokens.surface)
                     .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.ink, lineWidth: 1))
@@ -855,6 +858,30 @@ struct SchoolDetailView: View {
             attachmentLabel(file)
         }
         Divider().padding(.leading, 34)
+    }
+    /// Full machine translation (German -> Ukrainian) of the attachment text, collapsed under the attachment.
+    @ViewBuilder private func attachmentTranslation(_ file: OrbitSchoolAttachment) -> some View {
+        switch file.translationStatus {
+        case "ready"?:
+            if let text = file.translation, !text.isEmpty {
+                DisclosureGroup {
+                    Text(text).font(.callout).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+                    Text("Машинний переклад з німецької. Оригінал німецькою — єдиний остаточний текст.").font(.caption2).foregroundStyle(.secondary).padding(.top, 2)
+                } label: {
+                    Label("Повний переклад українською", systemImage: "character.book.closed").font(.callout.weight(.semibold))
+                }
+                .padding(.leading, 34).padding(.vertical, 6)
+                Divider().padding(.leading, 34)
+            } else {
+                Label("Переклад готовий. Оновіть лист, щоб його побачити.", systemImage: "arrow.clockwise").font(.footnote).foregroundStyle(.secondary).padding(.leading, 34).padding(.vertical, 4)
+            }
+        case "pending"?:
+            Label("Переклад вкладення готується…", systemImage: "hourglass").font(.footnote).foregroundStyle(.secondary).padding(.leading, 34).padding(.vertical, 4)
+        case "failed"?:
+            Label("Не вдалося перекласти вкладення.", systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.secondary).padding(.leading, 34).padding(.vertical, 4)
+        default:
+            EmptyView()
+        }
     }
     private func attachmentLabel(_ file: OrbitSchoolAttachment) -> some View {
         HStack(spacing: 10) {
