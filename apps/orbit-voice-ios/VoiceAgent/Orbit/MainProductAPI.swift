@@ -61,6 +61,11 @@ struct OrbitSchoolAttachment: Decodable, Hashable {
     // Present only when the source provides a safe downloadable URL.
     let url: String?
     let downloadURL: String?
+    // Additive, backend-provided (migration 072/078). The translation text is only in the item DETAIL payload.
+    var readStatus: String? = nil
+    var translationStatus: String? = nil      // pending | ready | failed
+    var translationChars: Int? = nil
+    var translation: String? = nil
 }
 struct OrbitSchoolItemsResponse: Decodable { let items: [OrbitSchoolItem]; let unreadCount: Int }
 struct OrbitSchulmanagerCalendarEvent: Decodable, Identifiable, Hashable { let uid: String; let title: String; let description: String; let location: String; let startsAt: String?; let endsAt: String?; let allDay: Bool; let timeZone: String?; let recurrenceRule: String?; let relevanceClass: String?; let audienceClass: String?; let relevanceReason: String?; var id: String { uid } }
