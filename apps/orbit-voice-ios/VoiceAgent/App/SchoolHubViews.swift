@@ -99,6 +99,7 @@ final class SchoolHubStore {
                     sourceType: task.sourceType,
                     sourceExternalId: task.sourceExternalId,
                     actionID: state?.id,
+                    sourceOrigin: items.first(where: { $0.id == task.sourceItemId })?.source,
                     dueEndAt: state?.planningDate == nil ? task.dueEndAt : nil,
                     status: state?.status ?? task.status ?? "open",
                     planningDate: state?.planningDate,
@@ -1975,6 +1976,9 @@ private struct SchoolOverviewView: View {
             LabeledContent("Microsoft Teams") {
                 Label("Не підключено", systemImage: "minus.circle").foregroundStyle(.secondary)
             }
+            NavigationLink { SchoolEmailView() } label: { Label("Email від вчителів", systemImage: "envelope.badge") }
+                .frame(minHeight: OrbitSpacing.minTarget)
+                .orbitRequires(.schoolWrite)
         } header: { SchoolSectionHeader(title: "Джерела") }
     }
 }

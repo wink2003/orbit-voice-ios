@@ -367,6 +367,15 @@ struct OrbitSchoolActionHistoryEntry: Decodable, Identifiable, Hashable {
     }
 }
 struct OrbitSchoolActionHistoryResponse: Decodable { let history: [OrbitSchoolActionHistoryEntry] }
+
+// School email channel (web: /api/school/email/*; adults only). Quarantined senders are shown for approval; nothing from them is processed before that.
+struct OrbitSchoolEmailStatus: Decodable, Hashable { let enabled: Bool; let configured: Bool; let forwardersEnforced: Bool; let lastPollAt: Date?; let lastError: String?; let counts: [String: Int] }
+struct OrbitSchoolEmailQuarantineSender: Decodable, Identifiable, Hashable { let address: String; let name: String?; let messages: Int; let latestAt: Date?; let latestSubject: String; let latestPreview: String; var id: String { address } }
+struct OrbitSchoolEmailQuarantineResponse: Decodable { let senders: [OrbitSchoolEmailQuarantineSender] }
+struct OrbitSchoolEmailSender: Decodable, Identifiable, Hashable { let pattern: String; let status: String; let label: String?; let decidedBy: String?; let decidedAt: Date?; var id: String { pattern } }
+struct OrbitSchoolEmailSendersResponse: Decodable { let senders: [OrbitSchoolEmailSender] }
+struct OrbitSchoolEmailDecision: Decodable, Hashable { let ok: Bool; let pattern: String; let status: String; let released: Int; let rejected: Int; let failed: Int }
+
 struct OrbitSchoolBrainConversationResponse: Decodable { let conversation: OrbitSchoolBrainConversation; let messages: [OrbitSchoolBrainMessage] }
 struct OrbitSchoolBrainConversation: Decodable { let id: String; let title: String; let createdAt: Date; let updatedAt: Date }
 
@@ -803,6 +812,14 @@ final class MainProductAPI {
     }
     func createSchoolActionNote(entityType: String, entityId: String, content: String, clientRequestId: String = UUID().uuidString) async throws -> OrbitSchoolActionNote { struct Payload: Encodable { let entityType: String; let entityId: String; let content: String; let clientRequestId: String }; struct Response: Decodable { let note: OrbitSchoolActionNote }; return try await request(path: "/api/school/actions/notes", method: "POST", body: try encoder.encode(Payload(entityType: entityType, entityId: entityId, content: content, clientRequestId: clientRequestId)), preserveHTTPStatus: true, as: Response.self).note }
     func updateSchoolActionNote(id: String, content: String, revision: Int) async throws -> OrbitSchoolActionNote { struct Payload: Encodable { let content: String; let revision: Int }; struct Response: Decodable { let note: OrbitSchoolActionNote }; return try await request(path: "/api/school/actions/notes/\(id)", method: "PATCH", body: try encoder.encode(Payload(content: content, revision: revision)), preserveHTTPStatus: true, as: Response.self).note }
+    func schoolEmailStatus() async throws -> OrbitSchoolEmailStatus { try await request(path: "/api/school/email/status", cachePolicy: .reloadIgnoringLocalCacheData, as: OrbitSchoolEmailStatus.self) }
+    func schoolEmailQuarantine() async throws -> [OrbitSchoolEmailQuarantineSender] { try await request(path: "/api/school/email/quarantine", cachePolicy: .reloadIgnoringLocalCacheData, as: OrbitSchoolEmailQuarantineResponse.self).senders }
+    func schoolEmailSenders() async throws -> [OrbitSchoolEmailSender] { try await request(path: "/api/school/email/senders", cachePolicy: .reloadIgnoringLocalCacheData, as: OrbitSchoolEmailSendersResponse.self).senders }
+    /// Approve ("approved") or block ("blocked") a sender address or a whole "@domain"; the server releases/rejects that sender's quarantined mail in the same call.
+    func decideSchoolEmailSender(pattern: String, status: String, label: String? = nil) async throws -> OrbitSchoolEmailDecision {
+        struct Payload: Encodable { let pattern: String; let status: String; let label: String? }
+        return try await request(path: "/api/school/email/senders", method: "POST", body: try encoder.encode(Payload(pattern: pattern, status: status, label: label)), as: OrbitSchoolEmailDecision.self)
+    }
     func schoolActionHistory(entityId: String? = nil) async throws -> OrbitSchoolActionHistoryResponse {
         let query = entityId.map { "?entityId=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)" } ?? ""
         return try await request(path: "/api/school/actions/history\(query)", cachePolicy: .reloadIgnoringLocalCacheData)

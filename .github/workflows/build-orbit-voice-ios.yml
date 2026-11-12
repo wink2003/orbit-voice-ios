@@ -342,6 +342,14 @@ jobs:
               assert "showsEmpty" not in call, f"{title} must not force an empty heading"
           PY
 
+      - name: Test School email logic
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/App/SchoolEmailLogic.swift \
+            apps/orbit-voice-ios/Tests/SchoolEmailLogicTests.swift \
+            -o "$RUNNER_TEMP/orbit-school-email-tests"
+          "$RUNNER_TEMP/orbit-school-email-tests"
       - name: Test School task calendar model
         run: |
           set -euo pipefail
