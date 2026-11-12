@@ -99,6 +99,7 @@ final class SchoolHubStore {
                     sourceType: task.sourceType,
                     sourceExternalId: task.sourceExternalId,
                     actionID: state?.id,
+                    dueEndAt: state?.planningDate == nil ? task.dueEndAt : nil,
                     status: state?.status ?? task.status ?? "open",
                     planningDate: state?.planningDate,
                     schoolDueAt: effective.schoolDueAt,
@@ -2928,7 +2929,7 @@ struct SchoolTaskCalendarSheet: View {
         self.task = task
         _model = State(initialValue: SchoolTaskCalendarModel(
             itemID: task.sourceItemId, taskKey: task.sourceTaskKey, title: task.title, notes: task.action == task.title ? "" : (task.action ?? ""),
-            knownDeadline: SchoolHubLogic.calendarPrefillDay(for: task), knownTime: SchoolHubLogic.calendarPrefillTime(for: task), service: LiveSchoolTaskCalendarService()
+            knownDeadline: SchoolHubLogic.calendarPrefillDay(for: task), knownTime: SchoolHubLogic.calendarPrefillTime(for: task), knownEndTime: SchoolHubLogic.calendarPrefillEndTime(for: task), service: LiveSchoolTaskCalendarService()
         ))
     }
 
@@ -3513,6 +3514,7 @@ private struct Routes05SchoolTasksProductionView: View {
                     hero
                     filters
                     stateNotice
+                    gymnasiumEventsStrip
                     if store.tasksPhase == .loading && !store.tasksLoadedOnce {
                         ProgressView("Завантаження справ…").frame(maxWidth: .infinity, minHeight: 120)
                     } else if tasks.isEmpty {
@@ -3547,6 +3549,33 @@ private struct Routes05SchoolTasksProductionView: View {
         .alert("Стан справи", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("Гаразд") { error = nil }
         } message: { Text(error ?? "") }
+    }
+
+    /// Gymnasium calendar events that are definitely for us (DIRECT/GRADE/SCHOOLWIDE), next 14 days, read-only.
+    @ViewBuilder private var gymnasiumEventsStrip: some View {
+        let horizon = SchoolHubLogic.addDays(14, to: today) ?? today
+        let upcoming = store.hubEvents.filter { event in
+            guard SchoolHubLogic.relevance(of: event) == .ours, let key = SchoolHubLogic.dayKey(for: event.startsAt, allDay: event.allDay) else { return false }
+            return key >= today && key <= horizon
+        }.sorted { ($0.startsAt ?? "") < ($1.startsAt ?? "") }
+        if query.isEmpty, filter != .completed, !upcoming.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ПОДІЇ ГІМНАЗІЇ ДЛЯ НАС · 14 ДНІВ").font(.system(size: 10, weight: .black, design: .monospaced)).tracking(1.4)
+                ForEach(Array(upcoming.prefix(6))) { event in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(SchoolHubLogic.dayKey(for: event.startsAt, allDay: event.allDay).map(SchoolHubFormat.shortDay) ?? "—").font(.caption.weight(.semibold)).frame(width: 74, alignment: .leading)
+                        Text(event.title).font(.callout).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                if upcoming.count > 6 { Text("Ще \(upcoming.count - 6) — у календарі школи.").font(.caption).foregroundStyle(Routes05Tokens.secondary) }
+            }
+            .padding(14)
+            .background(Routes05Tokens.surface)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
+            .padding(.horizontal, 16).padding(.bottom, 12)
+        }
     }
 
     private var intro: some View {
