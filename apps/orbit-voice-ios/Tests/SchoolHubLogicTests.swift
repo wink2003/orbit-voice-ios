@@ -62,6 +62,13 @@ struct SchoolHubLogicTests {
         precondition(groups.overdue.map(\.id) == ["1"] && groups.dated.map(\.id) == ["2"])
         precondition(groups.undated.map(\.id) == ["3", "5"] && groups.undatedOlder.map(\.id) == ["4"])
         precondition(groups.overdue.count + groups.dated.count + groups.undated.count + groups.undatedOlder.count == tasks.count)
+        // Past days of the CURRENT week (Mon 2026-10-05 ... Sun 10-11) are "this week", not overdue; earlier weeks stay overdue.
+        let weekTasks = [task("w1", due: "2026-10-06"), task("w2", due: "2026-10-04"), task("w3", due: "2026-10-08"), task("w4", due: "2026-10-14")]
+        let sections = SchoolHubLogic.taskSections(weekTasks, filter: .all, today: "2026-10-08", sourceDates: [:], now: now)
+        precondition(sections.thisWeek.map(\.id) == ["w1", "w3"], "past day of this week -> this week")
+        precondition(sections.overdue.map(\.id) == ["w2"], "previous week stays overdue")
+        precondition(sections.nextWeek.map(\.id) == ["w4"])
+        precondition(!SchoolHubLogic.isOverdue(day: "2026-10-06", today: "2026-10-08") && SchoolHubLogic.isOverdue(day: "2026-10-04", today: "2026-10-08"))
 
         // Parent-facing chronology keeps every open task in exactly one honest bucket.
         let scheduled = SchoolHubLogic.scheduleTasks(
@@ -292,10 +299,10 @@ struct SchoolHubLogicTests {
             ]
             let counts = SchoolHubLogic.taskCounts(tasks)
             precondition(counts.open == 7 && counts.completed == 3 && counts.all == 10)
-            // Four groups, ascending by the effective date. Overdue wins over the calendar week for open work (Mon 12 < today Tue 13).
+            // Four groups, ascending by the effective date. A past day of the CURRENT week (Mon 12 < today Tue 13) is 'this week'; only earlier weeks are overdue.
             let open = SchoolHubLogic.taskSections(tasks, filter: .open, today: today, sourceDates: [:], now: now)
-            precondition(open.overdue.map(\.id) == ["ancient", "overdue", "weekOpen"])
-            precondition(open.thisWeek.isEmpty)
+            precondition(open.overdue.map(\.id) == ["ancient", "overdue"])
+            precondition(open.thisWeek.map(\.id) == ["weekOpen"])
             precondition(open.nextWeek.map(\.id) == ["soon"])
             precondition(open.later.map(\.id) == ["edge", "later", "undated"], "no date sorts last and is never dropped")
             precondition(open.visibleCount == counts.open, "open filter shows exactly the open count")
@@ -305,8 +312,8 @@ struct SchoolHubLogicTests {
             precondition(done.later.map(\.id) == ["done", "doneUndated"] && done.visibleCount == counts.completed)
             let every = SchoolHubLogic.taskSections(tasks, filter: .all, today: today, sourceDates: [:], now: now)
             precondition(every.visibleCount == counts.all)
-            precondition(every.overdue.map(\.id) == ["ancient", "overdue", "weekOpen"])
-            precondition(every.thisWeek.map(\.id) == ["weekDone"])
+            precondition(every.overdue.map(\.id) == ["ancient", "overdue"])
+            precondition(every.thisWeek.map(\.id) == ["weekOpen", "weekDone"])
             precondition(every.nextWeek.map(\.id) == ["soon"])
             precondition(every.later.map(\.id) == ["done", "edge", "later", "doneUndated", "undated"])
             precondition(every.laterOpen.map(\.id) == ["edge", "later", "undated"])
