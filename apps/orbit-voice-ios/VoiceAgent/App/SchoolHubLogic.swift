@@ -971,7 +971,12 @@ extension SchoolHubLogic {
     /// What a task row shows about its date: the authoritative effective day, whether it came from the letter, and overdue state.
     static func dueMeta(_ task: SchoolHubTask, today: String, sourceDates: [String: Date]) -> SchoolTaskDueMeta {
         let day = effectiveTaskDay(task, sourceDates: sourceDates)
-        return SchoolTaskDueMeta(day: day, fromLetter: usesSourceDate(task, sourceDates: sourceDates), overdue: !isCompleted(task) && (day.map { $0 < today } ?? false))
+        return SchoolTaskDueMeta(day: day, fromLetter: usesSourceDate(task, sourceDates: sourceDates), overdue: !isCompleted(task) && (day.map { isOverdue(day: $0, today: today) } ?? false))
+    }
+
+    /// A past day of the CURRENT week is not "overdue" (owner decision): it belongs to "this week". Only days before this week are.
+    static func isOverdue(day: String, today: String) -> Bool {
+        day < today && !weekDays(containing: today).contains(day)
     }
 
     static func usesSourceDate(_ task: SchoolHubTask, sourceDates: [String: Date]) -> Bool {
@@ -993,7 +998,7 @@ extension SchoolHubLogic {
                 sections.later.append(task)
                 continue
             }
-            if !isCompleted(task) && due < today {
+            if !isCompleted(task) && isOverdue(day: due, today: today) {
                 sections.overdue.append(task)
             } else if currentWeek.contains(due) {
                 sections.thisWeek.append(task)

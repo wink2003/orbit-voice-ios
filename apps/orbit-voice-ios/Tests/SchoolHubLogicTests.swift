@@ -62,6 +62,13 @@ struct SchoolHubLogicTests {
         precondition(groups.overdue.map(\.id) == ["1"] && groups.dated.map(\.id) == ["2"])
         precondition(groups.undated.map(\.id) == ["3", "5"] && groups.undatedOlder.map(\.id) == ["4"])
         precondition(groups.overdue.count + groups.dated.count + groups.undated.count + groups.undatedOlder.count == tasks.count)
+        // Past days of the CURRENT week (Mon 2026-10-05 ... Sun 10-11) are "this week", not overdue; earlier weeks stay overdue.
+        let weekTasks = [task("w1", due: "2026-10-06"), task("w2", due: "2026-10-04"), task("w3", due: "2026-10-08"), task("w4", due: "2026-10-14")]
+        let sections = SchoolHubLogic.taskSections(weekTasks, filter: .all, today: "2026-10-08", sourceDates: [:], now: now)
+        precondition(sections.thisWeek.map(\.id) == ["w1", "w3"], "past day of this week -> this week")
+        precondition(sections.overdue.map(\.id) == ["w2"], "previous week stays overdue")
+        precondition(sections.nextWeek.map(\.id) == ["w4"])
+        precondition(!SchoolHubLogic.isOverdue(day: "2026-10-06", today: "2026-10-08") && SchoolHubLogic.isOverdue(day: "2026-10-04", today: "2026-10-08"))
 
         // Parent-facing chronology keeps every open task in exactly one honest bucket.
         let scheduled = SchoolHubLogic.scheduleTasks(

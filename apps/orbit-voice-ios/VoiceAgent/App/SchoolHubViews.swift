@@ -2048,7 +2048,7 @@ private struct SchoolTaskRow: View {
         let evidence = SchoolHubLogic.evidence(forTask: task, sourceLoaded: item != nil, activeNames: store.studentNames, sourceText: item?.originalPlainText ?? item?.originalGerman ?? "")
         let dueKey = SchoolHubLogic.effectiveTaskDay(task, sourceDates: store.sourceDates)
         let fromLetter = SchoolHubLogic.usesSourceDate(task, sourceDates: store.sourceDates)
-        let actuallyOverdue = task.status != "completed" && (dueKey.map { $0 < today } ?? false)
+        let actuallyOverdue = task.status != "completed" && (dueKey.map { SchoolHubLogic.isOverdue(day: $0, today: today) } ?? false)
         let days = dueKey.flatMap { SchoolHubFormat.daysFrom(today, to: $0) }
         let warn = actuallyOverdue || (days.map { $0 <= 2 } ?? false)
         let updating = store.isUpdating(task)
