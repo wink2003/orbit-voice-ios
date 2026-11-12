@@ -2,6 +2,11 @@ name: Build Orbit Voice IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      derive_build_number:
+        description: "Dry-run the derived build number on a non-release branch (never used by the release pipeline)"
+        type: boolean
+        default: false
   push:
     branches-ignore:
       - codex/interpreter-phase1-build-gate
@@ -13,33 +18,19 @@ permissions:
   contents: read
 
 jobs:
-  # Early, cheap, advisory monotonicity signal (issue #28): on the release branch a candidate build number that is not strictly newer
-  # than the published SideStore Main build fails here in seconds, before the macOS build.  The canonical ipa-plan stays the authority.
-  build-number-gate:
-    if: github.ref == 'refs/heads/release/main-orbit'
+  # Build-number scripts: hermetic python tests (cheap, ubuntu).  The release-branch build number is DERIVED in the build job
+  # (published SideStore build + 1; owner decision 2026-11-12, replaces the manual bump PR); the canonical ipa-plan stays the authority.
+  build-number-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-
-      - name: Candidate build must be newer than the published Main build
-        run: |
-          set -uo pipefail
-          python3 scripts/check_build_monotonic.py \
-            --project apps/orbit-voice-ios/VoiceAgent.xcodeproj/project.pbxproj | tee "$RUNNER_TEMP/build-gate.json"
-          status=${PIPESTATUS[0]}
-          {
-            echo '## Build number gate'
-            echo '```json'
-            cat "$RUNNER_TEMP/build-gate.json"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit "$status"
+      - name: Build number scripts (monotonic check + derivation)
+        working-directory: scripts
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_check_build_monotonic test_derive_build_number
 
   build:
-    needs: build-number-gate
-    if: ${{ !cancelled() && (needs.build-number-gate.result == 'success' || needs.build-number-gate.result == 'skipped') }}
     runs-on: macos-26
     timeout-minutes: 30
 
@@ -56,9 +47,31 @@ jobs:
             --out "$icon_dir/App_store_1024_1x.png"
           rm "$icon_dir/MainOrbitIcon.jpg"
 
-      - name: Build unsigned iOS application
+      - name: Derive build number (release branch only)
+        id: buildnum
+        if: github.ref == 'refs/heads/release/main-orbit' || inputs.derive_build_number == true
         run: |
           set -uo pipefail
+          python3 scripts/derive_build_number.py \
+            --project apps/orbit-voice-ios/VoiceAgent.xcodeproj/project.pbxproj | tee "$RUNNER_TEMP/build-number.json"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          n=$(python3 -c "import json;print(json.load(open('$RUNNER_TEMP/build-number.json'))['buildNumber'])")
+          echo "DERIVED_BUILD_NUMBER=$n"
+          {
+            echo '## Derived build number'
+            echo "**$n** (published build + 1). Use this value as buildNumber in the release intent."
+            echo '```json'
+            cat "$RUNNER_TEMP/build-number.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build unsigned iOS application
+        env:
+          CPV_OVERRIDE: ${{ steps.buildnum.outputs.build_number && format('CURRENT_PROJECT_VERSION={0}', steps.buildnum.outputs.build_number) || '' }}
+        run: |
+          set -uo pipefail
+          # shellcheck disable=SC2086  (CPV_OVERRIDE is empty or a single KEY=VALUE word)
           xcodebuild \
             -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
             -scheme VoiceAgent \
@@ -70,6 +83,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM='' \
+            $CPV_OVERRIDE \
             build 2>&1 | tee "$RUNNER_TEMP/orbit-build.log"
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
@@ -355,6 +369,15 @@ jobs:
             apps/orbit-voice-ios/Tests/OrbitChatPresentationTests.swift \
             -o "$RUNNER_TEMP/orbit-chat-presentation-tests"
           "$RUNNER_TEMP/orbit-chat-presentation-tests"
+
+      - name: Verify the built app carries the derived build number
+        if: steps.buildnum.outputs.build_number != ''
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/orbit-derived-data/Build/Products/Release-iphoneos/VoiceAgent.app"
+          actual=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Info.plist")
+          echo "Info.plist CFBundleVersion=$actual expected=${{ steps.buildnum.outputs.build_number }}"
+          test "$actual" = "${{ steps.buildnum.outputs.build_number }}"
 
       - name: Package IPA for AltStore
         run: |
