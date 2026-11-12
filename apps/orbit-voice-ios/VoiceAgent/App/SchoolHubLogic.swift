@@ -1019,12 +1019,20 @@ extension SchoolHubLogic {
     static func calendarPrefillDay(for task: SchoolHubTask) -> String? {
         dayKey(for: task.dueAt, allDay: task.allDay)
     }
-    /// Exact "HH:mm" (school timezone) of a timed deadline; nil for all-day, date-only or midnight (ambiguous) values.
+    /// Exact "HH:mm" of a timed deadline, read literally as written by the school source (the Brain labels
+    /// wall-clock times "...Z", e.g. "з 09:00" -> 09:00Z, so converting the instant would shift it by the UTC offset).
+    /// nil for all-day, date-only or midnight (ambiguous) values.
     static func calendarPrefillTime(for task: SchoolHubTask) -> String? {
-        guard !task.allDay, let value = task.dueAt, value.count > 10, let instant = instant(from: value) else { return nil }
-        let parts = calendar().dateComponents([.hour, .minute], from: instant)
-        guard let hour = parts.hour, let minute = parts.minute, hour != 0 || minute != 0 else { return nil }
-        return String(format: "%02d:%02d", hour, minute)
+        guard !task.allDay, let value = task.dueAt else { return nil }
+        return literalTimeKey(value)
+    }
+
+    static func literalTimeKey(_ value: String) -> String? {
+        guard value.count > 10, let t = value.firstIndex(of: "T") else { return nil }
+        let rest = value[value.index(after: t)...]
+        let parts = rest.prefix(5).split(separator: ":")
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]), (0..<24).contains(h), (0..<60).contains(m), h != 0 || m != 0 else { return nil }
+        return String(format: "%02d:%02d", h, m)
     }
 
     static func minutes(fromTimeKey key: String) -> Int? {
