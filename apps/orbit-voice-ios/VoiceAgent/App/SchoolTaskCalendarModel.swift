@@ -79,7 +79,7 @@ final class SchoolTaskCalendarModel {
 
     @ObservationIgnored private let service: SchoolTaskCalendarService
 
-    init(itemID: String, taskKey: String, title: String, notes: String, knownDeadline: String?, knownTime: String? = nil, service: SchoolTaskCalendarService, now: Date = Date()) {
+    init(itemID: String, taskKey: String, title: String, notes: String, knownDeadline: String?, knownTime: String? = nil, knownEndTime: String? = nil, service: SchoolTaskCalendarService, now: Date = Date()) {
         self.itemID = itemID
         self.taskKey = taskKey
         self.taskTitle = title
@@ -99,7 +99,13 @@ final class SchoolTaskCalendarModel {
         if let known, let start = at(known), let end = at(min(known + 60, 23 * 60 + 59)) {
             self.hasTime = true
             self.time = start
-            self.endTime = end
+            // A range end stated by the school ("09:00-12:00") is carried too; otherwise the default one-hour end stays optional.
+            if let endKnown = knownEndTime.flatMap({ SchoolHubLogic.minutes(fromTimeKey: $0) }), endKnown > known, let rangeEnd = at(endKnown) {
+                self.endTime = rangeEnd
+                self.hasEndTime = true
+            } else {
+                self.endTime = end
+            }
         } else {
             self.time = defaultTime
             self.endTime = defaultTime.addingTimeInterval(3600)

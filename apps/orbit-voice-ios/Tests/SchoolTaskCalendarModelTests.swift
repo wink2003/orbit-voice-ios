@@ -44,6 +44,12 @@ struct SchoolTaskCalendarModelTests {
         precondition(SchoolHubLogic.literalTimeKey("2026-11-21T14:30:00") == "14:30")
         precondition(SchoolHubLogic.literalTimeKey("2026-11-21T00:00:00.000Z") == nil && SchoolHubLogic.literalTimeKey("2026-11-21") == nil)
 
+        // A school-stated range end is carried; an invalid/earlier end is ignored.
+        let ranged = SchoolTaskCalendarModel(itemID: "i1", taskKey: "i1:r", title: "R", notes: "", knownDeadline: "2026-11-21", knownTime: "09:00", knownEndTime: "12:00", service: service)
+        precondition(ranged.timeText == "09:00" && ranged.hasEndTime && ranged.endTimeText == "12:00" && ranged.endIsValid)
+        let badRange = SchoolTaskCalendarModel(itemID: "i1", taskKey: "i1:r2", title: "R", notes: "", knownDeadline: "2026-11-21", knownTime: "09:00", knownEndTime: "08:00", service: service)
+        precondition(!badRange.hasEndTime && badRange.endTimeText == nil)
+
         // Empty title cannot be saved.
         dated.title = "   "
         precondition(!dated.canSave)

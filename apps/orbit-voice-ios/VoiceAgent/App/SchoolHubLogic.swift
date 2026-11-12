@@ -185,6 +185,8 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     var sourceExternalId: String? = nil
     var kind: String = "source"
     var actionID: String? = nil
+    /// End of a stated same-day time range (Brain `dueEndAt`), literal wall-clock like `dueAt`.
+    var dueEndAt: String? = nil
     var status: String = "open"
     var planningDate: String? = nil
     /// School deadline kept aside when `dueAt` is replaced by the family's planned date.
@@ -1025,6 +1027,13 @@ extension SchoolHubLogic {
     static func calendarPrefillTime(for task: SchoolHubTask) -> String? {
         guard !task.allDay, let value = task.dueAt else { return nil }
         return literalTimeKey(value)
+    }
+
+    /// Range end "HH:mm" (only meaningful together with a timed start on the same day).
+    static func calendarPrefillEndTime(for task: SchoolHubTask) -> String? {
+        guard !task.allDay, let start = task.dueAt, let end = task.dueEndAt, start.prefix(10) == end.prefix(10),
+              let s = literalTimeKey(start), let e = literalTimeKey(end), e > s else { return nil }
+        return e
     }
 
     static func literalTimeKey(_ value: String) -> String? {
