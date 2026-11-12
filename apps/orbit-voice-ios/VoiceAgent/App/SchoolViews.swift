@@ -657,7 +657,7 @@ struct SchoolDetailView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Label(item.sender.isEmpty ? "Відправника не вказано" : item.sender, systemImage: "building.2.crop.circle")
                             .font(.callout.weight(.bold))
-                        Text([item.sourceTimestamp.map(schoolLocalizedSourceDate), item.source == "schulmanager" ? "Schulmanager" : item.source].compactMap { $0 }.joined(separator: " · "))
+                        Text([item.sourceTimestamp.map(schoolLocalizedSourceDate), SchoolEmailLogic.sourceTitle(item.source)].compactMap { $0 }.joined(separator: " · "))
                             .font(.caption).foregroundStyle(Routes05Tokens.secondary)
                     }
                     .padding(13).frame(maxWidth: .infinity, alignment: .leading)
@@ -730,7 +730,7 @@ struct SchoolDetailView: View {
                 }
                 detailHeader("Джерело")
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(item.source == "schulmanager" ? "Schulmanager · лише читання" : item.source).font(.footnote)
+                    Text(item.source.lowercased() == "schulmanager" ? "Schulmanager · лише читання" : item.source.lowercased() == "email" ? "Email від школи · лише читання" : item.source).font(.footnote)
                     if !item.sender.isEmpty { Text("Відправник: \(item.sender)").font(.caption).foregroundStyle(.secondary) }
                     Text(item.unread ? "Стан в Orbit: непрочитано" : "Стан в Orbit: прочитано").font(.caption).foregroundStyle(.secondary)
                     if let sourceURL = sourceLinkURL {

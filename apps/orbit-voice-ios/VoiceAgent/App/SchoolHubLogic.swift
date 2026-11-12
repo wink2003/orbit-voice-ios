@@ -185,6 +185,8 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     var sourceExternalId: String? = nil
     var kind: String = "source"
     var actionID: String? = nil
+    /// Where the source item came from ("email" or "schulmanager"); nil when unknown (treated as Schulmanager).
+    var sourceOrigin: String? = nil
     /// End of a stated same-day time range (Brain `dueEndAt`), literal wall-clock like `dueAt`.
     var dueEndAt: String? = nil
     var status: String = "open"
@@ -1077,12 +1079,13 @@ extension SchoolHubTask {
 
     var provenanceLabel: String {
         if kind == "family" { return "Orbit · Сімейна справа" }
+        let origin = (sourceOrigin ?? "").lowercased() == "email" ? "Email" : "Schulmanager"
         switch (sourceType ?? "").lowercased() {
-        case "letter", "schulmanager_letter": return "Schulmanager · Лист"
-        case "message", "schulmanager_message": return "Schulmanager · Повідомлення"
+        case "letter", "schulmanager_letter": return "\(origin) · Лист"
+        case "message", "schulmanager_message": return "\(origin) · Повідомлення"
         case "calendar", "schulmanager_calendar": return "Schulmanager · Календар"
         case "orbit_family", "family": return "Orbit · Сімейна справа"
-        default: return "Schulmanager · Джерело"
+        default: return "\(origin) · Джерело"
         }
     }
 }
