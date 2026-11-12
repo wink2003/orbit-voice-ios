@@ -1245,7 +1245,7 @@ final class SchoolHubV2Store {
 }
 
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, notes(String, String), v2(SchoolV2Section), letter(String), task(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, email, notes(String, String), v2(SchoolV2Section), letter(String), task(String), event(String) }
 
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
@@ -1333,6 +1333,7 @@ struct SchoolHubView: View {
 #endif
                 case .teams: SchoolTeamsFutureView()
                 case .history: SchoolActionHistoryView(store: store).routes05ContextSurface()
+                case .email: SchoolEmailView().routes05ContextSurface()
                 case let .notes(entityType, entityId): SchoolNotesView(store: store, entityType: entityType, entityId: entityId).routes05ContextSurface()
                 case let .v2(section):
                     if section == .timetable {
@@ -1416,6 +1417,7 @@ private struct SchoolCommandCenter: View {
                 routesAttention
                 routesUpcoming
                         routesAsk
+                routesEmailSource
                     }
                     .padding(.top, 8)
                     .padding(.bottom, 120)
@@ -1489,6 +1491,25 @@ private struct SchoolCommandCenter: View {
                 }
             }
         }.padding(.horizontal, 16)
+    }
+
+    /// Entry to the forwarded-email channel (adults only: the server refuses children and the row is hidden for read-only profiles).
+    private var routesEmailSource: some View {
+        Button { open(.email) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "envelope.badge").font(.title3.weight(.bold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Email від вчителів").font(.headline.weight(.black))
+                    Text("Відправники, листи в очікуванні, дозволи").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.bold))
+            }
+            .foregroundStyle(Routes05Tokens.ink).frame(minHeight: 52).padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Email від вчителів: відправники й дозволи")
+        .orbitRequires(.schoolWrite)
     }
 
     private var routesAsk: some View {
