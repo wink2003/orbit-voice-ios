@@ -299,10 +299,10 @@ struct SchoolHubLogicTests {
             ]
             let counts = SchoolHubLogic.taskCounts(tasks)
             precondition(counts.open == 7 && counts.completed == 3 && counts.all == 10)
-            // Four groups, ascending by the effective date. Overdue wins over the calendar week for open work (Mon 12 < today Tue 13).
+            // Four groups, ascending by the effective date. A past day of the CURRENT week (Mon 12 < today Tue 13) is 'this week'; only earlier weeks are overdue.
             let open = SchoolHubLogic.taskSections(tasks, filter: .open, today: today, sourceDates: [:], now: now)
-            precondition(open.overdue.map(\.id) == ["ancient", "overdue", "weekOpen"])
-            precondition(open.thisWeek.isEmpty)
+            precondition(open.overdue.map(\.id) == ["ancient", "overdue"])
+            precondition(open.thisWeek.map(\.id) == ["weekOpen"])
             precondition(open.nextWeek.map(\.id) == ["soon"])
             precondition(open.later.map(\.id) == ["edge", "later", "undated"], "no date sorts last and is never dropped")
             precondition(open.visibleCount == counts.open, "open filter shows exactly the open count")
@@ -312,8 +312,8 @@ struct SchoolHubLogicTests {
             precondition(done.later.map(\.id) == ["done", "doneUndated"] && done.visibleCount == counts.completed)
             let every = SchoolHubLogic.taskSections(tasks, filter: .all, today: today, sourceDates: [:], now: now)
             precondition(every.visibleCount == counts.all)
-            precondition(every.overdue.map(\.id) == ["ancient", "overdue", "weekOpen"])
-            precondition(every.thisWeek.map(\.id) == ["weekDone"])
+            precondition(every.overdue.map(\.id) == ["ancient", "overdue"])
+            precondition(every.thisWeek.map(\.id) == ["weekOpen", "weekDone"])
             precondition(every.nextWeek.map(\.id) == ["soon"])
             precondition(every.later.map(\.id) == ["done", "edge", "later", "doneUndated", "undated"])
             precondition(every.laterOpen.map(\.id) == ["edge", "later", "undated"])
