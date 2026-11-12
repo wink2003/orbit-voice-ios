@@ -14,7 +14,7 @@ nonisolated enum SchoolEmailLogic {
     /// "@school.de" for "Frau.A@School.de"; nil when the address has no usable domain.
     static func domainPattern(for address: String) -> String? {
         let a = address.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let at = a.lastIndex(of: "@") else { return nil }
+        guard !a.contains(where: \.isWhitespace), let at = a.lastIndex(of: "@") else { return nil }
         let domain = a[a.index(after: at)...]
         guard domain.contains("."), !domain.hasPrefix("."), !domain.hasSuffix("."), !domain.contains(" "), !domain.contains("@") else { return nil }
         return "@" + domain
