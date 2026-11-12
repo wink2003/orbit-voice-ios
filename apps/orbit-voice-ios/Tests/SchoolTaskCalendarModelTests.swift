@@ -39,6 +39,11 @@ struct SchoolTaskCalendarModelTests {
         timed.endTime = timed.time.addingTimeInterval(5400)
         precondition(timed.endTimeText == "16:00" && timed.canSave)
 
+        // Timed deadlines are read literally ("...T09:00:00.000Z" means 09:00 as written), never shifted by the UTC offset.
+        precondition(SchoolHubLogic.literalTimeKey("2026-11-21T09:00:00.000Z") == "09:00")
+        precondition(SchoolHubLogic.literalTimeKey("2026-11-21T14:30:00") == "14:30")
+        precondition(SchoolHubLogic.literalTimeKey("2026-11-21T00:00:00.000Z") == nil && SchoolHubLogic.literalTimeKey("2026-11-21") == nil)
+
         // Empty title cannot be saved.
         dated.title = "   "
         precondition(!dated.canSave)

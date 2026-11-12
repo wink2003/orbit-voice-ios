@@ -360,6 +360,11 @@ struct OrbitSchoolActionHistoryEntry: Decodable, Identifiable, Hashable {
     var actorName: String? = nil
     let metadata: String?
     let createdAt: Date
+    // The history endpoint returns raw snake_case rows (no key conversion on this decoder).
+    enum CodingKeys: String, CodingKey {
+        case id, action, metadata
+        case entityType = "entity_type", entityId = "entity_id", actorPersonId = "actor_person_id", actorName = "actor_name", createdAt = "created_at"
+    }
 }
 struct OrbitSchoolActionHistoryResponse: Decodable { let history: [OrbitSchoolActionHistoryEntry] }
 struct OrbitSchoolBrainConversationResponse: Decodable { let conversation: OrbitSchoolBrainConversation; let messages: [OrbitSchoolBrainMessage] }
