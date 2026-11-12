@@ -123,16 +123,21 @@ class RealProject(unittest.TestCase):
         r = self.run_cli([cand]); self.assertEqual((r.returncode, json.loads(r.stdout)["result"]), (1, "FAIL"))
         r = self.run_cli([cand + 1]); self.assertEqual(r.returncode, 1)
 
-    def test_workflow_wires_the_gate_before_the_macos_build(self):
+    def test_workflow_derives_the_build_number_before_the_macos_build(self):
+        """Owner decision 2026-11-12: the release build number is DERIVED in CI (published+1); no bump PR, no separate gate job."""
         try: import yaml
         except ImportError: self.skipTest("PyYAML not available")
         wf = yaml.safe_load(open(os.path.join(REPO, ".github/workflows/build-orbit-voice-ios.yml")))
-        jobs = wf["jobs"]; self.assertIn("build-number-gate", jobs)
-        gate, build = jobs["build-number-gate"], jobs["build"]
-        self.assertEqual(gate["runs-on"], "ubuntu-latest"); self.assertIn("release/main-orbit", gate["if"])
-        needs = build["needs"]; self.assertIn("build-number-gate", needs if isinstance(needs, list) else [needs])
-        self.assertTrue(any("check_build_monotonic.py" in (s.get("run") or "") for s in gate["steps"]))
-
+        jobs = wf["jobs"]; self.assertNotIn("build-number-gate", jobs); self.assertIn("build-number-tests", jobs)
+        build = jobs["build"]; self.assertNotIn("needs", build)
+        names = [st.get("name") for st in build["steps"]]
+        derive_i = names.index("Derive build number (release branch only)"); xcode_i = names.index("Build unsigned iOS application")
+        verify_i = names.index("Verify the built app carries the derived build number"); pack_i = names.index("Package IPA for AltStore")
+        self.assertTrue(derive_i < xcode_i < verify_i < pack_i)
+        derive = build["steps"][derive_i]
+        self.assertIn("release/main-orbit", derive["if"]); self.assertTrue("derive_build_number.py" in derive["run"])
+        self.assertIn("CPV_OVERRIDE", build["steps"][xcode_i]["env"]); self.assertIn("$CPV_OVERRIDE", build["steps"][xcode_i]["run"])
+        self.assertIn("CFBundleVersion", build["steps"][verify_i]["run"])
 
 if __name__ == "__main__":
     unittest.main()
