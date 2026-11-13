@@ -43,6 +43,14 @@ struct AdminHealthInputs {
     var restoreVerified: Bool?
     var openRouterStatus: String?      // ok | unavailable | nil
     var azureWorstFraction: Double?    // highest used/limit across Azure speech limits
+    // Orbit services (nil = not loaded / not configured: never alarms)
+    var schoolSyncStatus: String?      // idle | running | error
+    var schoolSyncAgeSeconds: Double?
+    var schoolSyncError: String?
+    var emailAgeSeconds: Double?
+    var emailLastError: String?
+    var emailQuarantined: Int?
+    var weeklyReportFailed: Int?
 }
 
 enum AdminHealthLogic {
@@ -52,6 +60,8 @@ enum AdminHealthLogic {
     static let loadWarnPerCpu = 1.2, loadCriticalPerCpu = 2.0
     static let staleWarnSeconds = 15.0 * 60, staleCriticalSeconds = 60.0 * 60
     static let azureWarnFraction = 0.85, azureCriticalFraction = 0.95
+    static let schoolSyncWarnSeconds = 26.0 * 3600      // full sync runs every 12 h
+    static let emailPollWarnSeconds = 30.0 * 60         // mailbox is polled every 2 min
 
     static func attention(_ i: AdminHealthInputs) -> [AdminAttention] {
         var out: [AdminAttention] = []
@@ -98,6 +108,15 @@ enum AdminHealthLogic {
             if worst >= azureCriticalFraction { add("azure", .critical, "Azure Speech: ліміт майже вичерпано", "Використано \(percent(worst * 100)) безкоштовного ліміту.", "ai") }
             else if worst >= azureWarnFraction { add("azure", .warning, "Azure Speech: ліміт наближається", "Використано \(percent(worst * 100)) безкоштовного ліміту.", "ai") }
         }
+        if i.schoolSyncStatus == "error" || (i.schoolSyncError?.isEmpty == false && i.schoolSyncStatus != "running") {
+            add("school_sync", .warning, "Синхронізація школи: помилка", i.schoolSyncError.map { "Остання помилка: \($0)" } ?? "Schulmanager не відповідає.", nil)
+        } else if let age = i.schoolSyncAgeSeconds, age >= schoolSyncWarnSeconds {
+            add("school_sync", .warning, "Школа давно не синхронізувалась", "Остання синхронізація \(duration(age)) тому.", nil)
+        }
+        if let err = i.emailLastError, !err.isEmpty { add("email", .warning, "Пошта школи: помилка", "Код: \(err).", nil) }
+        else if let age = i.emailAgeSeconds, age >= emailPollWarnSeconds { add("email_poll", .warning, "Пошту школи давно не опитували", "Останній опит \(duration(age)) тому.", nil) }
+        if let q = i.emailQuarantined, q > 0 { add("email_quarantine", .info, "Листів у карантині: \(q)", "Чекають вашого рішення про відправника.", nil) }
+        if let f = i.weeklyReportFailed, f > 0 { add("weekly_report", .warning, "Тижневий звіт: невдалі відправки", "Невдалих спроб: \(f).", nil) }
         return out.sorted { $0.level != $1.level ? $0.level > $1.level : $0.id < $1.id }
     }
 
@@ -146,6 +165,7 @@ enum AdminHealthLogic {
         if let l = i.load5 { lines.append("Навантаження 5хв: \(String(format: "%.2f", l)) (vCPU \(i.logicalCpus))") }
         lines.append("Контейнери: \(i.containersRunning)/\(i.containersTotal) працює, unhealthy \(i.containersUnhealthy)")
         if let b = i.backupStatus { lines.append("Копії: \(b)" + (i.backupAgeSeconds.map { ", \(duration($0)) тому" } ?? "")) }
+        if let st = i.schoolSyncStatus { lines.append("Школа: синк \(st)" + (i.schoolSyncAgeSeconds.map { ", \(duration($0)) тому" } ?? "")) }
         for item in items { lines.append("[\(item.level)] \(item.title) — \(item.detail)") }
         return lines.joined(separator: "\n")
     }

@@ -60,6 +60,20 @@ struct AdminHealthLogicTests {
         a = AdminHealthLogic.attention(p); precondition(Set(a.map(\.id)) == ["openrouter", "azure"] && a.allSatisfy { $0.level == .warning })
         p.azureWorstFraction = 0.97; precondition(AdminHealthLogic.attention(p).contains { $0.id == "azure" && $0.level == .critical })
 
+        // orbit services
+        var o = base(); o.schoolSyncStatus = "idle"; o.schoolSyncAgeSeconds = 3600; o.emailAgeSeconds = 120; o.emailQuarantined = 0; o.weeklyReportFailed = 0
+        precondition(AdminHealthLogic.attention(o).isEmpty)
+        o.schoolSyncAgeSeconds = 30 * 3600; a = AdminHealthLogic.attention(o)
+        precondition(a.count == 1 && a[0].id == "school_sync" && a[0].level == .warning && a[0].detail.contains("30 год") == false && a[0].detail.contains("1 дн."))
+        o.schoolSyncAgeSeconds = 3600; o.schoolSyncStatus = "error"; o.schoolSyncError = "auth_failed"; a = AdminHealthLogic.attention(o)
+        precondition(a[0].id == "school_sync" && a[0].detail.contains("auth_failed"))
+        o.schoolSyncStatus = "running"; o.schoolSyncError = "old"; precondition(AdminHealthLogic.attention(o).isEmpty, "a running sync is not an error even if an old error text remains")
+        o.emailLastError = "imap_auth_failed"; a = AdminHealthLogic.attention(o); precondition(a.count == 1 && a[0].id == "email")
+        o.emailLastError = nil; o.emailAgeSeconds = 3600; a = AdminHealthLogic.attention(o); precondition(a.count == 1 && a[0].id == "email_poll")
+        o.emailAgeSeconds = 60; o.emailQuarantined = 3; a = AdminHealthLogic.attention(o); precondition(a.count == 1 && a[0].level == .info && a[0].title.contains("3"))
+        o.emailQuarantined = 0; o.weeklyReportFailed = 1; a = AdminHealthLogic.attention(o); precondition(a.count == 1 && a[0].id == "weekly_report" && a[0].level == .warning)
+        var nilOrbit = base(); nilOrbit.schoolSyncStatus = nil; precondition(AdminHealthLogic.attention(nilOrbit).isEmpty, "orbit services not loaded = no false alarm")
+
         // ukrainian plurals + formatting
         precondition(AdminHealthLogic.plural(1, "проблема", "проблеми", "проблем") == "проблема")
         precondition(AdminHealthLogic.plural(2, "проблема", "проблеми", "проблем") == "проблеми")

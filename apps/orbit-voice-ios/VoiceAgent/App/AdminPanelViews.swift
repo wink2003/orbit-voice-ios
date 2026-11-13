@@ -151,7 +151,7 @@ struct AdminAICard: View {
 
 extension ServerOverview {
     /// Primitive inputs for AdminHealthLogic (kept here so the logic file stays free of network models).
-    func adminInputs(backups: BackupStatus?, openRouter: OpenRouterStats?, azure: AzureSpeechStats?, now: Date = Date()) -> AdminHealthInputs {
+    func adminInputs(backups: BackupStatus?, openRouter: OpenRouterStats?, azure: AzureSpeechStats?, orbit: OrbitServicesStatus? = nil, now: Date = Date()) -> AdminHealthInputs {
         var i = AdminHealthInputs(now: now)
         i.generatedAt = generatedAt
         i.diskUsedPercent = disks.first?.usedPercent
@@ -169,6 +169,45 @@ extension ServerOverview {
         i.restoreVerified = backups?.restoreVerified
         i.openRouterStatus = openRouter?.status
         i.azureWorstFraction = azure.flatMap { AdminAICard.worstFraction($0) }
+        i.schoolSyncStatus = orbit?.school?.syncStatus
+        i.schoolSyncAgeSeconds = orbit?.school?.ageSeconds
+        i.schoolSyncError = orbit?.school?.lastError
+        i.emailAgeSeconds = orbit?.email?.ageSeconds
+        i.emailLastError = orbit?.email?.lastError
+        i.emailQuarantined = orbit?.email?.quarantined
+        i.weeklyReportFailed = orbit?.weeklyReport?.failed
         return i
+    }
+}
+
+/// School sync, School e-mail channel and weekly report in one card (data from /api/server/overview/orbit).
+struct AdminOrbitServicesCard: View {
+    let status: OrbitServicesStatus
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Школа та пошта", systemImage: "graduationcap").font(.headline)
+            if let school = status.school {
+                row("Синхронізація Schulmanager", school.syncStatus == "error" ? "помилка" : (school.ageSeconds.map { AdminHealthLogic.duration($0) + " тому" } ?? "ще не було"), warn: school.syncStatus == "error")
+            }
+            if let email = status.email {
+                row("Пошта школи (опит)", email.lastError.map { "помилка: \($0)" } ?? (email.ageSeconds.map { AdminHealthLogic.duration($0) + " тому" } ?? "ще не було"), warn: email.lastError != nil)
+                row("Листів за 7 днів / карантин", "\(email.ingested7d) / \(email.quarantined)", warn: false)
+            }
+            if let report = status.weeklyReport {
+                row("Тижневий звіт", report.weeklySent > 0 ? "надіслано (тиждень \(report.weekStart ?? "?"))" : "ще не надсилався (тиждень \(report.weekStart ?? "?"))", warn: report.failed > 0)
+            } else {
+                row("Тижневий звіт", "ще не формувався", warn: false)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+        .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Routes05Tokens.rule, lineWidth: 1))
+    }
+    private func row(_ title: String, _ value: String, warn: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(.caption).foregroundStyle(Routes05Tokens.secondary)
+            Spacer()
+            Text(value).font(.caption.monospacedDigit()).foregroundStyle(warn ? Color.orange : Routes05Tokens.ink).multilineTextAlignment(.trailing)
+        }
     }
 }
