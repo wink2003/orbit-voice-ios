@@ -4,11 +4,13 @@ import SwiftUI
 struct OrbitDashboardView: View {
     let isSelected: Bool
     @StateObject private var store = ServerOverviewStore()
+    @StateObject private var stagingStore = StagingCleanupStore()
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
             Routes05ContextHeader(section: "system", eyebrow: "SYSTEM / 24", title: "Admin", detail: "Read-only operational overview; actions remain guarded.", accent: Routes05Tokens.mint)
             content
         }.padding(.bottom, 16) }.background(Routes05Tokens.canvas).routes05ContextSurface().navigationTitle("Admin · сервер").toolbar { Button { store.loadIfNeeded(force: true) } label: { Image(systemName: "arrow.clockwise") }.disabled(store.isLoading) }.refreshable { store.loadIfNeeded(force: true) }
+        .sheet(isPresented: Binding(get: { stagingStore.proposal != nil }, set: { if !$0 { stagingStore.clear() } })) { StagingCleanupConfirmationView(store: stagingStore) }
         .task(id: isSelected) {
             guard isSelected else { return }
             store.loadIfNeeded()
@@ -71,6 +73,7 @@ struct OrbitDashboardView: View {
             }
             if let orbit = store.orbitServices { AdminOrbitServicesCard(status: orbit) }
             AdminAICard(openRouter: store.openRouter, azure: store.azureSpeech)
+            AdminStagingCleanupCard(store: stagingStore)
             Button { UIPasteboard.general.string = AdminHealthLogic.diagnosticsText(inputs, items: items) } label: { Label("Скопіювати діагностику", systemImage: "doc.on.doc").font(.subheadline) }.buttonStyle(.bordered)
         }.padding(.horizontal, 16)
     }
