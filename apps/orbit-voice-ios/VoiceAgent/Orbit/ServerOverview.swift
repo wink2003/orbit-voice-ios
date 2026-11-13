@@ -63,6 +63,16 @@ struct AzureSpeechStats: Decodable {
     let tasks: [TaskUsage]
 }
 
+struct OrbitServicesStatus: Decodable {
+    struct School: Decodable { let syncStatus: String; let lastSyncAt: Date?; let ageSeconds: Double?; let lastError: String? }
+    struct Email: Decodable { let lastPollAt: Date?; let ageSeconds: Double?; let lastError: String?; let quarantined: Int; let ingested7d: Int; let failed7d: Int }
+    struct WeeklyReport: Decodable { let weekStart: String?; let generatedAt: Date?; let weeklySent: Int; let failed: Int; let lastSentAt: Date? }
+    let generatedAt: Date?
+    let school: School?
+    let email: Email?
+    let weeklyReport: WeeklyReport?
+}
+
 enum AzureSpeechLabels {
     struct Row { let title: String; let value: String; let fraction: Double? }
     static func task(_ id: String) -> String {
@@ -94,6 +104,7 @@ enum AzureSpeechLabels {
     @Published private(set) var backups: BackupStatus?
     @Published private(set) var openRouter: OpenRouterStats?
     @Published private(set) var azureSpeech: AzureSpeechStats?
+    @Published private(set) var orbitServices: OrbitServicesStatus?
     private var lastLoaded: Date?
     private var task: Task<Void, Never>?
     func loadIfNeeded(force: Bool = false) {
@@ -120,6 +131,10 @@ enum AzureSpeechLabels {
             if let azureURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/azure-speech") {
                 var azureRequest = URLRequest(url: azureURL); azureRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 if let (azureData, azureResponse) = try? await URLSession.shared.data(for: azureRequest), (azureResponse as? HTTPURLResponse)?.statusCode == 200 { azureSpeech = try? JSONDecoder().decode(AzureSpeechStats.self, from: azureData) }
+            }
+            if let orbitURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/orbit") {
+                var orbitRequest = URLRequest(url: orbitURL); orbitRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                if let (orbitData, orbitResponse) = try? await URLSession.shared.data(for: orbitRequest), (orbitResponse as? HTTPURLResponse)?.statusCode == 200 { orbitServices = try? decoder.decode(OrbitServicesStatus.self, from: orbitData) }
             }
             lastLoaded = Date()
         } catch { self.error = "Не вдалося оновити огляд сервера." }
