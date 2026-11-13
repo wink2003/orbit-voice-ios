@@ -9,11 +9,22 @@ struct OrbitDashboardView: View {
             Routes05ContextHeader(section: "system", eyebrow: "SYSTEM / 24", title: "Admin", detail: "Read-only operational overview; actions remain guarded.", accent: Routes05Tokens.mint)
             content
         }.padding(.bottom, 16) }.background(Routes05Tokens.canvas).routes05ContextSurface().navigationTitle("Admin · сервер").toolbar { Button { store.loadIfNeeded(force: true) } label: { Image(systemName: "arrow.clockwise") }.disabled(store.isLoading) }.refreshable { store.loadIfNeeded(force: true) }
-        .task(id: isSelected) { if isSelected { store.loadIfNeeded() } }
+        .task(id: isSelected) {
+            guard isSelected else { return }
+            store.loadIfNeeded()
+            // Light auto-refresh while the panel is on screen; cancelled automatically when it is not selected.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                if Task.isCancelled { break }
+                store.loadIfNeeded(force: true)
+            }
+        }
     }
     @ViewBuilder private var content: some View {
         if store.isLoading && store.overview == nil { ProgressView("Завантаження огляду…").frame(maxWidth: .infinity, minHeight: 180) }
         else if let value = store.overview {
+            healthBlock(value)
+            AdminSectionHeader(title: "Деталі")
             NavigationLink { ServerOverviewDetailView(section: .host) } label: { header(value) }.buttonStyle(.plain)
             NavigationLink { ServerOverviewDetailView(section: .docker) } label: { section("Docker", icon: "shippingbox.fill") { grid([("Запущено", "\(value.containers.running)"), ("Зупинено", "\(value.containers.stopped)"), ("Всього", "\(value.containers.total)"), ("Проєктів", "\(value.containers.composeProjects)")]) } }.buttonStyle(.plain)
             if let disk = value.disks.first { NavigationLink { ServerOverviewDetailView(section: .disk) } label: { resource("Диск", icon: "internaldrive.fill", used: disk.usedBytes, total: disk.totalBytes, available: disk.availableBytes, percent: disk.usedPercent) }.buttonStyle(.plain) }
@@ -36,6 +47,48 @@ struct OrbitDashboardView: View {
             NavigationLink { ServerOverviewDetailView(section: .memory) } label: { resource("Оперативна памʼять", icon: "memorychip.fill", used: value.memory.usedBytes, total: value.memory.totalBytes, available: value.memory.availableBytes, percent: value.memory.usedPercent) }.buttonStyle(.plain)
             if value.memory.swapTotalBytes > 0 { section("Swap", icon: "arrow.left.arrow.right") { Text("\(bytes(value.memory.swapUsedBytes)) із \(bytes(value.memory.swapTotalBytes))") } }
         } else { ContentUnavailableView("Огляд недоступний", systemImage: "exclamationmark.triangle", description: Text(store.error ?? "Спробуйте оновити ще раз.")); Button("Повторити") { store.loadIfNeeded(force: true) }.buttonStyle(.borderedProminent) }
+    }
+    @ViewBuilder private func healthBlock(_ value: ServerOverview) -> some View {
+        let inputs = value.adminInputs(backups: store.backups, openRouter: store.openRouter, azure: store.azureSpeech)
+        let items = AdminHealthLogic.attention(inputs)
+        let level = AdminHealthLogic.overall(items)
+        VStack(alignment: .leading, spacing: 12) {
+            AdminStatusHero(level: level, summary: AdminHealthLogic.summary(items), subtitle: "main-server · \(value.containers.running)/\(value.containers.total) контейнерів працює", updatedText: updatedText(value), isRefreshing: store.isLoading)
+            if !items.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(items) { item in
+                        attentionLink(item)
+                        if item.id != items.last?.id { Divider() }
+                    }
+                }.padding(.horizontal, 14).background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(Routes05Tokens.rule, lineWidth: 1))
+            }
+            HStack(spacing: 10) {
+                AdminGaugeTile(title: "CPU", icon: "cpu", valueText: value.cpu.utilizationPercent.map { AdminHealthLogic.percent($0) } ?? String(format: "%.1f", value.cpu.loadAverage.five), caption: "load \(String(format: "%.2f", value.cpu.loadAverage.five)) · \(value.cpu.logicalCpus) vCPU", fraction: value.cpu.utilizationPercent.map { $0 / 100 } ?? (value.cpu.logicalCpus > 0 ? value.cpu.loadAverage.five / Double(value.cpu.logicalCpus) : 0), level: gaugeLevel(items, "load"))
+                AdminGaugeTile(title: "Памʼять", icon: "memorychip", valueText: AdminHealthLogic.percent(value.memory.usedPercent), caption: AdminHealthLogic.bytes(value.memory.availableBytes) + " вільно", fraction: value.memory.usedPercent / 100, level: gaugeLevel(items, "memory"))
+                if let disk = value.disks.first {
+                    AdminGaugeTile(title: "Диск", icon: "internaldrive", valueText: AdminHealthLogic.percent(disk.usedPercent), caption: AdminHealthLogic.bytes(disk.availableBytes) + " вільно", fraction: disk.usedPercent / 100, level: gaugeLevel(items, "disk"))
+                }
+            }
+            AdminAICard(openRouter: store.openRouter, azure: store.azureSpeech)
+            Button { UIPasteboard.general.string = AdminHealthLogic.diagnosticsText(inputs, items: items) } label: { Label("Скопіювати діагностику", systemImage: "doc.on.doc").font(.subheadline) }.buttonStyle(.bordered)
+        }.padding(.horizontal, 16)
+    }
+    private func gaugeLevel(_ items: [AdminAttention], _ id: String) -> AdminHealthLevel { items.first { $0.id == id }?.level ?? .ok }
+    private func updatedText(_ value: ServerOverview) -> String {
+        let age = max(0, Date().timeIntervalSince(value.generatedAt))
+        return "Знімок: \(AdminHealthLogic.duration(age)) тому · автооновлення щохвилини"
+    }
+    @ViewBuilder private func attentionLink(_ item: AdminAttention) -> some View {
+        switch item.target {
+        case "disk": NavigationLink { ServerOverviewDetailView(section: .disk) } label: { AdminAttentionRow(item: item) }.buttonStyle(.plain)
+        case "docker": NavigationLink { ServerOverviewDetailView(section: .docker) } label: { AdminAttentionRow(item: item) }.buttonStyle(.plain)
+        case "memory": NavigationLink { ServerOverviewDetailView(section: .memory) } label: { AdminAttentionRow(item: item) }.buttonStyle(.plain)
+        case "cpu": NavigationLink { ServerOverviewDetailView(section: .cpu) } label: { AdminAttentionRow(item: item) }.buttonStyle(.plain)
+        case "host": NavigationLink { ServerOverviewDetailView(section: .host) } label: { AdminAttentionRow(item: item) }.buttonStyle(.plain)
+        case "backups":
+            if let backups = store.backups { NavigationLink { BackupStatusDetailView(status: backups) } label: { AdminAttentionRow(item: item) }.buttonStyle(.plain) } else { AdminAttentionRow(item: item) }
+        default: AdminAttentionRow(item: item)
+        }
     }
     private func header(_ v: ServerOverview) -> some View { section("main-server", icon: "server.rack") { Text("\(v.server.os) • \(v.server.architecture.uppercased())").foregroundStyle(.secondary); Text("Працює: \(uptime(v.server.uptimeSeconds))").foregroundStyle(.secondary); Text("Оновлено: \(v.generatedAt.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.tertiary) } }
     private func resource(_ title: String, icon: String, used: Double, total: Double, available: Double, percent: Double) -> some View { section(title, icon: icon) { Text("Використано \(bytes(used)) із \(bytes(total))").font(.headline); Text("Доступно \(bytes(available))").foregroundStyle(.secondary); ProgressView(value: min(max(percent, 0), 100), total: 100).tint(percent > 85 ? .red : .indigo); Text("\(String(format: "%.0f", percent))%").font(.caption).foregroundStyle(.secondary) } }
