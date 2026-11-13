@@ -51,6 +51,11 @@ struct AdminHealthInputs {
     var emailLastError: String?
     var emailQuarantined: Int?
     var weeklyReportFailed: Int?
+    // Agent telemetry (nil = not loaded)
+    var agentRuns24h: Int?
+    var agentFailed24h: Int?
+    var agentP95Seconds24h: Double?
+    var agentFallbackAttempts7d: Int?
 }
 
 enum AdminHealthLogic {
@@ -62,6 +67,7 @@ enum AdminHealthLogic {
     static let azureWarnFraction = 0.85, azureCriticalFraction = 0.95
     static let schoolSyncWarnSeconds = 26.0 * 3600      // full sync runs every 12 h
     static let emailPollWarnSeconds = 30.0 * 60         // mailbox is polled every 2 min
+    static let agentMinRunsForRate = 5, agentFailWarnRate = 0.2, agentFailCriticalRate = 0.5, agentSlowP95Seconds = 45.0
 
     static func attention(_ i: AdminHealthInputs) -> [AdminAttention] {
         var out: [AdminAttention] = []
@@ -117,6 +123,15 @@ enum AdminHealthLogic {
         else if let age = i.emailAgeSeconds, age >= emailPollWarnSeconds { add("email_poll", .warning, "Пошту школи давно не опитували", "Останній опит \(duration(age)) тому.", nil) }
         if let q = i.emailQuarantined, q > 0 { add("email_quarantine", .info, "Листів у карантині: \(q)", "Чекають вашого рішення про відправника.", nil) }
         if let f = i.weeklyReportFailed, f > 0 { add("weekly_report", .warning, "Тижневий звіт: невдалі відправки", "Невдалих спроб: \(f).", nil) }
+        if let runs = i.agentRuns24h, let failed = i.agentFailed24h, runs >= agentMinRunsForRate {
+            let rate = Double(failed) / Double(runs)
+            if rate >= agentFailCriticalRate { add("agent_fail", .critical, "Агент часто не відповідає", "За добу \(failed) з \(runs) запусків завершились помилкою.", "agent") }
+            else if rate >= agentFailWarnRate { add("agent_fail", .warning, "Агент іноді не відповідає", "За добу \(failed) з \(runs) запусків завершились помилкою.", "agent") }
+        }
+        if let p95 = i.agentP95Seconds24h, (i.agentRuns24h ?? 0) >= agentMinRunsForRate, p95 >= agentSlowP95Seconds {
+            add("agent_slow", .warning, "Агент відповідає повільно", "95% відповідей за добу вкладаються в \(Int(p95.rounded())) с.", "agent")
+        }
+        if let fb = i.agentFallbackAttempts7d, fb > 0 { add("agent_fallback", .info, "Агент користувався резервною моделлю", "Спроб через резервного провайдера за тиждень: \(fb).", "agent") }
         return out.sorted { $0.level != $1.level ? $0.level > $1.level : $0.id < $1.id }
     }
 

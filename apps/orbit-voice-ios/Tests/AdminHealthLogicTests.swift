@@ -74,6 +74,16 @@ struct AdminHealthLogicTests {
         o.emailQuarantined = 0; o.weeklyReportFailed = 1; a = AdminHealthLogic.attention(o); precondition(a.count == 1 && a[0].id == "weekly_report" && a[0].level == .warning)
         var nilOrbit = base(); nilOrbit.schoolSyncStatus = nil; precondition(AdminHealthLogic.attention(nilOrbit).isEmpty, "orbit services not loaded = no false alarm")
 
+        // agent telemetry
+        var g = base(); g.agentRuns24h = 10; g.agentFailed24h = 0; g.agentP95Seconds24h = 20; g.agentFallbackAttempts7d = 0
+        precondition(AdminHealthLogic.attention(g).isEmpty)
+        g.agentFailed24h = 2; a = AdminHealthLogic.attention(g); precondition(a.count == 1 && a[0].id == "agent_fail" && a[0].level == .warning && a[0].target == "agent")
+        g.agentFailed24h = 5; a = AdminHealthLogic.attention(g); precondition(a[0].level == .critical)
+        g.agentRuns24h = 4; g.agentFailed24h = 4; precondition(AdminHealthLogic.attention(g).isEmpty, "too few runs: no rate alarm")
+        g.agentRuns24h = 10; g.agentFailed24h = 0; g.agentP95Seconds24h = 64; a = AdminHealthLogic.attention(g); precondition(a.count == 1 && a[0].id == "agent_slow")
+        g.agentP95Seconds24h = 10; g.agentFallbackAttempts7d = 3; a = AdminHealthLogic.attention(g); precondition(a.count == 1 && a[0].id == "agent_fallback" && a[0].level == .info)
+        var gn = base(); gn.agentRuns24h = nil; precondition(AdminHealthLogic.attention(gn).isEmpty, "agent telemetry not loaded = no false alarm")
+
         // ukrainian plurals + formatting
         precondition(AdminHealthLogic.plural(1, "проблема", "проблеми", "проблем") == "проблема")
         precondition(AdminHealthLogic.plural(2, "проблема", "проблеми", "проблем") == "проблеми")
