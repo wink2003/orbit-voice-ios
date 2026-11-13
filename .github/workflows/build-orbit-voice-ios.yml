@@ -350,6 +350,15 @@ jobs:
             apps/orbit-voice-ios/Tests/AdminHealthLogicTests.swift \
             -o "$RUNNER_TEMP/orbit-admin-health-tests"
           "$RUNNER_TEMP/orbit-admin-health-tests"
+      - name: Test Admin staging cleanup logic
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/App/AdminHealthLogic.swift \
+            apps/orbit-voice-ios/VoiceAgent/App/AdminStagingCleanupLogic.swift \
+            apps/orbit-voice-ios/Tests/AdminStagingCleanupLogicTests.swift \
+            -o "$RUNNER_TEMP/orbit-admin-staging-tests"
+          "$RUNNER_TEMP/orbit-admin-staging-tests"
       - name: Test School email logic
         run: |
           set -euo pipefail
