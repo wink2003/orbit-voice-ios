@@ -51,7 +51,7 @@ struct OrbitDashboardView: View {
         } else { ContentUnavailableView("Огляд недоступний", systemImage: "exclamationmark.triangle", description: Text(store.error ?? "Спробуйте оновити ще раз.")); Button("Повторити") { store.loadIfNeeded(force: true) }.buttonStyle(.borderedProminent) }
     }
     @ViewBuilder private func healthBlock(_ value: ServerOverview) -> some View {
-        let inputs = value.adminInputs(backups: store.backups, openRouter: store.openRouter, azure: store.azureSpeech, orbit: store.orbitServices)
+        let inputs = value.adminInputs(backups: store.backups, openRouter: store.openRouter, azure: store.azureSpeech, orbit: store.orbitServices, agent: store.agentTelemetry)
         let items = AdminHealthLogic.attention(inputs)
         let level = AdminHealthLogic.overall(items)
         VStack(alignment: .leading, spacing: 12) {
@@ -72,6 +72,7 @@ struct OrbitDashboardView: View {
                 }
             }
             if let orbit = store.orbitServices { AdminOrbitServicesCard(status: orbit) }
+            if let agent = store.agentTelemetry, agent.available { AdminAgentCard(telemetry: agent) }
             AdminAICard(openRouter: store.openRouter, azure: store.azureSpeech)
             AdminStagingCleanupCard(store: stagingStore)
             Button { UIPasteboard.general.string = AdminHealthLogic.diagnosticsText(inputs, items: items) } label: { Label("Скопіювати діагностику", systemImage: "doc.on.doc").font(.subheadline) }.buttonStyle(.bordered)

@@ -151,7 +151,7 @@ struct AdminAICard: View {
 
 extension ServerOverview {
     /// Primitive inputs for AdminHealthLogic (kept here so the logic file stays free of network models).
-    func adminInputs(backups: BackupStatus?, openRouter: OpenRouterStats?, azure: AzureSpeechStats?, orbit: OrbitServicesStatus? = nil, now: Date = Date()) -> AdminHealthInputs {
+    func adminInputs(backups: BackupStatus?, openRouter: OpenRouterStats?, azure: AzureSpeechStats?, orbit: OrbitServicesStatus? = nil, agent: AgentTelemetry? = nil, now: Date = Date()) -> AdminHealthInputs {
         var i = AdminHealthInputs(now: now)
         i.generatedAt = generatedAt
         i.diskUsedPercent = disks.first?.usedPercent
@@ -176,6 +176,10 @@ extension ServerOverview {
         i.emailLastError = orbit?.email?.lastError
         i.emailQuarantined = orbit?.email?.quarantined
         i.weeklyReportFailed = orbit?.weeklyReport?.failed
+        if let a = agent, a.available, let w = a.last24h {
+            i.agentRuns24h = w.total; i.agentFailed24h = w.failed; i.agentP95Seconds24h = w.p95Seconds
+            i.agentFallbackAttempts7d = (a.planner7d ?? []).filter { !$0.binding.hasPrefix("google_gemini") }.reduce(0) { $0 + $1.attempts }
+        }
         return i
     }
 }
@@ -202,6 +206,44 @@ struct AdminOrbitServicesCard: View {
         .frame(maxWidth: .infinity, alignment: .leading).padding(16)
         .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Routes05Tokens.rule, lineWidth: 1))
+    }
+    private func row(_ title: String, _ value: String, warn: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(.caption).foregroundStyle(Routes05Tokens.secondary)
+            Spacer()
+            Text(value).font(.caption.monospacedDigit()).foregroundStyle(warn ? Color.orange : Routes05Tokens.ink).multilineTextAlignment(.trailing)
+        }
+    }
+}
+
+/// Agent quality at a glance: runs, success rate, latency, failure codes, planner usage (data from /api/server/overview/agent).
+struct AdminAgentCard: View {
+    let telemetry: AgentTelemetry
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Агент", systemImage: "brain.head.profile").font(.headline)
+            if let day = telemetry.last24h {
+                HStack(spacing: 0) {
+                    metric("Запусків (24 год)", "\(day.total)"); Spacer()
+                    metric("Успішно", day.total > 0 ? "\(Int((Double(day.completed) / Double(day.total) * 100).rounded()))%" : "—"); Spacer()
+                    metric("p95", day.p95Seconds.map { "\(Int($0.rounded())) с" } ?? "—")
+                }
+                if day.failed > 0 { row("Помилок за добу", "\(day.failed)", warn: true) }
+            } else {
+                Text("Дані про запуски недоступні").font(.caption).foregroundStyle(Routes05Tokens.secondary)
+            }
+            if let week = telemetry.last7d { row("За тиждень", "\(week.completed)/\(week.total) успішно", warn: false) }
+            ForEach((telemetry.failuresByCode7d ?? []).prefix(3)) { f in row("Збій: \(AdminAgentLabels.failure(f.code))", "\(f.count)", warn: false) }
+            ForEach((telemetry.planner7d ?? []).prefix(2)) { p in
+                row(AdminAgentLabels.model(p.binding), "\(p.ok)/\(p.attempts) ок" + (p.timeouts > 0 ? " · таймаутів \(p.timeouts)" : "") + (p.providerErrors > 0 ? " · помилок \(p.providerErrors)" : ""), warn: p.timeouts > 0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+        .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Routes05Tokens.rule, lineWidth: 1))
+    }
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) { Text(title).font(.caption).foregroundStyle(Routes05Tokens.secondary); Text(value).font(.headline.monospacedDigit()) }
     }
     private func row(_ title: String, _ value: String, warn: Bool) -> some View {
         HStack(alignment: .firstTextBaseline) {

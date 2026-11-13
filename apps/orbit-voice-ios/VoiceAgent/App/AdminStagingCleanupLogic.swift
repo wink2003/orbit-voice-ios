@@ -41,3 +41,21 @@ enum AdminStagingCleanupLogic {
         return object["error"] as? String
     }
 }
+
+/// Labels for the Agent card (fixed Ukrainian wording; unknown codes are shown as-is, they are code-like and bounded).
+enum AdminAgentLabels {
+    static func failure(_ code: String) -> String {
+        switch code {
+        case "planner_invalid_output": return "модель дала неприпустиму відповідь"
+        case "planner_provider_error": return "помилка провайдера моделі"
+        case "planner_timeout": return "таймаут моделі"
+        case "step_budget_exceeded": return "вичерпано бюджет кроків"
+        default: return code
+        }
+    }
+    static func model(_ binding: String) -> String {
+        if binding.hasPrefix("google_gemini") { return "Gemini" }
+        if binding.hasPrefix("openrouter") { return "OpenRouter (резерв)" }
+        return binding
+    }
+}

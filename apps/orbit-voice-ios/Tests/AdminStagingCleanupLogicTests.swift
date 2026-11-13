@@ -18,6 +18,10 @@ struct AdminStagingCleanupLogicTests {
         precondition(AdminStagingCleanupLogic.summary(count: 3, bytes: 0) == "3 каталоги · 0 МБ")
         precondition(AdminStagingCleanupLogic.errorCode(from: Data("{\"error\":\"plan_changed\"}".utf8)) == "plan_changed")
         precondition(AdminStagingCleanupLogic.errorCode(from: Data("not json".utf8)) == nil)
+        precondition(AdminAgentLabels.failure("planner_timeout") == "таймаут моделі")
+        precondition(AdminAgentLabels.failure("odd_code") == "odd_code")
+        precondition(AdminAgentLabels.model("google_gemini_direct.gemini-3.1-flash-lite") == "Gemini")
+        precondition(AdminAgentLabels.model("openrouter.openai-gpt-6-sol") == "OpenRouter (резерв)")
         print("AdminStagingCleanupLogicTests passed")
     }
 }

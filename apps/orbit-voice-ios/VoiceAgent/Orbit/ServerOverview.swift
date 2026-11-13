@@ -73,6 +73,17 @@ struct OrbitServicesStatus: Decodable {
     let weeklyReport: WeeklyReport?
 }
 
+struct AgentTelemetry: Decodable {
+    struct Window: Decodable { let total: Int; let completed: Int; let failed: Int; let open: Int; let p50Seconds: Double?; let p95Seconds: Double? }
+    struct FailureCode: Decodable, Identifiable { let code: String; let count: Int; var id: String { code } }
+    struct Planner: Decodable, Identifiable { let binding: String; let attempts: Int; let ok: Int; let timeouts: Int; let providerErrors: Int; let invalid: Int; let p95Ms: Int?; let costUsd: Double; var id: String { binding } }
+    let available: Bool
+    let last24h: Window?
+    let last7d: Window?
+    let failuresByCode7d: [FailureCode]?
+    let planner7d: [Planner]?
+}
+
 enum AzureSpeechLabels {
     struct Row { let title: String; let value: String; let fraction: Double? }
     static func task(_ id: String) -> String {
@@ -105,6 +116,7 @@ enum AzureSpeechLabels {
     @Published private(set) var openRouter: OpenRouterStats?
     @Published private(set) var azureSpeech: AzureSpeechStats?
     @Published private(set) var orbitServices: OrbitServicesStatus?
+    @Published private(set) var agentTelemetry: AgentTelemetry?
     private var lastLoaded: Date?
     private var task: Task<Void, Never>?
     func loadIfNeeded(force: Bool = false) {
@@ -135,6 +147,10 @@ enum AzureSpeechLabels {
             if let orbitURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/orbit") {
                 var orbitRequest = URLRequest(url: orbitURL); orbitRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 if let (orbitData, orbitResponse) = try? await URLSession.shared.data(for: orbitRequest), (orbitResponse as? HTTPURLResponse)?.statusCode == 200 { orbitServices = try? decoder.decode(OrbitServicesStatus.self, from: orbitData) }
+            }
+            if let agentURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/agent") {
+                var agentRequest = URLRequest(url: agentURL); agentRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                if let (agentData, agentResponse) = try? await URLSession.shared.data(for: agentRequest), (agentResponse as? HTTPURLResponse)?.statusCode == 200 { agentTelemetry = try? decoder.decode(AgentTelemetry.self, from: agentData) }
             }
             lastLoaded = Date()
         } catch { self.error = "Не вдалося оновити огляд сервера." }
