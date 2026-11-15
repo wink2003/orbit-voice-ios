@@ -185,3 +185,39 @@ enum AdminHealthLogic {
         return lines.joined(separator: "\n")
     }
 }
+
+/// Which attention items belong to which section (so the hub shows the worst level per section).
+enum AdminSection: String, CaseIterable, Identifiable {
+    case server, storage, backups, ai, orbit
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .server: return "Сервер"
+        case .storage: return "Сховище"
+        case .backups: return "Резервні копії"
+        case .ai: return "AI"
+        case .orbit: return "Сервіси Orbit і Агент"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .server: return "server.rack"
+        case .storage: return "internaldrive"
+        case .backups: return "externaldrive.badge.checkmark"
+        case .ai: return "sparkles"
+        case .orbit: return "graduationcap"
+        }
+    }
+    var attentionIds: Set<String> {
+        switch self {
+        case .server: return ["stale", "memory", "swap", "load", "unhealthy", "stopped"]
+        case .storage: return ["disk"]
+        case .backups: return ["backup", "restore"]
+        case .ai: return ["openrouter", "azure"]
+        case .orbit: return ["school_sync", "email", "email_poll", "email_quarantine", "weekly_report", "agent_fail", "agent_slow", "agent_fallback"]
+        }
+    }
+    func level(_ items: [AdminAttention]) -> AdminHealthLevel {
+        items.filter { attentionIds.contains($0.id) }.map(\.level).max() ?? .ok
+    }
+}
