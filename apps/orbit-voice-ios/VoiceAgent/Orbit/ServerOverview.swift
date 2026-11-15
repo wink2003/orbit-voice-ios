@@ -117,6 +117,7 @@ enum AzureSpeechLabels {
     @Published private(set) var azureSpeech: AzureSpeechStats?
     @Published private(set) var orbitServices: OrbitServicesStatus?
     @Published private(set) var agentTelemetry: AgentTelemetry?
+    @Published private(set) var ops: OpsStatus?
     private var lastLoaded: Date?
     private var task: Task<Void, Never>?
     func loadIfNeeded(force: Bool = false) {
@@ -151,6 +152,10 @@ enum AzureSpeechLabels {
             if let agentURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/agent") {
                 var agentRequest = URLRequest(url: agentURL); agentRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 if let (agentData, agentResponse) = try? await URLSession.shared.data(for: agentRequest), (agentResponse as? HTTPURLResponse)?.statusCode == 200 { agentTelemetry = try? decoder.decode(AgentTelemetry.self, from: agentData) }
+            }
+            if let opsURL = URL(string: "https://voice.orbit.opik.net/api/server/overview/ops") {
+                var opsRequest = URLRequest(url: opsURL); opsRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                if let (opsData, opsResponse) = try? await URLSession.shared.data(for: opsRequest), (opsResponse as? HTTPURLResponse)?.statusCode == 200 { ops = try? JSONDecoder().decode(OpsStatus.self, from: opsData) }
             }
             lastLoaded = Date()
         } catch { self.error = "Не вдалося оновити огляд сервера." }

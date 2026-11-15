@@ -38,6 +38,8 @@ struct AdminHealthInputs {
     var containersTotal: Int = 0
     var containersRunning: Int = 0
     var containersUnhealthy: Int = 0
+    var containersExpectedStopped: Int = 0   // intentionally stopped (e.g. the frozen Telegram container): never a problem
+    var backupManagerOverall: String?        // Healthy | Warning | Critical | Unknown | nil (ops not loaded)
     var backupStatus: String?          // success | stale | failed | running | unknown | nil (not loaded)
     var backupAgeSeconds: Double?
     var restoreVerified: Bool?
@@ -99,14 +101,19 @@ enum AdminHealthLogic {
         if i.containersUnhealthy > 0 {
             add("unhealthy", .critical, "\(i.containersUnhealthy) контейнер(ів) unhealthy", "Docker повідомляє, що перевірка здоровʼя не проходить.", "docker")
         }
-        let stopped = max(0, i.containersTotal - i.containersRunning)
+        let stopped = max(0, i.containersTotal - i.containersRunning - i.containersExpectedStopped)
         if stopped > 0 { add("stopped", .info, "Зупинено контейнерів: \(stopped)", "Це може бути навмисно. Перевірте список, якщо щось має працювати.", "docker") }
         switch i.backupStatus {
         case "failed": add("backup", .critical, "Резервна копія не вдалась", "Остання спроба завершилась помилкою.", "backups")
         case "stale": add("backup", .warning, "Резервна копія застаріла", i.backupAgeSeconds.map { "Остання успішна: \(duration($0)) тому." } ?? "Давно не було успішної копії.", "backups")
         case "unknown": add("backup", .warning, "Статус резервних копій невідомий", "Не вдалося прочитати стан копій.", "backups")
         case "running": add("backup", .info, "Триває резервне копіювання", "Дочекайтесь завершення.", "backups")
-        case "success": if i.restoreVerified == false { add("restore", .info, "Відновлення з копії не перевірялось", "Копії є, але тест відновлення не підтверджено.", "backups") }
+        case "success": if i.restoreVerified == false && i.backupManagerOverall == nil { add("restore", .info, "Відновлення з копії не перевірялось", "Копії є, але тест відновлення не підтверджено.", "backups") }
+        default: break
+        }
+        switch i.backupManagerOverall {
+        case "Critical": add("backup_manager", .critical, "Менеджер копій: критична помилка", "Одне з завдань резервного копіювання чи реплікації збійне.", "backups")
+        case "Warning": add("backup_manager", .warning, "Менеджер копій: потрібна увага", "Перевірте завдання копіювання та реплікації.", "backups")
         default: break
         }
         if i.openRouterStatus == "unavailable" { add("openrouter", .warning, "OpenRouter: статистика недоступна", "Не вдалося отримати витрати й баланс.", "ai") }
@@ -183,5 +190,41 @@ enum AdminHealthLogic {
         if let st = i.schoolSyncStatus { lines.append("Школа: синк \(st)" + (i.schoolSyncAgeSeconds.map { ", \(duration($0)) тому" } ?? "")) }
         for item in items { lines.append("[\(item.level)] \(item.title) — \(item.detail)") }
         return lines.joined(separator: "\n")
+    }
+}
+
+/// Which attention items belong to which section (so the hub shows the worst level per section).
+enum AdminSection: String, CaseIterable, Identifiable {
+    case server, storage, backups, ai, orbit
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .server: return "Сервер"
+        case .storage: return "Сховище"
+        case .backups: return "Резервні копії"
+        case .ai: return "AI"
+        case .orbit: return "Сервіси Orbit і Агент"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .server: return "server.rack"
+        case .storage: return "internaldrive"
+        case .backups: return "externaldrive.badge.checkmark"
+        case .ai: return "sparkles"
+        case .orbit: return "graduationcap"
+        }
+    }
+    var attentionIds: Set<String> {
+        switch self {
+        case .server: return ["stale", "memory", "swap", "load", "unhealthy", "stopped"]
+        case .storage: return ["disk"]
+        case .backups: return ["backup", "restore", "backup_manager"]
+        case .ai: return ["openrouter", "azure"]
+        case .orbit: return ["school_sync", "email", "email_poll", "email_quarantine", "weekly_report", "agent_fail", "agent_slow", "agent_fallback"]
+        }
+    }
+    func level(_ items: [AdminAttention]) -> AdminHealthLevel {
+        items.filter { attentionIds.contains($0.id) }.map(\.level).max() ?? .ok
     }
 }

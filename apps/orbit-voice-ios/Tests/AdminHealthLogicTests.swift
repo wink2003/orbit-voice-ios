@@ -96,5 +96,25 @@ struct AdminHealthLogicTests {
         let text = AdminHealthLogic.diagnosticsText(d, items: AdminHealthLogic.attention(d))
         precondition(text.contains("Диск: 70%") && text.contains("Контейнери: 10/10") && text.hasPrefix("Orbit · Admin"))
         print("AdminHealthLogicTests passed")
+
+        // Every attention item belongs to exactly one Admin section (the hub shows the worst level per section).
+        do {
+            var bad = AdminHealthInputs(now: now)
+            bad.generatedAt = now.addingTimeInterval(-3 * 3600); bad.diskUsedPercent = 97; bad.diskAvailableBytes = 1_000_000_000
+            bad.memoryUsedPercent = 96; bad.swapTotalBytes = 1_000_000_000; bad.swapUsedBytes = 900_000_000; bad.load5 = 9; bad.logicalCpus = 2
+            bad.containersTotal = 10; bad.containersRunning = 8; bad.containersUnhealthy = 1
+            bad.backupStatus = "failed"; bad.backupAgeSeconds = 400_000; bad.restoreVerified = false
+            bad.openRouterStatus = "unavailable"; bad.azureWorstFraction = 0.95
+            bad.schoolSyncStatus = "error"; bad.schoolSyncError = "x"; bad.emailLastError = "y"; bad.emailQuarantined = 2; bad.weeklyReportFailed = 1
+            bad.agentRuns24h = 10; bad.agentFailed24h = 8; bad.agentP95Seconds24h = 90; bad.agentFallbackAttempts7d = 3
+            let items = AdminHealthLogic.attention(bad)
+            precondition(items.count >= 10, "the worst-case input exercises many rules")
+            for item in items {
+                let owners = AdminSection.allCases.filter { $0.attentionIds.contains(item.id) }
+                precondition(owners.count == 1, "attention item \(item.id) must belong to exactly one section")
+            }
+            precondition(AdminSection.storage.level(items) == .critical)
+            precondition(AdminSection.server.level([]) == .ok)
+        }
     }
 }
