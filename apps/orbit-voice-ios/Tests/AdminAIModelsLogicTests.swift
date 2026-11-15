@@ -46,3 +46,18 @@ struct AdminAIModelsLogicTests {
         print("AdminAIModelsLogicTests: ok")
     }
 }
+
+final class AdminAIModelsOrderingTests: XCTestCase {
+    func testPaidFirstThenFreeAndCurrentMarks() {
+        let free = AIModelCandidate(id: "a:free", name: "a", inPerM: 0, outPerM: 0, context: 1, free: true)
+        let paid = AIModelCandidate(id: "b", name: "b", inPerM: 1, outPerM: 1, context: 1, free: false)
+        XCTAssertEqual(AdminAIModelsLogic.orderedCandidates([free, paid]).map(\.id), ["b", "a:free"])
+        let task = AIModelTask(taskId: "t", policyVersion: 1, fallbackMode: "x", switchable: true,
+            primary: AIModelRef(bindingId: nil, model: "b", name: nil, inPerM: nil, outPerM: nil),
+            fallbacks: [AIModelRef(bindingId: nil, model: "a:free", name: nil, inPerM: nil, outPerM: nil)],
+            usage7d: AIModelUsage(calls: 0, ok: 0, cost: 0, p95: nil))
+        XCTAssertEqual(AdminAIModelsLogic.currentMark("b", tasks: [task]), " · основна")
+        XCTAssertEqual(AdminAIModelsLogic.currentMark("a:free", tasks: [task]), " · резерв")
+        XCTAssertEqual(AdminAIModelsLogic.currentMark("z", tasks: [task]), "")
+    }
+}

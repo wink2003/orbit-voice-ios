@@ -139,15 +139,15 @@ struct AIModelsCompareSheet: View {
         NavigationStack {
             List {
                 if let overview = store.overview {
-                    Section("Кандидати (структурований вивід, найдешевші першими; максимум 6)") {
-                        ForEach(overview.candidates) { c in
+                    Section("Кандидати (платні найдешевші першими, потім безкоштовні; максимум 6)") {
+                        ForEach(AdminAIModelsLogic.orderedCandidates(overview.candidates)) { c in
                             Button {
                                 if selected.contains(c.id) { selected.remove(c.id) } else if selected.count < 6 { selected.insert(c.id) }
                             } label: {
                                 HStack {
                                     Image(systemName: selected.contains(c.id) ? "checkmark.circle.fill" : "circle")
                                     VStack(alignment: .leading) {
-                                        Text(c.id).font(.subheadline)
+                                        Text(c.id + AdminAIModelsLogic.currentMark(c.id, tasks: overview.tasks)).font(.subheadline)
                                         Text(AdminAIModelsLogic.priceText(inPerM: c.inPerM, outPerM: c.outPerM)).font(.caption).foregroundStyle(.secondary)
                                     }
                                 }

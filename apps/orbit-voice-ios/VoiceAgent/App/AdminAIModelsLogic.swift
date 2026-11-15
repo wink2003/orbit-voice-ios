@@ -113,6 +113,18 @@ enum AdminAIModelsLogic {
         return value == 0 ? "$0 за 1000 викликів" : "\(money(value)) за 1000 викликів"
     }
 
+    /// Paid models first (cheapest first, server order kept), then free ones.
+    static func orderedCandidates(_ list: [AIModelCandidate]) -> [AIModelCandidate] {
+        list.filter { !$0.free } + list.filter(\.free)
+    }
+
+    /// " · основна" / " · резерв" when the model is in a task's current chain.
+    static func currentMark(_ model: String, tasks: [AIModelTask]) -> String {
+        if tasks.contains(where: { $0.primary.model == model }) { return " · основна" }
+        if tasks.contains(where: { $0.fallbacks.contains { $0.model == model } }) { return " · резерв" }
+        return ""
+    }
+
     static func chainText(primary: AIModelRef, fallbacks: [AIModelRef]) -> String {
         let main = primary.model ?? primary.name ?? "—"
         guard !fallbacks.isEmpty else { return main }
