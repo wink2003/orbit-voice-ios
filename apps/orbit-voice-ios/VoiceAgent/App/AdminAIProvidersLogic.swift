@@ -4,7 +4,8 @@ import Foundation
 struct AIProviderState: Decodable, Equatable {
     let provider: String
     let open: Bool
-    let openedAt: Date?
+    /// ISO-8601 string from the server (with fractional seconds, which JSONDecoder's .iso8601 strategy rejects); display only.
+    let openedAt: String?
     let lastStatus: Int?
 
     enum CodingKeys: String, CodingKey { case provider, open, openedAt = "opened_at", lastStatus = "last_status" }

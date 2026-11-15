@@ -367,6 +367,14 @@ jobs:
             apps/orbit-voice-ios/Tests/AdminAIProvidersLogicTests.swift \
             -o "$RUNNER_TEMP/orbit-admin-ai-providers-tests"
           "$RUNNER_TEMP/orbit-admin-ai-providers-tests"
+      - name: Test Admin AI models logic
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/App/AdminAIModelsLogic.swift \
+            apps/orbit-voice-ios/Tests/AdminAIModelsLogicTests.swift \
+            -o "$RUNNER_TEMP/orbit-admin-ai-models-tests"
+          "$RUNNER_TEMP/orbit-admin-ai-models-tests"
       - name: Test School email logic
         run: |
           set -euo pipefail
