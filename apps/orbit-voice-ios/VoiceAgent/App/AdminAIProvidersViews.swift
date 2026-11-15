@@ -28,8 +28,7 @@ private struct AIProvidersResponse: Decodable { let providers: [AIProviderState]
         if method == "POST" { request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = Data("{}".utf8) }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status) else { throw URLError(.badServerResponse) }
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(AIProvidersResponse.self, from: data)
+        return try JSONDecoder().decode(AIProvidersResponse.self, from: data)
     }
 }
 
