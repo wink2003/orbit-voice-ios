@@ -5,6 +5,7 @@ struct OrbitDashboardView: View {
     let isSelected: Bool
     @StateObject private var store = ServerOverviewStore()
     @StateObject private var stagingStore = StagingCleanupStore()
+    @StateObject private var aiProvidersStore = AIProvidersStore()
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
             Routes05ContextHeader(section: "system", eyebrow: "SYSTEM / 24", title: "Admin", detail: "Read-only operational overview; actions remain guarded.", accent: Routes05Tokens.mint)
@@ -74,6 +75,7 @@ struct OrbitDashboardView: View {
             if let orbit = store.orbitServices { AdminOrbitServicesCard(status: orbit) }
             if let agent = store.agentTelemetry, agent.available { AdminAgentCard(telemetry: agent) }
             AdminAICard(openRouter: store.openRouter, azure: store.azureSpeech)
+            AdminAIProvidersCard(store: aiProvidersStore)
             AdminStagingCleanupCard(store: stagingStore)
             Button { UIPasteboard.general.string = AdminHealthLogic.diagnosticsText(inputs, items: items) } label: { Label("Скопіювати діагностику", systemImage: "doc.on.doc").font(.subheadline) }.buttonStyle(.bordered)
         }.padding(.horizontal, 16)
