@@ -43,6 +43,16 @@ struct AdminAIModelsLogicTests {
         """
         let proposal = try! JSONDecoder().decode(AIModelProposal.self, from: Data(proposalJSON.utf8))
         precondition(proposal.proposed[0].costPer1000 == nil && proposal.current.policyVersion == 3)
+        let freeC = AIModelCandidate(id: "a:free", name: "a", inPerM: 0, outPerM: 0, context: 1, free: true)
+        let paidC = AIModelCandidate(id: "b", name: "b", inPerM: 1, outPerM: 1, context: 1, free: false)
+        precondition(AdminAIModelsLogic.orderedCandidates([freeC, paidC]).map(\.id) == ["b", "a:free"])
+        let t = AIModelTask(taskId: "t", policyVersion: 1, fallbackMode: "x", switchable: true,
+            primary: AIModelRef(bindingId: nil, model: "b", name: nil, inPerM: nil, outPerM: nil),
+            fallbacks: [AIModelRef(bindingId: nil, model: "a:free", name: nil, inPerM: nil, outPerM: nil)],
+            usage7d: AIModelUsage(calls: 0, ok: 0, cost: 0, p95: nil))
+        precondition(AdminAIModelsLogic.currentMark("b", tasks: [t]) == " · основна")
+        precondition(AdminAIModelsLogic.currentMark("a:free", tasks: [t]) == " · резерв")
+        precondition(AdminAIModelsLogic.currentMark("z", tasks: [t]).isEmpty)
         print("AdminAIModelsLogicTests: ok")
     }
 }
