@@ -151,7 +151,7 @@ struct AdminAICard: View {
 
 extension ServerOverview {
     /// Primitive inputs for AdminHealthLogic (kept here so the logic file stays free of network models).
-    func adminInputs(backups: BackupStatus?, openRouter: OpenRouterStats?, azure: AzureSpeechStats?, orbit: OrbitServicesStatus? = nil, agent: AgentTelemetry? = nil, now: Date = Date()) -> AdminHealthInputs {
+    func adminInputs(backups: BackupStatus?, openRouter: OpenRouterStats?, azure: AzureSpeechStats?, orbit: OrbitServicesStatus? = nil, agent: AgentTelemetry? = nil, ops: OpsStatus? = nil, now: Date = Date()) -> AdminHealthInputs {
         var i = AdminHealthInputs(now: now)
         i.generatedAt = generatedAt
         i.diskUsedPercent = disks.first?.usedPercent
@@ -164,6 +164,8 @@ extension ServerOverview {
         i.containersTotal = containers.total
         i.containersRunning = containers.running
         i.containersUnhealthy = containers.unhealthy
+        i.containersExpectedStopped = ops.map { AdminOpsLogic.expectedStoppedCount($0.containers) } ?? 0
+        i.backupManagerOverall = ops?.backups?.overall
         i.backupStatus = backups?.status
         i.backupAgeSeconds = backups?.ageSeconds
         i.restoreVerified = backups?.restoreVerified

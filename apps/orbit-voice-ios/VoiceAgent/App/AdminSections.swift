@@ -122,13 +122,14 @@ struct AdminServerPage: View {
                     }.buttonStyle(.plain).padding(.vertical, 10)
                     Divider()
                     NavigationLink { ServerOverviewDetailView(section: .docker) } label: {
-                        AdminNavLabel(icon: "shippingbox", title: "Docker", value: "\(v.containers.running)/\(v.containers.total) працює", level: v.containers.unhealthy > 0 ? .critical : nil)
+                        AdminNavLabel(icon: "shippingbox", title: "Docker", value: "\(v.containers.running)/\(v.containers.total - (store.ops.map { AdminOpsLogic.expectedStoppedCount($0.containers) } ?? 0)) працює", level: v.containers.unhealthy > 0 ? .critical : nil)
                     }.buttonStyle(.plain).padding(.vertical, 10)
                     Divider()
                     NavigationLink { ServerOverviewDetailView(section: .host) } label: {
                         AdminNavLabel(icon: "info.circle", title: "Хост: деталі")
                     }.buttonStyle(.plain).padding(.vertical, 10)
                 }.padding(.horizontal, 16).background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(Routes05Tokens.rule, lineWidth: 1))
+                if let ops = store.ops { AdminOpsServerCards(ops: ops) }
                 if v.memory.swapTotalBytes > 0 {
                     AdminCard(title: "Swap", icon: "arrow.left.arrow.right") { AdminRow("Використано", "\(AdminHealthLogic.bytes(v.memory.swapUsedBytes)) із \(AdminHealthLogic.bytes(v.memory.swapTotalBytes))") }
                 }
@@ -165,16 +166,17 @@ struct AdminBackupsPage: View {
     let items: [AdminAttention]
     var body: some View {
         AdminPage(title: "Резервні копії") {
+            if let m = store.ops?.backups { AdminBackupManagerCards(backups: m) }
             if let b = store.backups {
                 AdminCard(title: "Локальна копія", icon: "externaldrive.badge.checkmark", level: AdminSection.backups.level(items)) {
                     AdminRow("Стан", AdminSectionsLogic.backupStatusLabel(b.status), warn: b.status != "success")
                     if let date = b.lastSuccessAt { AdminRow("Остання успішна", date.formatted(date: .abbreviated, time: .shortened)) }
                     if let age = b.ageSeconds { AdminRow("Вік", AdminHealthLogic.duration(age)) }
                     if let size = b.totalSizeBytes { AdminRow("Розмір", AdminHealthLogic.bytes(size)) }
-                    AdminRow("Відновлення", b.restoreVerified ? "перевірено" : "не перевірено", warn: !b.restoreVerified)
+                    if store.ops?.backups == nil { AdminRow("Відновлення", b.restoreVerified ? "перевірено" : "не перевірено", warn: !b.restoreVerified) }
                 }
-                NavigationLink { BackupStatusDetailView(status: b) } label: {
-                    AdminNavLabel(icon: "list.bullet.rectangle", title: "Компоненти, політика, хмарна копія").adminCard()
+                NavigationLink { BackupStatusDetailView(status: b, showLegacyClaims: store.ops?.backups == nil) } label: {
+                    AdminNavLabel(icon: "list.bullet.rectangle", title: "Компоненти копії").adminCard()
                 }.buttonStyle(.plain)
             } else {
                 ContentUnavailableView("Статус копій недоступний", systemImage: "externaldrive.badge.exclamationmark", description: Text("Оновіть сторінку пізніше."))
@@ -231,15 +233,20 @@ enum AdminSectionsLogic {
     }
 
     /// One-line hub summary per section.
-    static func summary(_ section: AdminSection, overview: ServerOverview?, backups: BackupStatus?, openRouter: OpenRouterStats?, orbit: OrbitServicesStatus?, agent: AgentTelemetry?) -> String {
+    static func summary(_ section: AdminSection, overview: ServerOverview?, backups: BackupStatus?, openRouter: OpenRouterStats?, orbit: OrbitServicesStatus?, agent: AgentTelemetry?, ops: OpsStatus? = nil) -> String {
         switch section {
         case .server:
             guard let v = overview else { return "дані недоступні" }
-            return "\(v.containers.running)/\(v.containers.total) контейнерів · CPU " + (v.cpu.utilizationPercent.map { AdminHealthLogic.percent($0) } ?? "—") + " · памʼять " + AdminHealthLogic.percent(v.memory.usedPercent)
+            let frozen = ops.map { AdminOpsLogic.expectedStoppedCount($0.containers) } ?? 0
+            return "\(v.containers.running)/\(v.containers.total - frozen) контейнерів · CPU " + (v.cpu.utilizationPercent.map { AdminHealthLogic.percent($0) } ?? "—") + " · памʼять " + AdminHealthLogic.percent(v.memory.usedPercent)
         case .storage:
             guard let d = overview?.disks.first else { return "дані недоступні" }
             return "диск \(AdminHealthLogic.percent(d.usedPercent)) · вільно " + AdminHealthLogic.bytes(d.availableBytes)
         case .backups:
+            if let m = ops?.backups {
+                let last = m.lastBackup?.updatedAt.flatMap { AdminOpsLogic.parseDate($0) }.map { AdminHealthLogic.duration(max(0, Date().timeIntervalSince($0))) + " тому" }
+                return AdminOpsLogic.stateLabel(m.overall) + " · завдань: \(m.jobs.count)" + (last.map { " · копія " + $0 } ?? "")
+            }
             guard let b = backups else { return "статус недоступний" }
             return backupStatusLabel(b.status) + (b.ageSeconds.map { " · " + AdminHealthLogic.duration($0) + " тому" } ?? "")
         case .ai:
@@ -250,6 +257,126 @@ enum AdminSectionsLogic {
             if let s = orbit?.school { parts.append(s.syncStatus == "error" ? "школа: помилка" : "школа: " + (s.ageSeconds.map { AdminHealthLogic.duration($0) + " тому" } ?? "ще не було")) }
             if let a = agent, a.available, let d = a.last24h { parts.append("агент: \(d.total) запусків за добу") }
             return parts.isEmpty ? "дані недоступні" : parts.joined(separator: " · ")
+        }
+    }
+}
+
+
+// MARK: - Operations cards (stage 2: data from /api/server/overview/ops)
+
+struct AdminSparkline: View {
+    let values: [Double]
+    var tint: Color = .indigo
+    var body: some View {
+        GeometryReader { geo in
+            Path { path in
+                let n = values.count
+                guard n > 1 else { return }
+                for (i, v) in AdminOpsLogic.normalized(values).enumerated() {
+                    let point = CGPoint(x: geo.size.width * CGFloat(i) / CGFloat(n - 1), y: geo.size.height * (1 - CGFloat(v)))
+                    if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
+                }
+            }.stroke(tint, lineWidth: 1.5)
+        }.frame(height: 28)
+    }
+}
+
+struct AdminOpsServerCards: View {
+    let ops: OpsStatus
+    var body: some View {
+        if ops.history.count > 1 {
+            AdminCard(title: "Останні 10 хвилин", icon: "waveform.path.ecg") {
+                trend("Навантаження CPU (load)", ops.history.compactMap(\.cpuLoad), last: ops.history.last?.cpuLoad.map { String(format: "%.2f", $0) })
+                trend("Вільна памʼять", ops.history.compactMap(\.memoryAvailable), last: ops.history.last?.memoryAvailable.map { AdminHealthLogic.bytes($0) }, tint: .teal)
+                trend("Диск", ops.history.compactMap(\.diskPercent), last: ops.history.last?.diskPercent.map { AdminHealthLogic.percent($0) }, tint: .orange)
+            }
+        }
+        AdminCard(title: "Контейнери", icon: "shippingbox") {
+            ForEach(ops.containers) { c in
+                AdminRow(c.name, containerState(c), warn: c.status != "running" && !c.expectedStopped)
+            }
+        }
+        if !ops.services.isEmpty {
+            AdminCard(title: "Системні служби", icon: "gearshape.2") {
+                ForEach(ops.services) { sv in AdminRow(sv.name.replacingOccurrences(of: ".service", with: ""), sv.status == "running" ? "працює" : sv.status, warn: sv.status != "running") }
+            }
+        }
+        if !ops.events.isEmpty {
+            AdminCard(title: "Останні події", icon: "clock.arrow.circlepath") {
+                ForEach(ops.events.prefix(8)) { e in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(Date(timeIntervalSince1970: e.time).formatted(date: .omitted, time: .shortened)).font(.caption.monospacedDigit()).foregroundStyle(Routes05Tokens.secondary)
+                        Text(AdminOpsLogic.eventText(e)).font(.caption).foregroundStyle(Routes05Tokens.ink).lineLimit(2)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+    }
+    private func containerState(_ c: OpsStatus.Container) -> String {
+        if c.status == "running" { return (c.health == "unhealthy" ? "працює · unhealthy" : "працює") + (c.startedAt.flatMap { AdminOpsLogic.parseDate($0) }.map { " · " + AdminHealthLogic.duration(max(0, Date().timeIntervalSince($0))) } ?? "") }
+        return c.expectedStopped ? "зупинено навмисно" : "зупинено"
+    }
+    private func trend(_ title: String, _ values: [Double], last: String?, tint: Color = .indigo) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack { Text(title).font(.caption).foregroundStyle(Routes05Tokens.secondary); Spacer(); if let last { Text(last).font(.caption.monospacedDigit()) } }
+            AdminSparkline(values: values, tint: tint)
+        }
+    }
+}
+
+struct AdminBackupManagerCards: View {
+    let backups: OpsStatus.Backups
+    var body: some View {
+        let now = Date()
+        let level = AdminOpsLogic.level(forOverall: backups.overall)
+        AdminCard(title: "Завдання копіювання", icon: "calendar.badge.clock", level: level) {
+            ForEach(backups.jobs) { job in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(job.label).font(.subheadline.weight(.semibold)).foregroundStyle(Routes05Tokens.ink)
+                    Text(AdminOpsLogic.jobLine(job, now: now)).font(.caption).foregroundStyle(job.status == "Healthy" ? Routes05Tokens.secondary : Color.orange)
+                }
+            }
+        }
+        if let last = backups.lastBackup {
+            AdminCard(title: "Остання копія", icon: "externaldrive") {
+                if let date = AdminOpsLogic.parseDate(last.updatedAt) { AdminRow("Час", date.formatted(date: .abbreviated, time: .shortened)) }
+                if let size = last.totalSizeBytes { AdminRow("Розмір", AdminHealthLogic.bytes(size)) }
+                if let total = last.componentCount, let ok = last.componentsSucceeded { AdminRow("Компоненти", "\(ok) із \(total) успішно", warn: ok < total) }
+            }
+        }
+        if let rep = backups.replication {
+            AdminCard(title: "Хмарна копія (OCI)", icon: "cloud", level: AdminOpsLogic.level(forOverall: rep.status)) {
+                AdminRow("Стан", AdminOpsLogic.stateLabel(rep.status), warn: rep.status != "Healthy")
+                if let v = rep.verifiedCount { AdminRow("Перевірено в хмарі", "\(v)") }
+                if let u = rep.uploadedCount { AdminRow("Завантажено востаннє", "\(u)") }
+                if let f = rep.failedCount, f > 0 { AdminRow("Невдалих", "\(f)", warn: true) }
+                if let i = rep.incompleteCount, i > 0 { AdminRow("Незавершених", "\(i)", warn: true) }
+            }
+        }
+        if backups.sideStore != nil || backups.secrets != nil {
+            AdminCard(title: "AltStore та секрети", icon: "lock.shield") {
+                if let ss = backups.sideStore {
+                    AdminRow("AltStore IPA", "\(ss.localIpaCount ?? 0) файлів", warn: (ss.feedMissingCount ?? 0) > 0)
+                    if let m = ss.feedMissingCount, m > 0 { AdminRow("Відсутні у фіді", "\(m)", warn: true) }
+                }
+                if let sec = backups.secrets, let date = AdminOpsLogic.parseDate(sec.lastArchiveAt) { AdminRow("Архів секретів", date.formatted(date: .abbreviated, time: .shortened)) }
+            }
+        }
+        if let r = backups.retention {
+            AdminCard(title: "Очищення старих копій", icon: "trash.slash") {
+                AdminRow("Режим", AdminOpsLogic.retentionText(r))
+                if let n = r.itemCount { AdminRow("Об'єктів у плані", "\(n)") }
+                if let p = r.protectedCount { AdminRow("Захищено", "\(p)") }
+                if let rv = r.reviewOnlyCount, rv > 0 { AdminRow("На розгляд", "\(rv)") }
+            }
+        }
+        if let rel = backups.release, let id = rel.releaseId {
+            AdminCard(title: "Release gate", icon: "shippingbox.and.arrow.backward") {
+                AdminRow("Останній реліз", id)
+                if let t = rel.target { AdminRow("Ціль", t) }
+                AdminRow("Підготовка", rel.stale ? "застаріла (потрібна нова перед релізом)" : (rel.prepareState ?? "—"))
+            }
         }
     }
 }
