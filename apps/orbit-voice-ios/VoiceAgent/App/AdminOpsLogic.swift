@@ -97,6 +97,27 @@ enum AdminOpsLogic {
         return c.expectedStopped ? "зупинено навмисно" : "зупинено"
     }
 
+    /// Ukrainian date/time for the panel regardless of the phone's region (the app UI is Ukrainian).
+    static func dateText(_ date: Date, timeZone: TimeZone = .current) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "uk_UA"); f.timeZone = timeZone; f.dateStyle = .medium; f.timeStyle = .short
+        return f.string(from: date)
+    }
+    static func timeText(_ date: Date, timeZone: TimeZone = .current) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "uk_UA"); f.timeZone = timeZone; f.dateStyle = .none; f.timeStyle = .short
+        return f.string(from: date)
+    }
+
+    /// Release-gate preparation state as shown to the owner (raw values are English enum names).
+    static func prepareStateLabel(_ state: String?) -> String {
+        switch state {
+        case "COMPLETED": return "завершена"
+        case "PREPARATION_READY": return "готова"
+        case "EXPIRED": return "прострочена"
+        case .some(let other): return other
+        case nil: return "—"
+        }
+    }
+
     static func eventText(_ e: OpsStatus.Event) -> String {
         switch e.kind {
         case "appeared": return "зʼявився: " + e.label

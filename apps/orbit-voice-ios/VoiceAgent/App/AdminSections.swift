@@ -170,7 +170,7 @@ struct AdminBackupsPage: View {
             if let b = store.backups {
                 AdminCard(title: "Локальна копія", icon: "externaldrive.badge.checkmark", level: AdminSection.backups.level(items)) {
                     AdminRow("Стан", AdminSectionsLogic.backupStatusLabel(b.status), warn: b.status != "success")
-                    if let date = b.lastSuccessAt { AdminRow("Остання успішна", date.formatted(date: .abbreviated, time: .shortened)) }
+                    if let date = b.lastSuccessAt { AdminRow("Остання успішна", AdminOpsLogic.dateText(date)) }
                     if let age = b.ageSeconds { AdminRow("Вік", AdminHealthLogic.duration(age)) }
                     if let size = b.totalSizeBytes { AdminRow("Розмір", AdminHealthLogic.bytes(size)) }
                     if store.ops?.backups == nil { AdminRow("Відновлення", b.restoreVerified ? "перевірено" : "не перевірено", warn: !b.restoreVerified) }
@@ -312,7 +312,7 @@ struct AdminOpsServerCards: View {
             AdminCard(title: "Останні події", icon: "clock.arrow.circlepath") {
                 ForEach(ops.events.prefix(8)) { e in
                     HStack(alignment: .firstTextBaseline) {
-                        Text(Date(timeIntervalSince1970: e.time).formatted(date: .omitted, time: .shortened)).font(.caption.monospacedDigit()).foregroundStyle(Routes05Tokens.secondary)
+                        Text(AdminOpsLogic.timeText(Date(timeIntervalSince1970: e.time))).font(.caption.monospacedDigit()).foregroundStyle(Routes05Tokens.secondary)
                         Text(AdminOpsLogic.eventText(e)).font(.caption).foregroundStyle(Routes05Tokens.ink).lineLimit(2)
                         Spacer(minLength: 0)
                     }
@@ -343,7 +343,7 @@ struct AdminBackupManagerCards: View {
         }
         if let last = backups.lastBackup {
             AdminCard(title: "Остання копія", icon: "externaldrive") {
-                if let date = AdminOpsLogic.parseDate(last.updatedAt) { AdminRow("Час", date.formatted(date: .abbreviated, time: .shortened)) }
+                if let date = AdminOpsLogic.parseDate(last.updatedAt) { AdminRow("Час", AdminOpsLogic.dateText(date)) }
                 if let size = last.totalSizeBytes { AdminRow("Розмір", AdminHealthLogic.bytes(size)) }
                 if let total = last.componentCount, let ok = last.componentsSucceeded { AdminRow("Компоненти", "\(ok) із \(total) успішно", warn: ok < total) }
             }
@@ -363,7 +363,7 @@ struct AdminBackupManagerCards: View {
                     AdminRow("AltStore IPA", "\(ss.localIpaCount ?? 0) файлів", warn: (ss.feedMissingCount ?? 0) > 0)
                     if let m = ss.feedMissingCount, m > 0 { AdminRow("Відсутні у фіді", "\(m)", warn: true) }
                 }
-                if let sec = backups.secrets, let date = AdminOpsLogic.parseDate(sec.lastArchiveAt) { AdminRow("Архів секретів", date.formatted(date: .abbreviated, time: .shortened)) }
+                if let sec = backups.secrets, let date = AdminOpsLogic.parseDate(sec.lastArchiveAt) { AdminRow("Архів секретів", AdminOpsLogic.dateText(date)) }
             }
         }
         if let r = backups.retention {
@@ -378,7 +378,7 @@ struct AdminBackupManagerCards: View {
             AdminCard(title: "Release gate", icon: "shippingbox.and.arrow.backward") {
                 AdminRow("Останній реліз", id)
                 if let t = rel.target { AdminRow("Ціль", t) }
-                AdminRow("Підготовка", rel.stale ? "застаріла (потрібна нова перед релізом)" : (rel.prepareState ?? "—"))
+                AdminRow("Підготовка", rel.stale ? "застаріла (потрібна нова перед релізом)" : AdminOpsLogic.prepareStateLabel(rel.prepareState))
             }
         }
     }

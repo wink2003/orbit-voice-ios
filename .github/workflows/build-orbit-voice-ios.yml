@@ -356,6 +356,7 @@ jobs:
           xcrun swiftc \
             apps/orbit-voice-ios/VoiceAgent/App/AdminHealthLogic.swift \
             apps/orbit-voice-ios/VoiceAgent/App/AdminOpsLogic.swift \
+            apps/orbit-voice-ios/VoiceAgent/App/AdminStagingCleanupLogic.swift \
             apps/orbit-voice-ios/Tests/AdminOpsLogicTests.swift \
             -o "$RUNNER_TEMP/orbit-admin-ops-tests"
           "$RUNNER_TEMP/orbit-admin-ops-tests"
