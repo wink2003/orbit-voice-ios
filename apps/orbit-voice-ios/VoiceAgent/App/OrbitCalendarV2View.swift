@@ -443,7 +443,7 @@ struct OrbitCalendarV2View: View {
                         .foregroundStyle(Routes05Tokens.secondary)
                 }
                 Text(day.formatted(.dateTime.day()))
-                    .font(.body.weight(isToday || isSelected ? .black : .semibold).rounded())
+                    .font(.system(.body, design: .rounded, weight: isToday || isSelected ? .black : .semibold))
                     .frame(maxWidth: .infinity)
                 HStack(spacing: 2) {
                     ForEach(0..<min(3, colors.count), id: \.self) { index in
