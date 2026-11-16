@@ -307,6 +307,25 @@ jobs:
             -o "$RUNNER_TEMP/orbit-calendar-v2-logic-tests"
           "$RUNNER_TEMP/orbit-calendar-v2-logic-tests"
 
+      - name: Test School Tasks Widget projection (issue 119)
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'import Foundation' > "$RUNNER_TEMP/orbit-widget-school-models.swift"
+          awk '
+            /^private extension KeyedDecodingContainer/ { emit=1 }
+            /^struct OrbitSchoolActionTask/ { emit=0 }
+            emit { print }
+          ' apps/orbit-voice-ios/VoiceAgent/Orbit/MainProductAPI.swift \
+            >> "$RUNNER_TEMP/orbit-widget-school-models.swift"
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolDateDecoding.swift \
+            "$RUNNER_TEMP/orbit-widget-school-models.swift" \
+            apps/orbit-voice-ios/VoiceAgent/App/SchoolHubLogic.swift \
+            apps/orbit-voice-ios/VoiceAgent/App/SchoolTasksWidgetProjection.swift \
+            apps/orbit-voice-ios/Tests/SchoolTasksWidgetProjectionTests.swift \
+            -o "$RUNNER_TEMP/orbit-school-widget-projection-tests"
+          "$RUNNER_TEMP/orbit-school-widget-projection-tests"
+
       - name: Test School Hub logic
         run: |
           set -euo pipefail
