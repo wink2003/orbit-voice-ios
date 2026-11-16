@@ -30,6 +30,7 @@ on:
       - codex/routes05-school-tasks-timetable
       - codex/routes05-inbox-fidelity-111
       - codex/school-detail-v2
+      - chatgpt/calendar-agenda-polish-20261116
     paths:
       - "apps/orbit-voice-ios/**"
       - ".github/workflows/visual-routes05-simulator.yml"
@@ -50,6 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           requested_model="${{ inputs.simulator_model }}"
+          if [ "${GITHUB_REF}" = "refs/heads/chatgpt/calendar-agenda-polish-20261116" ]; then requested_model="iPhone 12"; fi
           device_line=""
           if [ -n "$requested_model" ]; then
             device_line=$(xcrun simctl list devices available | awk -v model="$requested_model" '$0 ~ model && $0 ~ /\(/ { print; exit }')
@@ -191,7 +193,7 @@ jobs:
           done
           fi
 
-          if [ "${GITHUB_REF}" = "refs/heads/codex/calendar-v2" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main-orbit-calendar-ux-20261102" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main119-cal-school-ux-20261105" ] || [ "${GITHUB_REF}" = "refs/heads/codex/calendar-agenda-ux-20261116" ]; then
+          if [ "${GITHUB_REF}" = "refs/heads/codex/calendar-v2" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main-orbit-calendar-ux-20261102" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main119-cal-school-ux-20261105" ] || [ "${GITHUB_REF}" = "refs/heads/codex/calendar-agenda-ux-20261116" ] || [ "${GITHUB_REF}" = "refs/heads/chatgpt/calendar-agenda-polish-20261116" ]; then
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
               sleep 2
