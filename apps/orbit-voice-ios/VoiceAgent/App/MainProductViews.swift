@@ -372,7 +372,25 @@ struct CalendarEventEditor: View {
     // One key per open editor: a repeated tap on "Зберегти" cannot create a second event in iCloud.
     @State private var idempotencyKey = "ios:" + UUID().uuidString
 
-    init(event: OrbitCalendarEvent?, onSave: @escaping (OrbitCalendarEvent?) async -> Void) { existing = event; self.onSave = onSave }
+    init(event: OrbitCalendarEvent?, initialDate: Date? = nil, onSave: @escaping (OrbitCalendarEvent?) async -> Void) {
+        existing = event
+        self.onSave = onSave
+        let defaultStart = Date().addingTimeInterval(3600)
+        if let initialDate {
+            let components = Calendar.current.dateComponents([.hour, .minute], from: defaultStart)
+            let selectedDayStart = Calendar.current.date(
+                bySettingHour: components.hour ?? 9,
+                minute: components.minute ?? 0,
+                second: 0,
+                of: initialDate
+            ) ?? initialDate
+            _startsAt = State(initialValue: selectedDayStart)
+            _endsAt = State(initialValue: selectedDayStart.addingTimeInterval(3600))
+        } else {
+            _startsAt = State(initialValue: defaultStart)
+            _endsAt = State(initialValue: defaultStart.addingTimeInterval(3600))
+        }
+    }
     private var isProviderTarget: Bool { existing == nil && targetId != "orbit_local" }
     var body: some View {
         NavigationStack {
