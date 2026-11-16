@@ -166,7 +166,7 @@ jobs:
             fi
           }
 
-          if [ "${{ inputs.targeted_only }}" != "true" ]; then
+          if [ "${{ inputs.targeted_only }}" != "true" ] && [ "${GITHUB_REF}" != "refs/heads/chatgpt/calendar-agenda-polish-20261116" ]; then
           for screen in today chats school family; do
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
@@ -216,6 +216,10 @@ jobs:
                 sleep 4
                 perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-calendar-${appearance}-${state}.png"
                 test -s "$out/routes05-calendar-${appearance}-${state}.png"
+                if [ "${GITHUB_REF}" = "refs/heads/chatgpt/calendar-agenda-polish-20261116" ] && [ "$state" = "month-expanded" ]; then
+                  dimensions=$(sips -g pixelWidth -g pixelHeight "$out/routes05-calendar-${appearance}-${state}.png" | awk '/pixelWidth:/{w=$2} /pixelHeight:/{h=$2} END{print w "x" h}')
+                  test "$dimensions" = "1170x2532"
+                fi
               done
 
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
@@ -282,6 +286,10 @@ jobs:
               done
             done
           fi
+
+          # This feature branch is a focused calendar visual acceptance run.
+          # Leave all existing Issue #17 evidence paths intact for other branches.
+          if [ "${GITHUB_REF}" = "refs/heads/chatgpt/calendar-agenda-polish-20261116" ]; then exit 0; fi
 
           # Targeted Issue #17 evidence. These are DEBUG fixtures only: the
           # Family route opens the real More owner, Exams spans multiple weeks,

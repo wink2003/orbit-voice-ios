@@ -257,7 +257,7 @@ struct OrbitCalendarV2View: View {
                 }
             }
             .onChange(of: scenePhase) { _, phase in
-                guard phase == .active else { return }
+                guard phase == .active, !debugFixtureMode else { return }
                 referenceDate = .now
                 Task { await load() }
             }
