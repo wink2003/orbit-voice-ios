@@ -50,6 +50,7 @@ enum AdminAgentLabels {
         case "planner_provider_error": return "помилка провайдера моделі"
         case "planner_timeout": return "таймаут моделі"
         case "step_budget_exceeded": return "вичерпано бюджет кроків"
+        case "worker_internal_error": return "внутрішня помилка воркера"
         default: return code
         }
     }

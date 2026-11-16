@@ -65,6 +65,13 @@ struct AdminOpsLogicTests {
         precondition(AdminOpsLogic.containerState(all[0], now: t0) == "працює · 3 год", AdminOpsLogic.containerState(all[0], now: t0))
         precondition(AdminOpsLogic.containerState(all[1], now: t0) == "працює · unhealthy")
         precondition(AdminOpsLogic.containerState(all[2], now: t0) == "зупинено навмисно" && AdminOpsLogic.containerState(all[3], now: t0) == "зупинено")
+        // Dates are rendered in Ukrainian regardless of the phone region; release-gate states are translated.
+        let utc = TimeZone(identifier: "UTC")!
+        let sample = AdminOpsLogic.parseDate("2026-11-16T05:53:00.000Z")!
+        precondition(AdminOpsLogic.dateText(sample, timeZone: utc).contains("2026") && !AdminOpsLogic.dateText(sample, timeZone: utc).contains("Nov"), AdminOpsLogic.dateText(sample, timeZone: utc))
+        precondition(AdminOpsLogic.timeText(sample, timeZone: utc).contains("5") && AdminOpsLogic.timeText(sample, timeZone: utc).contains(":53"))
+        precondition(AdminOpsLogic.prepareStateLabel("COMPLETED") == "завершена" && AdminOpsLogic.prepareStateLabel("EXPIRED") == "прострочена" && AdminOpsLogic.prepareStateLabel(nil) == "—" && AdminOpsLogic.prepareStateLabel("X") == "X")
+        precondition(AdminAgentLabels.failure("worker_internal_error") == "внутрішня помилка воркера")
         print("AdminOpsLogicTests: ok")
     }
 }
