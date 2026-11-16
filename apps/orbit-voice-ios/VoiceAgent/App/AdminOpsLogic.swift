@@ -82,6 +82,21 @@ enum AdminOpsLogic {
         containers.filter { $0.status != "running" && $0.expectedStopped }.count
     }
 
+    /// Orbit application containers (shown on the «Сервіси Orbit» page); everything else is infrastructure (shown on «Сервер»).
+    static let appContainerNames: [String] = ["orbit-core", "orbit-realtime-web", "orbit-realtime-agent", "orbit-calendar", "orbit-schulmanager-worker", "orbit-whatsapp-baileys"]
+    static func appContainers(_ all: [OpsStatus.Container]) -> [OpsStatus.Container] { all.filter { appContainerNames.contains($0.name) } }
+    static func infraContainers(_ all: [OpsStatus.Container]) -> [OpsStatus.Container] { all.filter { !appContainerNames.contains($0.name) } }
+
+    /// "працює · 3 год" / "зупинено навмисно" / "зупинено".
+    static func containerState(_ c: OpsStatus.Container, now: Date) -> String {
+        if c.status == "running" {
+            var text = c.health == "unhealthy" ? "працює · unhealthy" : "працює"
+            if let started = parseDate(c.startedAt) { text += " · " + AdminHealthLogic.duration(max(0, now.timeIntervalSince(started))) }
+            return text
+        }
+        return c.expectedStopped ? "зупинено навмисно" : "зупинено"
+    }
+
     static func eventText(_ e: OpsStatus.Event) -> String {
         switch e.kind {
         case "appeared": return "зʼявився: " + e.label
