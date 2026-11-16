@@ -211,9 +211,16 @@ struct AdminOrbitPage: View {
     @ObservedObject var store: ServerOverviewStore
     var body: some View {
         AdminPage(title: "Сервіси Orbit") {
+            if let ops = store.ops {
+                AdminCard(title: "Застосунки Orbit", icon: "app.connected.to.app.below.fill") {
+                    ForEach(AdminOpsLogic.appContainers(ops.containers)) { c in
+                        AdminRow(c.name.replacingOccurrences(of: "orbit-", with: ""), AdminOpsLogic.containerState(c, now: Date()), warn: c.status != "running" && !c.expectedStopped)
+                    }
+                }
+            }
             if let orbit = store.orbitServices { AdminOrbitServicesCard(status: orbit) }
             if let agent = store.agentTelemetry, agent.available { AdminAgentCard(telemetry: agent) }
-            if store.orbitServices == nil && !(store.agentTelemetry?.available ?? false) {
+            if store.orbitServices == nil && store.ops == nil && !(store.agentTelemetry?.available ?? false) {
                 ContentUnavailableView("Даних немає", systemImage: "tray", description: Text("Статус сервісів Orbit тимчасово недоступний."))
             }
         }
@@ -291,9 +298,9 @@ struct AdminOpsServerCards: View {
                 trend("Диск", ops.history.compactMap(\.diskPercent), last: ops.history.last?.diskPercent.map { AdminHealthLogic.percent($0) }, tint: .orange)
             }
         }
-        AdminCard(title: "Контейнери", icon: "shippingbox") {
-            ForEach(ops.containers) { c in
-                AdminRow(c.name, containerState(c), warn: c.status != "running" && !c.expectedStopped)
+        AdminCard(title: "Інфраструктурні контейнери", icon: "shippingbox") {
+            ForEach(AdminOpsLogic.infraContainers(ops.containers)) { c in
+                AdminRow(c.name, AdminOpsLogic.containerState(c, now: Date()), warn: c.status != "running" && !c.expectedStopped)
             }
         }
         if !ops.services.isEmpty {
@@ -312,10 +319,6 @@ struct AdminOpsServerCards: View {
                 }
             }
         }
-    }
-    private func containerState(_ c: OpsStatus.Container) -> String {
-        if c.status == "running" { return (c.health == "unhealthy" ? "працює · unhealthy" : "працює") + (c.startedAt.flatMap { AdminOpsLogic.parseDate($0) }.map { " · " + AdminHealthLogic.duration(max(0, Date().timeIntervalSince($0))) } ?? "") }
-        return c.expectedStopped ? "зупинено навмисно" : "зупинено"
     }
     private func trend(_ title: String, _ values: [Double], last: String?, tint: Color = .indigo) -> some View {
         VStack(alignment: .leading, spacing: 4) {

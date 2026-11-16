@@ -54,6 +54,17 @@ struct AdminOpsLogicTests {
         precondition(AdminHealthLogic.attention(i).contains { $0.id == "backup_manager" && $0.level == .warning })
         i.backupManagerOverall = nil
         precondition(AdminHealthLogic.attention(i).contains { $0.id == "restore" }, "without ops the old restore hint still works")
+        // Container split: app containers go to the Orbit page, the rest is infrastructure; state wording.
+        let all = [OpsStatus.Container(name: "orbit-core", status: "running", health: "none", startedAt: "2026-11-15T16:14:46.000Z", expectedStopped: false),
+                   OpsStatus.Container(name: "postgres", status: "running", health: "unhealthy", startedAt: nil, expectedStopped: false),
+                   OpsStatus.Container(name: "orbit-telegram-user", status: "stopped", health: nil, startedAt: nil, expectedStopped: true),
+                   OpsStatus.Container(name: "orbit-whatsapp-baileys", status: "stopped", health: nil, startedAt: nil, expectedStopped: false)]
+        precondition(AdminOpsLogic.appContainers(all).map(\.name) == ["orbit-core", "orbit-whatsapp-baileys"])
+        precondition(AdminOpsLogic.infraContainers(all).map(\.name) == ["postgres", "orbit-telegram-user"])
+        let t0 = AdminOpsLogic.parseDate("2026-11-15T19:14:46.000Z")!
+        precondition(AdminOpsLogic.containerState(all[0], now: t0) == "працює · 3 год", AdminOpsLogic.containerState(all[0], now: t0))
+        precondition(AdminOpsLogic.containerState(all[1], now: t0) == "працює · unhealthy")
+        precondition(AdminOpsLogic.containerState(all[2], now: t0) == "зупинено навмисно" && AdminOpsLogic.containerState(all[3], now: t0) == "зупинено")
         print("AdminOpsLogicTests: ok")
     }
 }
