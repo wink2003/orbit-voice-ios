@@ -4,14 +4,16 @@ private struct FixtureEvent: OrbitCalendarV2EventLike {
     let id: String
     let startsAt: Date
     let endsAt: Date
+    let allDay: Bool
     let sourceType: String
     let sourceIdentifier: String?
     let occurrenceId: String?
 
-    init(id: String, startsAt: Date, endsAt: Date, sourceType: String, sourceIdentifier: String?, occurrenceId: String? = nil) {
+    init(id: String, startsAt: Date, endsAt: Date, allDay: Bool = false, sourceType: String, sourceIdentifier: String?, occurrenceId: String? = nil) {
         self.id = id
         self.startsAt = startsAt
         self.endsAt = endsAt
+        self.allDay = allDay
         self.sourceType = sourceType
         self.sourceIdentifier = sourceIdentifier
         self.occurrenceId = occurrenceId
@@ -122,6 +124,10 @@ struct OrbitCalendarV2LogicTests {
         precondition(recurrenceTimeline.later.map(OrbitCalendarV2Logic.eventKey) == ["caldav:series:2026-11-10", "caldav:series:2026-11-11"], "distinct recurrence occurrences survive while duplicate occurrence payloads are deduplicated")
 
         let jan31 = at(2026, 1, 31, 12)
+        let february28 = OrbitCalendarV2Logic.dateClamped(toMonth: at(2026, 2, 1), preservingDayFrom: jan31, calendar: calendar)!
+        precondition(calendar.component(.month, from: february28) == 2 && calendar.component(.day, from: february28) == 28, "month navigation clamps January 31 to February 28")
+        let leapFebruary = OrbitCalendarV2Logic.dateClamped(toMonth: at(2024, 2, 1), preservingDayFrom: at(2024, 1, 31), calendar: calendar)!
+        precondition(calendar.component(.month, from: leapFebruary) == 2 && calendar.component(.day, from: leapFebruary) == 29, "month navigation preserves January 31 as leap day")
         let febInterval = OrbitCalendarV2Logic.laterInterval(now: jan31, calendar: calendar)!
         precondition(calendar.component(.month, from: febInterval.end) == 2 && calendar.component(.day, from: febInterval.end) == 28, "month horizon uses calendar addition for a short February")
         let leapJan31 = at(2024, 1, 31, 12)
@@ -158,6 +164,15 @@ struct OrbitCalendarV2LogicTests {
         precondition(result.map(\.id) == ["same", "e1", "e2", "e3", "e4"], "next-five is sorted and deduplicated")
         precondition(OrbitCalendarCardMetrics.weekdayTopInset >= 6, "weekday top inset")
         precondition(OrbitCalendarCardMetrics.weekCardMinHeight >= 44 + OrbitCalendarCardMetrics.weekdayTopInset, "week card keeps 44pt target")
+
+        let agendaDay = at(2026, 11, 17)
+        let agendaOrder = OrbitCalendarV2Logic.orderedAgendaEvents([
+            FixtureEvent(id: "late", startsAt: at(2026, 11, 17, 9), endsAt: at(2026, 11, 17, 10), sourceType: "external", sourceIdentifier: "family"),
+            FixtureEvent(id: "all-day", startsAt: agendaDay, endsAt: at(2026, 11, 18), allDay: true, sourceType: "external", sourceIdentifier: "family"),
+            FixtureEvent(id: "early", startsAt: at(2026, 11, 17, 8), endsAt: at(2026, 11, 17, 9), sourceType: "external", sourceIdentifier: "family"),
+            FixtureEvent(id: "other-source", startsAt: at(2026, 11, 17, 8), endsAt: at(2026, 11, 17, 9), sourceType: "external", sourceIdentifier: "icloud")
+        ])
+        precondition(agendaOrder.map(\.id) == ["all-day", "early", "other-source", "late"], "agenda sorts all-day first, then chronologically with stable source-qualified ties")
         print("OrbitCalendarV2LogicTests passed")
     }
 }

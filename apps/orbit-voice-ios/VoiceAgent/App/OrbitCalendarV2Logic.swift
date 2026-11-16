@@ -5,12 +5,14 @@ protocol OrbitCalendarV2EventLike {
     var id: String { get }
     var startsAt: Date { get }
     var endsAt: Date { get }
+    var allDay: Bool { get }
     var sourceType: String { get }
     var sourceIdentifier: String? { get }
     var occurrenceId: String? { get }
 }
 
 extension OrbitCalendarV2EventLike {
+    var allDay: Bool { false }
     var occurrenceId: String? { nil }
 }
 
@@ -73,6 +75,22 @@ enum OrbitCalendarV2Logic {
     static func weekDays(containing date: Date, calendar: Calendar) -> [Date] {
         guard let interval = weekInterval(containing: date, calendar: calendar) else { return [] }
         return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: interval.start) }
+    }
+
+    static func dateClamped(toMonth month: Date, preservingDayFrom date: Date, calendar: Calendar) -> Date? {
+        guard let monthStart = calendar.dateInterval(of: .month, for: month)?.start,
+              let days = calendar.range(of: .day, in: .month, for: monthStart) else { return nil }
+        let day = min(calendar.component(.day, from: date), days.upperBound - 1)
+        return calendar.date(byAdding: .day, value: day - 1, to: monthStart)
+    }
+
+    static func agendaOrder<Event: OrbitCalendarV2EventLike>(_ lhs: Event, _ rhs: Event) -> Bool {
+        if lhs.allDay != rhs.allDay { return lhs.allDay }
+        return eventOrder(lhs, rhs)
+    }
+
+    static func orderedAgendaEvents<Event: OrbitCalendarV2EventLike>(_ events: [Event]) -> [Event] {
+        deduplicated(events).sorted(by: agendaOrder)
     }
 
     static func showsSelectedDateSection(selectedDate: Date?, today: Date, calendar: Calendar) -> Bool {

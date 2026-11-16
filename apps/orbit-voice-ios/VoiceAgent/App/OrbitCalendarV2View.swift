@@ -46,6 +46,19 @@ struct OrbitCalendarV2View: View {
     @State private var selectedEvent: ConceptCalendarEvent?
     @State private var editingEvent: OrbitCalendarEvent?
 
+    @ScaledMetric(relativeTo: .caption) private var agendaTimeColumnWidth: CGFloat = 54
+    @State private var agendaScrollDate: Date?
+    @State private var agendaScrollRequest: Date?
+    @State private var agendaScrollRequestToken = UUID()
+    @State private var agendaScrollLocked = false
+    @State private var agendaScrollUnlockTask: Task<Void, Never>?
+    @State private var agendaNavigationTask: Task<Void, Never>?
+    @State private var agendaNavigationGeneration = 0
+    @State private var agendaLoadingRange = false
+    @State private var hasLoadedAgendaData = false
+    @State private var agendaLoadFailed = false
+    @State private var coverageLoadFailed = false
+
     @State private var draftTitle = ""
     @State private var draftDate = Date.now
     @State private var draftAllDay = false
@@ -59,14 +72,21 @@ struct OrbitCalendarV2View: View {
         debugFixtureMode = ProcessInfo.processInfo.arguments.contains("--routes05-calendar-fixture") || ProcessInfo.processInfo.arguments.contains("--routes05-calendar-fixture-detail")
         debugDetailMode = ProcessInfo.processInfo.arguments.contains("--routes05-calendar-fixture-detail")
         let initialDate = debugFixtureMode ? ConceptCalendarDates.debugFixtureDate : referenceDate
+        let selectedDate = ProcessInfo.processInfo.arguments.contains("--routes05-calendar-select-tomorrow")
+            ? (ConceptCalendarDates.calendar.date(byAdding: .day, value: 1, to: initialDate) ?? initialDate)
+            : initialDate
+        _displayMode = State(initialValue: ProcessInfo.processInfo.arguments.contains("--routes05-calendar-month-expanded") ? .month : .week)
         #else
         debugFixtureMode = false
         debugDetailMode = false
         let initialDate = referenceDate
+        let selectedDate = initialDate
+        _displayMode = State(initialValue: .week)
         #endif
         _referenceDate = State(initialValue: initialDate)
-        _visibleMonth = State(initialValue: ConceptCalendarDates.monthStart(initialDate))
-        _weekAnchor = State(initialValue: initialDate)
+        _visibleMonth = State(initialValue: ConceptCalendarDates.monthStart(selectedDate))
+        _weekAnchor = State(initialValue: selectedDate)
+        _selectedDate = State(initialValue: ConceptCalendarDates.calendar.startOfDay(for: selectedDate))
     }
 
     private var activeEvents: [ConceptCalendarEvent] {
@@ -94,7 +114,36 @@ struct OrbitCalendarV2View: View {
             ?? DateInterval(start: afterNextWeekBoundary, end: afterNextWeekBoundary)
     }
 
-    private var collapsedWeekAnchor: Date { selectedDate ?? weekAnchor }
+    private var collapsedWeekAnchor: Date { weekAnchor }
+
+    private var agendaSelectedDay: Date {
+        calendar.startOfDay(for: selectedDate ?? weekAnchor)
+    }
+
+    private var agendaWeekDays: [Date] {
+        OrbitCalendarV2Logic.weekDays(containing: weekAnchor, calendar: calendar)
+            .map { calendar.startOfDay(for: $0) }
+    }
+
+    private func agendaEvents(on day: Date) -> [ConceptCalendarEvent] {
+        OrbitCalendarV2Logic.orderedAgendaEvents(occurrences(on: day))
+    }
+
+    private func agendaDayTitle(_ day: Date) -> String {
+        if calendar.isDate(day, inSameDayAs: referenceDate) { return "Сьогодні" }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: referenceDate)),
+           calendar.isDate(day, inSameDayAs: tomorrow) { return "Завтра" }
+        return ConceptCalendarDates.weekdayLong(day).capitalized
+    }
+
+    private func agendaDayCaption(_ day: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "uk_UA")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "d MMM"
+        return formatter.string(from: day)
+    }
 
     private var afterNextWeekBoundary: Date {
         guard let currentWeek = OrbitCalendarV2Logic.weekInterval(containing: referenceDate, calendar: calendar),
@@ -107,55 +156,31 @@ struct OrbitCalendarV2View: View {
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Routes05Mast(section: "calendar", action: { showingSources = true }, backAction: onBack, backLabel: "Назад")
-                        hero
-                        ForEach(OrbitCalendarV2Logic.sectionOrder, id: \.self) { section in
-                            timelineSection(section)
-                        }
-                        sourcesSummary
-                        if let coverageText {
-                            Text(coverageText)
-                                .font(.caption)
-                                .foregroundStyle(Routes05Tokens.secondary)
-                                .padding(.horizontal, 16)
-                        }
-                        sourceNote
-                        Color.clear.frame(height: 1).id("routes05-bottom")
-                    }
-                }
-                .scrollIndicators(.hidden)
-                .novaDockAwareScrollContent()
-                #if DEBUG
-                .onChange(of: isLoading) { _, loading in
-                    guard !loading, Routes05DebugCapture.scrollToBottom else { return }
-                    DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
-                }
-                #endif
+                agendaLayout(proxy: proxy)
             }
-            .background(Routes05Tokens.canvas.ignoresSafeArea())
             .foregroundStyle(Routes05Tokens.ink)
             .toolbar(.hidden, for: .navigationBar)
             .routes05NativeSwipeBack()
             .environment(\.locale, Locale(identifier: "uk_UA"))
             .sheet(isPresented: $showingSources) { sourceManager }
             .sheet(isPresented: $showingCreator) {
-                CalendarEventEditor(event: editingEvent) { _ in await load() }
+                CalendarEventEditor(event: editingEvent, initialDate: selectedDate ?? weekAnchor) { _ in await load() }
             }
             .sheet(item: $selectedEvent) { event in eventDetail(event) }
             .sheet(item: $providerEditing) { event in
                 ProviderEventEditor(event: event) { await load() }
             }
-            .task { await load() }
-            .refreshable {
-                // Detached from SwiftUI's refresh task: a state change during the reload used to cancel it ("cancelled" alert).
-                await Task { await refreshMirrorThenLoad() }.value
+            .task {
+                await load()
+                #if DEBUG
+                if !Routes05DebugCapture.scrollToBottom { requestAgendaScroll(to: selectedDate ?? referenceDate) }
+                #else
+                requestAgendaScroll(to: selectedDate ?? referenceDate)
+                #endif
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 referenceDate = .now
-                weekAnchor = .now
                 Task { await load() }
             }
             .alert("Помилка календаря", isPresented: Binding(
@@ -169,23 +194,106 @@ struct OrbitCalendarV2View: View {
         }
     }
 
+    private func agendaLayout(proxy: ScrollViewProxy) -> some View {
+        VStack(spacing: 0) {
+            Routes05Mast(section: "calendar", action: { showingSources = true }, backAction: onBack, backLabel: "Назад")
+            hero
+                .padding(.bottom, 4)
+
+            HStack(spacing: 8) {
+                Text(ConceptCalendarDates.monthYear(visibleMonth))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Routes05Tokens.ink)
+                Spacer(minLength: 8)
+                Button {
+                    displayMode = .week
+                    selectAgendaDay(referenceDate, loadRange: true)
+                } label: {
+                    Text("Сьогодні")
+                        .font(.caption.weight(.bold))
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
+                        .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Routes05Tokens.rule, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Повернутися до сьогодні")
+            }
+            .padding(.horizontal, 16)
+
+            monthCard
+            agendaSourceBar
+            Divider()
+            agendaScrollContent(proxy: proxy)
+        }
+        .background(Routes05Tokens.canvas.ignoresSafeArea())
+    }
+
+    private func agendaScrollContent(proxy: ScrollViewProxy) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 14) {
+                ForEach(agendaWeekDays, id: \.self) { day in
+                    agendaDayGroup(day)
+                        .id(day)
+                }
+                agendaUpcomingSection
+                sourceNote
+                Color.clear.frame(height: 1).id("routes05-bottom")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
+            .scrollTargetLayout()
+        }
+        .scrollPosition(id: $agendaScrollDate, anchor: .top)
+        .scrollIndicators(.hidden)
+        .novaDockAwareScrollContent()
+        .refreshable {
+            await Task { await refreshMirrorThenLoad() }.value
+        }
+        .onChange(of: agendaScrollDate) { _, day in
+            guard let day, !agendaScrollLocked, agendaWeekDays.contains(day) else { return }
+            selectedDate = calendar.startOfDay(for: day)
+        }
+        .onChange(of: agendaScrollRequestToken) { _, token in
+            guard let day = agendaScrollRequest else { return }
+            agendaScrollLocked = true
+            agendaScrollUnlockTask?.cancel()
+            withAnimation(.easeInOut(duration: 0.22)) {
+                proxy.scrollTo(day, anchor: .top)
+            }
+            agendaScrollUnlockTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled, agendaScrollRequestToken == token else { return }
+                agendaScrollLocked = false
+                agendaScrollRequest = nil
+            }
+        }
+        #if DEBUG
+        .onChange(of: isLoading) { _, loading in
+            guard !loading, Routes05DebugCapture.scrollToBottom else { return }
+            DispatchQueue.main.async { proxy.scrollTo("routes05-bottom", anchor: .bottom) }
+        }
+        #endif
+    }
+
     // MARK: — Intro and today
 
     private var hero: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                 eyebrow("FAMILY / SHARED TIME")
-                Routes05HeadingText("Календар.", tracking: -1.5)
-                Text("Усі важливі події — в одному місці.")
-                    .font(.footnote)
-                    .foregroundStyle(Routes05Tokens.secondary)
+                Text("Календар.")
+                    .font(.system(.title2, design: .rounded, weight: .black))
+                    .tracking(-1.2)
+                    .accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: 4)
             Button(action: openCreator) {
                 Image(systemName: "plus")
                     .font(.system(size: 25, weight: .black))
                     .foregroundStyle(Routes05Tokens.accentInk)
-                    .frame(width: Routes05HeroBadgeMetrics.diameter, height: Routes05HeroBadgeMetrics.diameter)
+                    .frame(width: 46, height: 46)
                     .background(Routes05Tokens.yellow, in: Circle())
                     .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
             }
@@ -196,58 +304,53 @@ struct OrbitCalendarV2View: View {
         .padding(.top, 4)
     }
 
-    private var sourcesSummary: some View {
-        Button { showingSources = true } label: {
-            HStack(spacing: 9) {
-                HStack(spacing: 4) {
-                    ForEach(sources.filter { enabledSourceIDs.contains($0.id) }) { source in
-                        Circle().fill(source.color).frame(width: 9, height: 9)
-                    }
+    private var agendaSourceBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                ForEach(sources.filter { enabledSourceIDs.contains($0.id) }) { source in
+                    Circle().fill(source.color).frame(width: 7, height: 7)
                 }
-                Text("Календарі: \(enabledSourceIDs.count) із \(sources.count)")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text("Керувати")
-                    .font(.caption.weight(.bold))
-                    .underline()
-                Image(systemName: "slider.horizontal.3").font(.footnote)
             }
-            .frame(minHeight: 46)
-            .foregroundStyle(Routes05Tokens.ink)
+            Text("Календарі: \(enabledSourceIDs.count) із \(sources.count)")
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Button { showingSources = true } label: {
+                Label("Фільтри", systemImage: "slider.horizontal.3")
+                    .font(.caption.weight(.bold))
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .foregroundStyle(Routes05Tokens.ink)
         .padding(.horizontal, 16)
-        .accessibilityLabel("Керування календарями. Активних \(enabledSourceIDs.count) із \(sources.count)")
     }
 
     // MARK: — Current week, expandable to a complete month
 
     private var monthCard: some View {
-        VStack(alignment: .leading, spacing: displayMode == .week ? 0 : 11) {
+        VStack(alignment: .leading, spacing: displayMode == .week ? 2 : 9) {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
-                    if displayMode == .month { eyebrow("MONTH / OVERVIEW") }
                     Text(displayMode == .month ? ConceptCalendarDates.monthYear(visibleMonth) : ConceptCalendarDates.compactWeekRange(collapsedWeekAnchor))
-                        .font(.system(displayMode == .month ? .title2 : .subheadline, design: .rounded, weight: .black))
-                        .fixedSize(horizontal: false, vertical: true)
+                        .font(.system(displayMode == .month ? .subheadline : .caption, design: .rounded, weight: .black))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .accessibilityAddTraits(.isHeader)
                 }
                 Spacer()
                 monthArrow("chevron.left", shift: -1, label: displayMode == .month ? "Попередній місяць" : "Попередній тиждень")
                 monthArrow("chevron.right", shift: 1, label: displayMode == .month ? "Наступний місяць" : "Наступний тиждень")
-                if displayMode == .week {
-                    Button(action: toggleMonthDisplay) {
-                        Image(systemName: "chevron.down")
-                            .font(.caption.weight(.bold))
-                            .frame(width: 44, height: 44)
-                            .foregroundStyle(Routes05Tokens.ink)
-                            .background(Routes05Tokens.canvas)
-                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.rule, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Розгорнути до повного місяця")
-                    .accessibilityValue("Поточний тиждень")
+                Button(action: toggleMonthDisplay) {
+                    Image(systemName: displayMode == .week ? "chevron.down" : "chevron.up")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 44, height: 44)
+                        .foregroundStyle(Routes05Tokens.ink)
+                        .background(Routes05Tokens.canvas)
+                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Routes05Tokens.rule, lineWidth: 1))
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(displayMode == .week ? "Розгорнути календар на місяць" : "Згорнути календар до тижня")
             }
             if displayMode == .month {
                 HStack(spacing: 0) {
@@ -264,28 +367,15 @@ struct OrbitCalendarV2View: View {
                     dayButton(day)
                 }
             }
-            if displayMode == .month {
-                Button(action: toggleMonthDisplay) {
-                    HStack(spacing: 6) {
-                        Text("Показати тиждень")
-                        Image(systemName: "chevron.up").font(.caption.weight(.bold))
-                    }
-                    .font(.caption.weight(.bold))
-                    .frame(minHeight: 44)
-                    .foregroundStyle(Routes05Tokens.ink)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Згорнути до тижня")
-                .accessibilityValue("Повний місяць")
-            }
+            .simultaneousGesture(dateGridSwipeGesture())
             if displayMode == .month {
                 HStack(spacing: 7) {
                     Image(systemName: "circle.fill")
                         .font(.system(size: 8))
                         .foregroundStyle(Routes05Tokens.yellow)
-                    Text("Жовтий — сьогодні")
+                    Text("Жовтий — обраний день")
                     Spacer()
-                    Text("Крапки — події календарів")
+                    Text("Контур — сьогодні · крапки — події")
                 }
                 .font(.system(size: 10))
                 .foregroundStyle(Routes05Tokens.secondary)
@@ -295,8 +385,13 @@ struct OrbitCalendarV2View: View {
                     .font(.caption)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if agendaLoadingRange {
+                ProgressView("Завантаження подій…")
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .padding(displayMode == .month ? 13 : 6)
+        .padding(displayMode == .month ? 10 : 5)
         .background(Routes05Tokens.surface)
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1.3))
         .padding(.horizontal, 16)
@@ -304,26 +399,21 @@ struct OrbitCalendarV2View: View {
 
     private func toggleMonthDisplay() {
         if displayMode == .week {
-            visibleMonth = ConceptCalendarDates.monthStart(collapsedWeekAnchor)
+            visibleMonth = ConceptCalendarDates.monthStart(agendaSelectedDay)
         }
-        displayMode.toggle()
+        withAnimation(.easeInOut(duration: 0.2)) { displayMode.toggle() }
     }
 
     private func monthArrow(_ symbol: String, shift: Int, label: String) -> some View {
         Button {
             if displayMode == .month {
                 guard let month = calendar.date(byAdding: .month, value: shift, to: visibleMonth) else { return }
-                let anchor = calendar.date(byAdding: .month, value: shift, to: selectedDate ?? weekAnchor) ?? month
-                visibleMonth = ConceptCalendarDates.monthStart(month)
-                weekAnchor = anchor
+                guard let day = OrbitCalendarV2Logic.dateClamped(toMonth: month, preservingDayFrom: agendaSelectedDay, calendar: calendar) else { return }
+                selectAgendaDay(day, loadRange: true)
             } else {
-                guard let week = calendar.date(byAdding: .weekOfYear, value: shift, to: weekAnchor) else { return }
-                weekAnchor = week
-                visibleMonth = ConceptCalendarDates.monthStart(week)
+                guard let week = calendar.date(byAdding: .weekOfYear, value: shift, to: agendaSelectedDay) else { return }
+                selectAgendaDay(week, loadRange: true)
             }
-            selectedDate = nil
-            let monthToLoad = visibleMonth
-            Task { await loadMonth(monthToLoad) }
         } label: {
             Image(systemName: symbol)
                 .font(.subheadline.weight(.black))
@@ -344,21 +434,16 @@ struct OrbitCalendarV2View: View {
         let colors = Array(Set(dayEvents.map(\.sourceID))).sorted().compactMap { id in sources.first(where: { $0.id == id })?.color }
 
         return Button {
-            selectedDate = calendar.startOfDay(for: day)
-            weekAnchor = day
-            if !inMonth { visibleMonth = ConceptCalendarDates.monthStart(day) }
-            if selectedDateSectionVisible && timeline.later.count < 5 {
-                Task { await refreshTimelineCoverage() }
-            }
+            selectAgendaDay(day, loadRange: !inMonth)
         } label: {
             VStack(spacing: displayMode == .week ? 0 : 4) {
                 if displayMode == .week {
                     Text(ConceptCalendarDates.weekdayInitial(day))
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .font(.caption2.weight(.bold).monospaced())
                         .foregroundStyle(Routes05Tokens.secondary)
                 }
                 Text(day.formatted(.dateTime.day()))
-                    .font(.system(size: 15, weight: isToday || isSelected ? .black : .semibold, design: .rounded))
+                    .font(.system(.body, design: .rounded, weight: isToday || isSelected ? .black : .semibold))
                     .frame(maxWidth: .infinity)
                 HStack(spacing: 2) {
                     ForEach(0..<min(3, colors.count), id: \.self) { index in
@@ -374,9 +459,9 @@ struct OrbitCalendarV2View: View {
             // (the label sat ~2pt from the border) without shrinking other content.
             .padding(.top, displayMode == .week ? OrbitCalendarCardMetrics.weekdayTopInset : 0)
             .frame(maxWidth: .infinity, minHeight: displayMode == .week ? OrbitCalendarCardMetrics.weekCardMinHeight : 44)
-            .foregroundStyle(isToday ? Routes05Tokens.accentInk : (inMonth ? Routes05Tokens.ink : Routes05Tokens.secondary.opacity(0.52)))
-            .background(isToday ? Routes05Tokens.yellow : (isSelected ? Routes05Tokens.mint.opacity(0.22) : Color.clear))
-            .overlay(RoundedRectangle(cornerRadius: 3).stroke(isSelected ? Routes05Tokens.ink : Color.clear, lineWidth: 2))
+            .foregroundStyle(isSelected ? Routes05Tokens.accentInk : (inMonth ? Routes05Tokens.ink : Routes05Tokens.secondary.opacity(0.52)))
+            .background(isSelected ? Routes05Tokens.yellow : Color.clear)
+            .overlay(RoundedRectangle(cornerRadius: 5).stroke(isToday ? Routes05Tokens.ink : Color.clear, lineWidth: 1.3))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -384,244 +469,234 @@ struct OrbitCalendarV2View: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    @ViewBuilder
-    private func timelineSection(_ section: OrbitCalendarV2Logic.Section) -> some View {
-        switch section {
-        case .calendar:
-            monthCard
-        case .selectedDate:
-            if selectedDateSectionVisible, let selectedDate {
-                selectedDaySection(selectedDate)
+    private func dateGridSwipeGesture() -> some Gesture {
+        DragGesture(minimumDistance: 40)
+            .onEnded { value in
+                let horizontal = value.translation.width
+                guard value.startLocation.x > 28,
+                      abs(horizontal) > 64,
+                      abs(horizontal) > abs(value.translation.height) * 1.35 else { return }
+                let shift = horizontal < 0 ? 1 : -1
+                if displayMode == .month {
+                    guard let month = calendar.date(byAdding: .month, value: shift, to: visibleMonth),
+                          let date = OrbitCalendarV2Logic.dateClamped(toMonth: month, preservingDayFrom: agendaSelectedDay, calendar: calendar) else { return }
+                    selectAgendaDay(date, loadRange: true)
+                } else if let date = calendar.date(byAdding: .weekOfYear, value: shift, to: agendaSelectedDay) {
+                    selectAgendaDay(date, loadRange: true)
+                }
             }
-        case .today:
-            todaySection
-        case .thisWeek:
-            eventsSection(
-                eyebrow: "THIS WEEK / CURRENT",
-                title: "Цей тиждень",
-                events: timeline.thisWeek,
-                emptyMessage: "На цей тиждень подій немає."
-            )
-        case .nextWeek:
-            eventsSection(
-                eyebrow: "NEXT WEEK",
-                title: "Наступний тиждень",
-                events: timeline.nextWeek,
-                emptyMessage: "На наступний тиждень подій немає."
-            )
-        case .later:
-            nextFiveSection
-        }
     }
 
-    private var todaySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private func agendaDayGroup(_ day: Date, events suppliedEvents: [ConceptCalendarEvent]? = nil) -> some View {
+        let dayEvents = OrbitCalendarV2Logic.orderedAgendaEvents(suppliedEvents ?? agendaEvents(on: day))
+        let isToday = calendar.isDate(day, inSameDayAs: referenceDate)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
-                Image(systemName: "sun.max.fill").font(.caption).accessibilityHidden(true)
-                Text("СЬОГОДНІ · \(ConceptCalendarDates.weekdayLong(referenceDate).capitalized)")
-                    .font(.system(.headline, design: .rounded, weight: .bold))
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 0)
-                Button("Сьогодні") { jumpToToday() }
-                    .font(.caption.weight(.bold))
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Повернути календар до сьогодні")
-            }
-            if timeline.today.isEmpty {
-                Text("На сьогодні подій немає.")
-                    .font(.subheadline)
-                    .foregroundStyle(Routes05Tokens.accentInk)
-                    .padding(.vertical, 5)
-            } else {
-                ForEach(timeline.today, id: \.identityKey) { event in
-                    upcomingRow(event, inTodaySection: true)
+                if isToday {
+                    Image(systemName: "sun.max.fill")
+                        .font(.caption.weight(.bold))
+                        .accessibilityHidden(true)
                 }
+                Text(agendaDayTitle(day))
+                    .font(.system(.headline, design: .rounded, weight: .black))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                Text(agendaDayCaption(day))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Routes05Tokens.secondary)
+            }
+
+            if dayEvents.isEmpty {
+                Group {
+                    if isLoading || agendaLoadingRange {
+                        Text("Завантаження подій…")
+                    } else if agendaLoadFailed || loadError != nil {
+                        Text("Не вдалося завантажити події для цього дня.")
+                    } else if hasLoadedAgendaData {
+                        Text("Немає запланованих подій")
+                    } else {
+                        Text("Список подій ще не завантажено.")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(Routes05Tokens.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Routes05Tokens.surface)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(dayEvents, id: \.identityKey) { event in
+                        agendaEventRow(event, on: day)
+                    }
+                }
+                .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Routes05Tokens.rule, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 9))
             }
         }
         .padding(10)
-        .background(Routes05Tokens.yellow.opacity(colorScheme == .dark ? 0.92 : 0.55))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.yellow, lineWidth: 1.5))
-        .padding(.horizontal, 16)
-        .foregroundStyle(Routes05Tokens.accentInk)
+        .background(isToday ? Routes05Tokens.yellow.opacity(colorScheme == .dark ? 0.32 : 0.48) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(isToday ? Routes05Tokens.yellow : Color.clear, lineWidth: 1.2))
     }
 
-    private func eventsSection(eyebrow label: String, title: String, events: [ConceptCalendarEvent], emptyMessage: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                eyebrow(label)
-                Text(title)
-                    .font(.system(.title2, design: .rounded, weight: .black))
-                    .accessibilityAddTraits(.isHeader)
-            }
-            .padding(.horizontal, 16)
-            eventRows(events, emptyMessage: emptyMessage)
-        }
-    }
+    private func agendaEventRow(_ event: ConceptCalendarEvent, on day: Date) -> some View {
+        let origin = sources.first { $0.id == event.sourceID }
+        let color = origin?.color ?? Routes05Tokens.blue
+        let sourceName = origin?.name ?? "Календар"
+        let dayStart = calendar.startOfDay(for: day)
+        let timeText = event.allDay
+            ? "Весь день"
+            : (event.startsAt < dayStart ? "Триває" : ConceptCalendarDates.time(event.startsAt))
 
-    @ViewBuilder
-    private func eventRows(_ events: [ConceptCalendarEvent], emptyMessage: String) -> some View {
-        if events.isEmpty {
-            if !isLoading {
-                Text(emptyMessage)
-                    .font(.subheadline)
-                    .foregroundStyle(Routes05Tokens.secondary)
-                    .padding(.horizontal, 16)
-            }
-        } else {
-            ForEach(events, id: \.identityKey) { event in
-                upcomingRow(event)
-                    .padding(.horizontal, 16)
-            }
-        }
-    }
-
-    // MARK: — Day selection independent of Next Five
-
-    private func selectedDaySection(_ day: Date) -> some View {
-        let dayEvents = occurrences(on: day).sorted { $0.startsAt < $1.startsAt }
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Text("ОБРАНИЙ ДЕНЬ")
-                    .font(.system(size: 10, weight: .black, design: .monospaced))
-                Spacer()
-                Button("Закрити") { selectedDate = nil }
-                    .font(.caption.weight(.bold))
+        return Button {
+            selectedEvent = event
+        } label: {
+            HStack(alignment: .center, spacing: 9) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(color)
+                    .frame(width: 4, height: 36)
+                    .accessibilityHidden(true)
+                Text(timeText)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(Routes05Tokens.ink)
-                    .frame(minHeight: 44)
-            }
-            Text(ConceptCalendarDates.accessible(day))
-                .font(.system(.title3, design: .rounded, weight: .bold))
-            if dayEvents.isEmpty {
-                Text("Цього дня немає подій у вибраних календарях.")
-                    .font(.subheadline)
-                    .foregroundStyle(Routes05Tokens.secondary)
-            } else {
-                ForEach(dayEvents, id: \.identityKey) { event in
-                    compactDayRow(event)
-                }
-            }
-        }
-        .padding(14)
-        .background(Routes05Tokens.mint.opacity(colorScheme == .dark ? 0.10 : 0.16))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.mint, lineWidth: 1.5))
-        .padding(.horizontal, 16)
-    }
-
-    private func compactDayRow(_ event: ConceptCalendarEvent) -> some View {
-        Button { selectedEvent = event } label: {
-            HStack(alignment: .top, spacing: 9) {
-                RoundedRectangle(cornerRadius: 2).fill(source(event).color).frame(width: 4, height: 40)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(event.title).font(.subheadline.weight(.bold))
-                    Text("\(event.allDay ? "Увесь день" : ConceptCalendarDates.time(event.startsAt)) · \(source(event).name)")
-                        .font(.caption)
-                        .foregroundStyle(Routes05Tokens.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption)
-            }
-            .frame(minHeight: 44)
-            .foregroundStyle(Routes05Tokens.ink)
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: — Five events after the next-week period
-
-    private var nextFiveSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .bottom) {
+                    .frame(width: agendaTimeColumnWidth, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: 4) {
-                    eyebrow("UPCOMING / ALL CALENDARS")
-                    Text("Далі")
-                        .font(.system(.title2, design: .rounded, weight: .black))
-                        .accessibilityAddTraits(.isHeader)
-                }
-                Spacer()
-                Image(systemName: "arrow.down")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(Routes05Tokens.blue)
-            }
-            Text("До п’яти найраніших подій у межах одного календарного місяця.")
-                .font(.footnote)
-                .foregroundStyle(Routes05Tokens.secondary)
-            if nextFive.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: "calendar.badge.checkmark").font(.title2)
-                    Text(coverageComplete ? "Майбутніх подій немає" : "Не вдалося підтвердити повний список")
-                        .font(.headline)
-                    Text(coverageComplete ? "Перевірте, які календарі увімкнені." : "Деякі календарі не повернули повні дані.")
-                        .font(.subheadline)
-                        .foregroundStyle(Routes05Tokens.secondary)
-                    Button("Показати календарі") { showingSources = true }
-                        .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .background(Routes05Tokens.surface)
-            } else {
-                ForEach(nextFive, id: \.identityKey) { event in
-                    upcomingRow(event)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private func upcomingRow(_ event: ConceptCalendarEvent, inTodaySection: Bool = false) -> some View {
-        let origin = source(event)
-        let involved = names(for: event.involvedPersonIDs) + attendeeLabels(event)
-        let associated = ownerNames(event, origin: origin)
-
-        return Button { selectedEvent = event } label: {
-            HStack(alignment: .top, spacing: 11) {
-                RoundedRectangle(cornerRadius: 2).fill(origin.color).frame(width: 4, height: 40)
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(spacing: 6) {
-                        Text(ConceptCalendarDates.relativeDate(event.startsAt, now: referenceDate))
-                            .font(.system(size: 10, weight: .black, design: .monospaced))
-                            .foregroundStyle(Routes05Tokens.secondary)
-                        Spacer(minLength: 0)
-                        Text(event.allDay ? "Увесь день" : ConceptCalendarDates.time(event.startsAt))
-                            .font(.system(.caption, design: .rounded, weight: .bold))
-                    }
                     Text(event.title)
-                        .font(.system(.headline, design: .rounded, weight: .bold))
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Routes05Tokens.ink)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 5) {
-                        Circle().fill(origin.color).frame(width: 7, height: 7)
-                        Text(origin.name)
-                            .font(.caption.weight(.semibold))
-                            .lineLimit(1)
-                        Spacer(minLength: 2)
-                    }
-                    Text("Власник календаря: \(associated.isEmpty ? "Спільний календар" : associated.joined(separator: ", "))")
-                        .font(.caption)
-                        .foregroundStyle(Routes05Tokens.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("Учасники / запрошені:")
-                            .font(.caption.weight(.semibold))
-                        Text(involved.isEmpty ? "Немає" : involved.joined(separator: ", "))
+                        Circle().fill(color).frame(width: 6, height: 6).accessibilityHidden(true)
+                        Text(sourceName)
                             .font(.caption)
                             .foregroundStyle(Routes05Tokens.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !event.attendees.isEmpty {
+                            Text("· \(event.attendees.count) учасн.")
+                                .font(.caption2)
+                                .foregroundStyle(Routes05Tokens.secondary)
+                        }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(Routes05Tokens.secondary)
-                    .padding(.top, 7)
+                    .accessibilityHidden(true)
             }
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(inTodaySection && colorScheme == .dark ? Routes05Tokens.darkSurface : (inTodaySection ? Routes05Tokens.yellow.opacity(0.30) : Routes05Tokens.surface))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1))
-            .foregroundStyle(Routes05Tokens.ink)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(minHeight: 62)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(ConceptCalendarDates.accessible(event.startsAt)). \(event.title). Календар \(origin.name). Пов’язаний із \(associated.joined(separator: ", ")). Залучені \(involved.isEmpty ? "не вказано" : involved.joined(separator: ", "))")
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Відкрити деталі події")
+    }
+
+    private func agendaDays(for events: [ConceptCalendarEvent]) -> [Date] {
+        var days = Set<Date>()
+        for event in events {
+            var day = calendar.startOfDay(for: event.startsAt)
+            let lastInstant = event.endsAt > event.startsAt ? event.endsAt.addingTimeInterval(-1) : event.startsAt
+            let lastDay = calendar.startOfDay(for: lastInstant)
+            while day <= lastDay {
+                days.insert(day)
+                guard let next = calendar.date(byAdding: .day, value: 1, to: day), next > day else { break }
+                day = next
+            }
+        }
+        return days.sorted()
+    }
+
+    private func agendaGroups(for events: [ConceptCalendarEvent], days requestedDays: [Date]? = nil) -> some View {
+        let days = requestedDays ?? agendaDays(for: events)
+        return ForEach(days.filter { day in events.contains { OrbitCalendarV2Logic.occurs($0, on: day, calendar: calendar) } }, id: \.self) { day in
+            agendaDayGroup(day, events: events.filter { OrbitCalendarV2Logic.occurs($0, on: day, calendar: calendar) })
+        }
+    }
+
+    private var agendaUpcomingSection: some View {
+        let visibleKeys = Set(agendaWeekDays.flatMap { agendaEvents(on: $0) }.map(OrbitCalendarV2Logic.eventKey))
+        let nextWeekEvents = timeline.nextWeek.filter { !visibleKeys.contains(OrbitCalendarV2Logic.eventKey($0)) }
+        let nextWeekKeys = Set(nextWeekEvents.map(OrbitCalendarV2Logic.eventKey))
+        let nextWeekWasVisibleAbove = !timeline.nextWeek.isEmpty && nextWeekEvents.isEmpty
+        let laterEvents = timeline.later.filter {
+            let key = OrbitCalendarV2Logic.eventKey($0)
+            return !visibleKeys.contains(key) && !nextWeekKeys.contains(key)
+        }
+        let laterWasVisibleAbove = !timeline.later.isEmpty && laterEvents.isEmpty
+        let nextWeekStart = OrbitCalendarV2Logic.weekInterval(containing: referenceDate, calendar: calendar)?.end
+        let nextWeekDays = nextWeekStart.map { start in
+            (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
+        } ?? []
+
+        return VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("НАСТУПНИЙ ТИЖДЕНЬ")
+                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                    .tracking(1.1)
+                    .foregroundStyle(Routes05Tokens.secondary)
+                if nextWeekWasVisibleAbove {
+                    Text("Події наступного тижня показані вище.")
+                        .font(.caption)
+                        .foregroundStyle(Routes05Tokens.secondary)
+                } else if nextWeekEvents.isEmpty {
+                    Text("На наступний тиждень подій немає.")
+                        .font(.caption)
+                        .foregroundStyle(Routes05Tokens.secondary)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 9))
+                } else {
+                    agendaGroups(for: nextWeekEvents, days: nextWeekDays)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("UPCOMING / SELECTED CALENDARS")
+                            .font(.system(size: 10, weight: .black, design: .monospaced))
+                            .tracking(1.1)
+                            .foregroundStyle(Routes05Tokens.secondary)
+                        Text("Далі")
+                            .font(.system(.title3, design: .rounded, weight: .black))
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.down")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Routes05Tokens.blue)
+                        .accessibilityHidden(true)
+                }
+                Text("До п’яти найраніших подій у межах одного календарного місяця.")
+                    .font(.footnote)
+                    .foregroundStyle(Routes05Tokens.secondary)
+                if laterWasVisibleAbove {
+                    Text("Події цього періоду показані вище.")
+                        .font(.caption)
+                        .foregroundStyle(Routes05Tokens.secondary)
+                } else if laterEvents.isEmpty {
+                    Text(coverageComplete ? "Майбутніх подій немає" : (coverageLoadFailed ? "Не вдалося підтвердити повний список" : "Список майбутніх подій ще завантажується"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Routes05Tokens.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 9))
+                } else {
+                    agendaGroups(for: laterEvents)
+                }
+                if let coverageText {
+                    Text(coverageText)
+                        .font(.caption)
+                        .foregroundStyle(Routes05Tokens.secondary)
+                }
+            }
+        }
     }
 
     private var sourceNote: some View {
@@ -750,7 +825,10 @@ struct OrbitCalendarV2View: View {
     // MARK: — Live data
 
     private func load() async {
+        let navigationGeneration = agendaNavigationGeneration
         isLoading = true
+        agendaLoadFailed = false
+        coverageLoadFailed = false
         #if DEBUG
         if debugFixtureMode {
             let fixture = ConceptCalendarDates.debugFixture(referenceDate: referenceDate)
@@ -762,6 +840,9 @@ struct OrbitCalendarV2View: View {
             coverageText = "DEBUG fixture · synthetic data · API не викликався"
             coverageComplete = true
             loadError = nil
+            hasLoadedAgendaData = true
+            agendaLoadFailed = false
+            coverageLoadFailed = false
             isLoading = false
             if debugDetailMode {
                 selectedEvent = fixture.events.first(where: { $0.id == "fixture-detail" })
@@ -803,18 +884,32 @@ struct OrbitCalendarV2View: View {
             sources = deduplicatedSources(mappedSources + missingSources)
             enabledSourceIDs = Set(apiSources.filter(\.selected).map(\.id))
             enabledSourceIDs.formUnion(missingSources.map(\.id))
-            events = allAPIEvents.map { ConceptCalendarEvent(apiEvent: $0) }
-            liveEvents = allAPIEvents
-            coverageText = upcoming.coverageDescription
-            coverageComplete = upcoming.complete
-            loadError = nil
+            let isLatestNavigation = navigationGeneration == agendaNavigationGeneration
+            let committedEvents = isLatestNavigation
+                ? allAPIEvents
+                : deduplicated(liveEvents + allAPIEvents)
+            liveEvents = committedEvents
+            events = committedEvents.map { ConceptCalendarEvent(apiEvent: $0) }
+            if isLatestNavigation {
+                coverageText = upcoming.coverageDescription
+                coverageComplete = upcoming.complete
+                loadError = nil
+                agendaLoadFailed = false
+                coverageLoadFailed = false
+            }
+            hasLoadedAgendaData = true
         } catch {
-            loadError = error
+            if navigationGeneration == agendaNavigationGeneration {
+                loadError = error
+                agendaLoadFailed = true
+                coverageLoadFailed = true
+            }
         }
         isLoading = false
     }
 
     private func refreshTimelineCoverage() async {
+        let navigationGeneration = agendaNavigationGeneration
         let selectedKeys: Set<String>
         if let selectedDate, selectedDateSectionVisible {
             selectedKeys = Set(occurrences(on: selectedDate).map(OrbitCalendarV2Logic.eventKey))
@@ -829,13 +924,17 @@ struct OrbitCalendarV2View: View {
                 timeZone: calendar.timeZone,
                 excludingEventKeys: selectedKeys
             )
+            guard navigationGeneration == agendaNavigationGeneration else { return }
             let combined = deduplicated(upcoming.events + liveEvents)
             liveEvents = combined
             events = combined.map { ConceptCalendarEvent(apiEvent: $0) }
             coverageText = upcoming.coverageDescription
             coverageComplete = upcoming.complete
+            coverageLoadFailed = false
         } catch {
+            guard navigationGeneration == agendaNavigationGeneration else { return }
             loadError = error
+            coverageLoadFailed = true
         }
     }
 
@@ -847,21 +946,62 @@ struct OrbitCalendarV2View: View {
         return try await MainProductAPI.shared.calendarEvents(from: first, to: end, classifyUnavailable: true)
     }
 
-    private func loadMonth(_ month: Date) async {
-        do {
-            let loaded = try await MainProductAPI.shared.calendarEvents(
-                from: ConceptCalendarDates.monthGrid(month).first ?? month,
-                to: calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: ConceptCalendarDates.monthGrid(month).last ?? month)) ?? month,
-                classifyUnavailable: true
-            )
-            let currentWeekStart = OrbitCalendarV2Logic.weekInterval(containing: referenceDate, calendar: calendar)?.start ?? calendar.startOfDay(for: referenceDate)
-            let merged = deduplicated(liveEvents.filter { $0.startsAt >= currentWeekStart || $0.endsAt > referenceDate } + loaded)
-            liveEvents = merged
-            events = merged.map { ConceptCalendarEvent(apiEvent: $0) }
-            loadError = nil
-        } catch {
-            loadError = error
+    private func loadMonthEvents(_ month: Date) async throws -> [OrbitCalendarEvent] {
+        let monthDates = ConceptCalendarDates.monthGrid(month)
+        let first = monthDates.first ?? month
+        let last = monthDates.last ?? month
+        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: last)) ?? last
+        return try await MainProductAPI.shared.calendarEvents(from: first, to: end, classifyUnavailable: true)
+    }
+
+    private func selectAgendaDay(_ date: Date, loadRange: Bool) {
+        let day = calendar.startOfDay(for: date)
+        let previousMonth = visibleMonth
+        selectedDate = day
+        weekAnchor = day
+        visibleMonth = ConceptCalendarDates.monthStart(day)
+        requestAgendaScroll(to: day)
+
+        let monthChanged = !calendar.isDate(previousMonth, equalTo: visibleMonth, toGranularity: .month)
+        agendaNavigationGeneration += 1
+        let generation = agendaNavigationGeneration
+        agendaNavigationTask?.cancel()
+        agendaLoadingRange = false
+
+        if loadRange || monthChanged {
+            let month = visibleMonth
+            agendaLoadingRange = true
+            agendaNavigationTask = Task {
+                do {
+                    let loaded = try await loadMonthEvents(month)
+                    guard !Task.isCancelled, generation == agendaNavigationGeneration else { return }
+                    let currentWeekStart = OrbitCalendarV2Logic.weekInterval(containing: day, calendar: calendar)?.start ?? day
+                    let retained = liveEvents.filter { $0.startsAt >= currentWeekStart || $0.endsAt > referenceDate }
+                    let merged = deduplicated(loaded + retained)
+                    liveEvents = merged
+                    events = merged.map { ConceptCalendarEvent(apiEvent: $0) }
+                    loadError = nil
+                    agendaLoadFailed = false
+                    hasLoadedAgendaData = true
+                } catch {
+                    guard !Task.isCancelled, generation == agendaNavigationGeneration else { return }
+                    loadError = error
+                    agendaLoadFailed = true
+                }
+                guard generation == agendaNavigationGeneration else { return }
+                agendaLoadingRange = false
+                if selectedDateSectionVisible && timeline.later.count < 5 {
+                    await refreshTimelineCoverage()
+                }
+            }
+        } else if selectedDateSectionVisible && timeline.later.count < 5 {
+            Task { await refreshTimelineCoverage() }
         }
+    }
+
+    private func requestAgendaScroll(to day: Date) {
+        agendaScrollRequest = calendar.startOfDay(for: day)
+        agendaScrollRequestToken = UUID()
     }
 
     private func deduplicated(_ values: [OrbitCalendarEvent]) -> [OrbitCalendarEvent] {
@@ -888,7 +1028,20 @@ struct OrbitCalendarV2View: View {
     }
 
     private func source(_ event: ConceptCalendarEvent) -> ConceptCalendarSource {
-        sources.first(where: { $0.id == event.sourceID }) ?? sources[0]
+        if let source = sources.first(where: { $0.id == event.sourceID }) { return source }
+        if let live = liveEvents.first(where: {
+            $0.id == event.id && ($0.sourceIdentifier ?? $0.sourceType) == event.sourceID
+        }) {
+            return ConceptCalendarSource(event: live)
+        }
+        return ConceptCalendarSource(
+            id: event.sourceID,
+            name: "Календар",
+            accountLabel: "",
+            color: Routes05Tokens.blue,
+            relatedPersonIDs: [],
+            writable: false
+        )
     }
 
     private func names(for ids: [String]) -> [String] {
@@ -937,10 +1090,9 @@ struct OrbitCalendarV2View: View {
     }
 
     private func jumpToToday() {
+        displayMode = .week
         visibleMonth = ConceptCalendarDates.monthStart(referenceDate)
-        selectedDate = calendar.startOfDay(for: referenceDate)
-        weekAnchor = referenceDate
-        Task { await loadMonth(visibleMonth) }
+        selectAgendaDay(referenceDate, loadRange: true)
     }
 
     private func eyebrow(_ value: String) -> some View {

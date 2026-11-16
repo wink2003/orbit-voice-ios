@@ -191,7 +191,7 @@ jobs:
           done
           fi
 
-          if [ "${GITHUB_REF}" = "refs/heads/codex/calendar-v2" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main-orbit-calendar-ux-20261102" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main119-cal-school-ux-20261105" ]; then
+          if [ "${GITHUB_REF}" = "refs/heads/codex/calendar-v2" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main-orbit-calendar-ux-20261102" ] || [ "${GITHUB_REF}" = "refs/heads/codex/main119-cal-school-ux-20261105" ] || [ "${GITHUB_REF}" = "refs/heads/codex/calendar-agenda-ux-20261116" ]; then
             for appearance in light dark; do
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
               sleep 2
@@ -201,6 +201,20 @@ jobs:
               sleep 4
               perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-calendar-${appearance}.png"
               test -s "$out/routes05-calendar-${appearance}.png"
+
+              for state in selected month-expanded; do
+                xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
+                sleep 2
+                state_args=""
+                if [ "$state" = "selected" ]; then state_args="--routes05-calendar-select-tomorrow"; fi
+                if [ "$state" = "month-expanded" ]; then state_args="--routes05-calendar-month-expanded"; fi
+                args="--routes05-calendar --routes05-calendar-fixture $state_args --routes05-appearance $appearance --routes05-capture-id ${GITHUB_RUN_ID}-calendar-${appearance}-${state}"
+                if [ "$appearance" = dark ]; then args="$args --routes05-dark"; fi
+                perl -e 'alarm shift; exec @ARGV' 45 xcrun simctl launch "$device" net.opik.orbit.voice $args
+                sleep 4
+                perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl io "$device" screenshot "$out/routes05-calendar-${appearance}-${state}.png"
+                test -s "$out/routes05-calendar-${appearance}-${state}.png"
+              done
 
               xcrun simctl terminate "$device" net.opik.orbit.voice 2>/dev/null || true
               sleep 2
