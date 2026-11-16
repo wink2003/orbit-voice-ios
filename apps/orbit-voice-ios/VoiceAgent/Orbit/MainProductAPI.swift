@@ -467,12 +467,16 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
     var organizer: OrbitCalendarOrganizer? = nil
     var attendees: [OrbitCalendarAttendee]? = nil
     var calendarOwners: [String]? = nil
+    // Optional canonical presentation metadata; legacy sourceIdentifier remains event provenance.
+    var calendarSourceId: String? = nil
+    var category: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case id, familyId, ownerPersonId, title, notes, startsAt, endsAt, allDay
         case sourceType, sourceIdentifier, sourceName, sourceColor, createdAt, updatedAt
         case occurrenceId, startDate, endDate, timeZone
         case location, mirrorEventId, capabilities, organizer, attendees, calendarOwners
+        case calendarSourceId, category
     }
 
     init(
@@ -539,6 +543,8 @@ struct OrbitCalendarEvent: Codable, Identifiable, Hashable {
         organizer = try values.decodeIfPresent(OrbitCalendarOrganizer.self, forKey: .organizer)
         attendees = try values.decodeIfPresent([OrbitCalendarAttendee].self, forKey: .attendees)
         calendarOwners = try values.decodeIfPresent([String].self, forKey: .calendarOwners)
+        calendarSourceId = try values.decodeIfPresent(String.self, forKey: .calendarSourceId)
+        category = try values.decodeIfPresent(String.self, forKey: .category)
 
         let eventCalendarTimeZone = timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
         if allDay, let startDate, let localStart = OrbitCalendarV2Logic.localCalendarDate(startDate, timeZone: eventCalendarTimeZone) {

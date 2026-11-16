@@ -21,6 +21,8 @@ struct OrbitCalendarView: View {
 struct OrbitCalendarV2View: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var authentication: OrbitAuthentication
+    @AppStorage("orbit.calendar.agenda.navigationPinned") private var navigationPinned = true
 
     private let calendar = ConceptCalendarDates.calendar
     private let debugFixtureMode: Bool
@@ -41,6 +43,12 @@ struct OrbitCalendarV2View: View {
     @State private var isLoading = true
     @State private var loadError: Error?
     @State private var showingSources = false
+    @State private var agendaFilter: OrbitCalendarV2Logic.AgendaFilter = .all
+    @State private var providerSourceIDs: Set<String> = []
+    @State private var colorOverrides: [String: String] = [:]
+    @State private var hiddenLocalSources: Set<String> = []
+    @State private var preferencesScope: String?
+    @State private var colorPickerSourceID: String?
     @State private var showingCreator = false
     @State private var providerEditing: OrbitCalendarEvent?
     @State private var selectedEvent: ConceptCalendarEvent?
@@ -90,7 +98,69 @@ struct OrbitCalendarV2View: View {
     }
 
     private var activeEvents: [ConceptCalendarEvent] {
-        events.filter { enabledSourceIDs.contains($0.sourceID) }
+        events.filter {
+            enabledSourceIDs.contains($0.sourceID) && agendaFilter.includes(isSchool: $0.isSchool)
+        }
+    }
+
+    private var preferenceKey: String? {
+        guard authentication.identityResolved, let person = authentication.personId else { return nil }
+        return "orbit.calendar.preferences.v1.\(authentication.principalPersonId ?? person):\(person)"
+    }
+
+    private static let calendarPalette: [(name: String, hex: String)] = [
+        ("Синій", "#4560ED"), ("Блакитний", "#209BD8"), ("М’ятний", "#2EBFA9"),
+        ("Зелений", "#38A65B"), ("Оливковий", "#8D9E39"), ("Жовтий", "#D9AE19"),
+        ("Помаранчевий", "#F28C28"), ("Кораловий", "#ED6D67"), ("Червоний", "#DB4055"),
+        ("Рожевий", "#D856A2"), ("Фіолетовий", "#8C5DDB"), ("Графітовий", "#687680")
+    ]
+
+    private func restorePreferences() {
+        preferencesScope = preferenceKey
+        colorPickerSourceID = nil
+        guard let key = preferenceKey, !debugFixtureMode else {
+            colorOverrides = [:]
+            hiddenLocalSources = []
+            return
+        }
+        colorOverrides = UserDefaults.standard.dictionary(forKey: key + ".colors") as? [String: String] ?? [:]
+        hiddenLocalSources = Set(UserDefaults.standard.stringArray(forKey: key + ".hiddenLocal") ?? [])
+    }
+
+    private func savePreferences() {
+        guard let key = preferenceKey, preferencesScope == key, !debugFixtureMode else { return }
+        UserDefaults.standard.set(colorOverrides, forKey: key + ".colors")
+        UserDefaults.standard.set(Array(hiddenLocalSources).sorted(), forKey: key + ".hiddenLocal")
+    }
+
+    private func calendarColor(_ source: ConceptCalendarSource) -> Color {
+        guard preferencesScope == preferenceKey,
+              let hex = colorOverrides[source.id], let color = Color(calendarHex: hex) else { return source.color }
+        return color
+    }
+
+    private func chooseColor(_ hex: String?, for source: ConceptCalendarSource) {
+        if preferencesScope != preferenceKey { restorePreferences() }
+        colorOverrides[source.id] = hex
+        savePreferences()
+    }
+
+    private func isLocalPresentationSource(_ id: String) -> Bool {
+        id == "orbit_local" || id == "school:gymnasium" || !providerSourceIDs.contains(id)
+    }
+
+    private func registerPresentationSources(for values: [OrbitCalendarEvent]) {
+        let existing = Set(sources.map(\.id))
+        let missing = values.compactMap { event -> ConceptCalendarSource? in
+            let id = OrbitCalendarV2Logic.calendarSourceID(sourceType: event.sourceType, sourceIdentifier: event.sourceIdentifier, canonicalID: event.calendarSourceId)
+            guard !existing.contains(id) else { return nil }
+            return ConceptCalendarSource(event: event)
+        }
+        sources = deduplicatedSources(sources + missing)
+        for source in sources where isLocalPresentationSource(source.id) {
+            if hiddenLocalSources.contains(source.id) { enabledSourceIDs.remove(source.id) }
+            else { enabledSourceIDs.insert(source.id) }
+        }
     }
 
     // The later queue remains independent of the displayed calendar and is
@@ -171,15 +241,23 @@ struct OrbitCalendarV2View: View {
                 ProviderEventEditor(event: event) { await load() }
             }
             .task {
+                restorePreferences()
                 await load()
                 #if DEBUG
-                if !Routes05DebugCapture.scrollToBottom { requestAgendaScroll(to: selectedDate ?? referenceDate) }
+                if navigationPinned && !Routes05DebugCapture.scrollToBottom { requestAgendaScroll(to: selectedDate ?? referenceDate) }
                 #else
-                requestAgendaScroll(to: selectedDate ?? referenceDate)
+                if navigationPinned { requestAgendaScroll(to: selectedDate ?? referenceDate) }
                 #endif
             }
+            .onChange(of: preferenceKey) { _, _ in
+                restorePreferences()
+                for source in sources where isLocalPresentationSource(source.id) {
+                    if hiddenLocalSources.contains(source.id) { enabledSourceIDs.remove(source.id) }
+                    else { enabledSourceIDs.insert(source.id) }
+                }
+            }
             .onChange(of: scenePhase) { _, phase in
-                guard phase == .active else { return }
+                guard phase == .active, !debugFixtureMode else { return }
                 referenceDate = .now
                 Task { await load() }
             }
@@ -196,42 +274,31 @@ struct OrbitCalendarV2View: View {
 
     private func agendaLayout(proxy: ScrollViewProxy) -> some View {
         VStack(spacing: 0) {
-            Routes05Mast(section: "calendar", action: { showingSources = true }, backAction: onBack, backLabel: "Назад")
-            hero
-                .padding(.bottom, 4)
-
-            HStack(spacing: 8) {
-                Text(ConceptCalendarDates.monthYear(visibleMonth))
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Routes05Tokens.ink)
-                Spacer(minLength: 8)
-                Button {
-                    displayMode = .week
-                    selectAgendaDay(referenceDate, loadRange: true)
-                } label: {
-                    Text("Сьогодні")
-                        .font(.caption.weight(.bold))
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: 44)
-                        .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Routes05Tokens.rule, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Повернутися до сьогодні")
-            }
-            .padding(.horizontal, 16)
-
-            monthCard
-            agendaSourceBar
-            Divider()
+            if navigationPinned { calendarNavigation }
             agendaScrollContent(proxy: proxy)
         }
         .background(Routes05Tokens.canvas.ignoresSafeArea())
+        .onChange(of: navigationPinned) { _, pinned in
+            if pinned { requestAgendaScroll(to: agendaSelectedDay) }
+            else { DispatchQueue.main.async { proxy.scrollTo("calendar-navigation", anchor: .top) } }
+        }
+    }
+
+    private var calendarNavigation: some View {
+        VStack(spacing: 0) {
+            compactCalendarHeader
+            monthCard
+            agendaSourceBar
+            Divider()
+        }
+        .background(Routes05Tokens.canvas)
+        .id("calendar-navigation")
     }
 
     private func agendaScrollContent(proxy: ScrollViewProxy) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 6) {
+                if !navigationPinned { calendarNavigation }
                 ForEach(agendaWeekDays, id: \.self) { day in
                     agendaDayGroup(day)
                         .id(day)
@@ -241,7 +308,7 @@ struct OrbitCalendarV2View: View {
                 Color.clear.frame(height: 1).id("routes05-bottom")
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .padding(.top, 4)
             .padding(.bottom, 16)
             .scrollTargetLayout()
         }
@@ -279,75 +346,98 @@ struct OrbitCalendarV2View: View {
 
     // MARK: — Intro and today
 
-    private var hero: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                eyebrow("FAMILY / SHARED TIME")
-                Text("Календар.")
-                    .font(.system(.title2, design: .rounded, weight: .black))
-                    .tracking(-1.2)
-                    .accessibilityAddTraits(.isHeader)
+    private var compactCalendarHeader: some View {
+        HStack(spacing: 6) {
+            if let onBack { Routes05BackButton(label: "Назад", action: onBack) }
+            ZStack {
+                Circle().stroke(Routes05Tokens.ink, lineWidth: 1.7)
+                Circle().fill(Routes05Tokens.mint).frame(width: 7, height: 7)
             }
+            .frame(width: 23, height: 23)
+            .accessibilityHidden(true)
+            Text("Календар")
+                .font(.system(.headline, design: .rounded, weight: .black))
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 4)
             Button(action: openCreator) {
                 Image(systemName: "plus")
-                    .font(.system(size: 25, weight: .black))
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(Routes05Tokens.accentInk)
-                    .frame(width: 46, height: 46)
+                    .frame(width: 30, height: 30)
                     .background(Routes05Tokens.yellow, in: Circle())
-                    .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 2))
+                    .overlay(Circle().stroke(Routes05Tokens.ink, lineWidth: 1.2))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Додати подію")
             .orbitRequires(.calendarProviderWrite)
+            Button { showingSources = true } label: {
+                Image(systemName: "ellipsis")
+                    .font(.headline.weight(.bold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Налаштування календаря")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .overlay(alignment: .bottom) { Rectangle().fill(Routes05Tokens.ink).frame(height: 1) }
     }
 
     private var agendaSourceBar: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 4) {
-                ForEach(sources.filter { enabledSourceIDs.contains($0.id) }) { source in
-                    Circle().fill(source.color).frame(width: 7, height: 7)
+        HStack(spacing: 7) {
+            ForEach(OrbitCalendarV2Logic.AgendaFilter.allCases, id: \.self) { filter in
+                Button {
+                    agendaFilter = filter
+                } label: {
+                    Text(filter.title)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(agendaFilter == filter ? Routes05Tokens.accentInk : Routes05Tokens.ink)
+                        .background(agendaFilter == filter ? Routes05Tokens.yellow : Color.clear, in: Capsule())
+                        .overlay(Capsule().stroke(Routes05Tokens.rule, lineWidth: 1))
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(agendaFilter == filter ? .isSelected : [])
             }
-            Text("Календарі: \(enabledSourceIDs.count) із \(sources.count)")
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            Button { showingSources = true } label: {
-                Label("Фільтри", systemImage: "slider.horizontal.3")
-                    .font(.caption.weight(.bold))
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.plain)
+            Spacer(minLength: 0)
         }
-        .foregroundStyle(Routes05Tokens.ink)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
     }
 
     // MARK: — Current week, expandable to a complete month
 
     private var monthCard: some View {
-        VStack(alignment: .leading, spacing: displayMode == .week ? 2 : 9) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(displayMode == .month ? ConceptCalendarDates.monthYear(visibleMonth) : ConceptCalendarDates.compactWeekRange(collapsedWeekAnchor))
-                        .font(.system(displayMode == .month ? .subheadline : .caption, design: .rounded, weight: .black))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                Text(displayMode == .month ? ConceptCalendarDates.monthYear(visibleMonth) : ConceptCalendarDates.compactWeekRange(collapsedWeekAnchor))
+                    .font(.system(.subheadline, design: .rounded, weight: .black))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .accessibilityAddTraits(.isHeader)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: jumpToToday) {
+                    Text("Сьогодні")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 4)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
-                Spacer()
+                .buttonStyle(.plain)
+                .accessibilityLabel("Повернутися до сьогодні")
                 monthArrow("chevron.left", shift: -1, label: displayMode == .month ? "Попередній місяць" : "Попередній тиждень")
                 monthArrow("chevron.right", shift: 1, label: displayMode == .month ? "Наступний місяць" : "Наступний тиждень")
                 Button(action: toggleMonthDisplay) {
                     Image(systemName: displayMode == .week ? "chevron.down" : "chevron.up")
                         .font(.caption.weight(.bold))
                         .frame(width: 44, height: 44)
-                        .foregroundStyle(Routes05Tokens.ink)
-                        .background(Routes05Tokens.canvas)
-                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Routes05Tokens.rule, lineWidth: 1))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(displayMode == .week ? "Розгорнути календар на місяць" : "Згорнути календар до тижня")
@@ -361,40 +451,22 @@ struct OrbitCalendarV2View: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
+                .padding(.bottom, 2)
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 3), count: 7), spacing: 4) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 0), count: 7), spacing: 0) {
                 ForEach(displayMode == .month ? ConceptCalendarDates.monthGrid(visibleMonth) : OrbitCalendarV2Logic.weekDays(containing: collapsedWeekAnchor, calendar: calendar), id: \.self) { day in
                     dayButton(day)
                 }
             }
             .simultaneousGesture(dateGridSwipeGesture())
-            if displayMode == .month {
-                HStack(spacing: 7) {
-                    Image(systemName: "circle.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Routes05Tokens.yellow)
-                    Text("Жовтий — обраний день")
-                    Spacer()
-                    Text("Контур — сьогодні · крапки — події")
-                }
-                .font(.system(size: 10))
-                .foregroundStyle(Routes05Tokens.secondary)
-            }
-            if isLoading {
-                ProgressView("Завантаження календаря…")
-                    .font(.caption)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if agendaLoadingRange {
-                ProgressView("Завантаження подій…")
-                    .font(.caption)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if isLoading || agendaLoadingRange {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .accessibilityLabel("Завантаження календаря")
             }
         }
-        .padding(displayMode == .month ? 10 : 5)
-        .background(Routes05Tokens.surface)
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Routes05Tokens.rule, lineWidth: 1.3))
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
     }
 
     private func toggleMonthDisplay() {
@@ -402,6 +474,7 @@ struct OrbitCalendarV2View: View {
             visibleMonth = ConceptCalendarDates.monthStart(agendaSelectedDay)
         }
         withAnimation(.easeInOut(duration: 0.2)) { displayMode.toggle() }
+        if navigationPinned { requestAgendaScroll(to: agendaSelectedDay) }
     }
 
     private func monthArrow(_ symbol: String, shift: Int, label: String) -> some View {
@@ -416,11 +489,10 @@ struct OrbitCalendarV2View: View {
             }
         } label: {
             Image(systemName: symbol)
-                .font(.subheadline.weight(.black))
+                .font(.subheadline.weight(.semibold))
                 .frame(width: 44, height: 44)
                 .foregroundStyle(Routes05Tokens.ink)
-                .background(Routes05Tokens.canvas)
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Routes05Tokens.rule, lineWidth: 1))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -431,12 +503,14 @@ struct OrbitCalendarV2View: View {
         let isSelected = selectedDate.map { calendar.isDate(day, inSameDayAs: $0) } ?? false
         let inMonth = calendar.isDate(day, equalTo: visibleMonth, toGranularity: .month)
         let dayEvents = occurrences(on: day)
-        let colors = Array(Set(dayEvents.map(\.sourceID))).sorted().compactMap { id in sources.first(where: { $0.id == id })?.color }
+        let colors = Array(Set(dayEvents.map(\.sourceID))).sorted().compactMap { id in
+            sources.first(where: { $0.id == id }).map { calendarColor($0) }
+        }
 
         return Button {
             selectAgendaDay(day, loadRange: !inMonth)
         } label: {
-            VStack(spacing: displayMode == .week ? 0 : 4) {
+            VStack(spacing: displayMode == .week ? 0 : 1) {
                 if displayMode == .week {
                     Text(ConceptCalendarDates.weekdayInitial(day))
                         .font(.caption2.weight(.bold).monospaced())
@@ -458,10 +532,18 @@ struct OrbitCalendarV2View: View {
             // Week strip: keep the weekday initial clear of the card's top edge
             // (the label sat ~2pt from the border) without shrinking other content.
             .padding(.top, displayMode == .week ? OrbitCalendarCardMetrics.weekdayTopInset : 0)
-            .frame(maxWidth: .infinity, minHeight: displayMode == .week ? OrbitCalendarCardMetrics.weekCardMinHeight : 44)
+            .frame(maxWidth: .infinity, minHeight: displayMode == .week ? OrbitCalendarCardMetrics.weekCardMinHeight : OrbitCalendarCardMetrics.monthCellMinHeight)
             .foregroundStyle(isSelected ? Routes05Tokens.accentInk : (inMonth ? Routes05Tokens.ink : Routes05Tokens.secondary.opacity(0.52)))
-            .background(isSelected ? Routes05Tokens.yellow : Color.clear)
-            .overlay(RoundedRectangle(cornerRadius: 5).stroke(isToday ? Routes05Tokens.ink : Color.clear, lineWidth: 1.3))
+            .background {
+                RoundedRectangle(cornerRadius: 11)
+                    .fill(isSelected ? Routes05Tokens.yellow : Color.clear)
+                    .frame(width: 36, height: displayMode == .week ? 46 : 40)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 11)
+                    .stroke(isToday ? Routes05Tokens.ink : Color.clear, lineWidth: 1.2)
+                    .frame(width: 36, height: displayMode == .week ? 46 : 40)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -490,8 +572,8 @@ struct OrbitCalendarV2View: View {
     private func agendaDayGroup(_ day: Date, events suppliedEvents: [ConceptCalendarEvent]? = nil) -> some View {
         let dayEvents = OrbitCalendarV2Logic.orderedAgendaEvents(suppliedEvents ?? agendaEvents(on: day))
         let isToday = calendar.isDate(day, inSameDayAs: referenceDate)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
                 if isToday {
                     Image(systemName: "sun.max.fill")
                         .font(.caption.weight(.bold))
@@ -521,27 +603,26 @@ struct OrbitCalendarV2View: View {
                 .font(.caption)
                 .foregroundStyle(Routes05Tokens.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(Routes05Tokens.surface)
+                .padding(.vertical, 6)
             } else {
                 VStack(spacing: 0) {
                     ForEach(dayEvents, id: \.identityKey) { event in
                         agendaEventRow(event, on: day)
+                        if event.identityKey != dayEvents.last?.identityKey {
+                            Divider().padding(.leading, 8)
+                        }
                     }
                 }
-                .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 9))
-                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Routes05Tokens.rule, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 9))
             }
         }
-        .padding(10)
-        .background(isToday ? Routes05Tokens.yellow.opacity(colorScheme == .dark ? 0.32 : 0.48) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(isToday ? Routes05Tokens.yellow : Color.clear, lineWidth: 1.2))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(isToday ? Routes05Tokens.yellow.opacity(colorScheme == .dark ? 0.18 : 0.30) : Color.clear, in: RoundedRectangle(cornerRadius: 9))
     }
 
     private func agendaEventRow(_ event: ConceptCalendarEvent, on day: Date) -> some View {
         let origin = sources.first { $0.id == event.sourceID }
-        let color = origin?.color ?? Routes05Tokens.blue
+        let color = origin.map { calendarColor($0) } ?? Routes05Tokens.blue
         let sourceName = origin?.name ?? "Календар"
         let dayStart = calendar.startOfDay(for: day)
         let timeText = event.allDay
@@ -587,9 +668,9 @@ struct OrbitCalendarV2View: View {
                     .foregroundStyle(Routes05Tokens.secondary)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
-            .frame(minHeight: 62)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 4)
+            .frame(minHeight: OrbitCalendarCardMetrics.agendaRowMinHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -681,7 +762,7 @@ struct OrbitCalendarV2View: View {
                         .font(.caption)
                         .foregroundStyle(Routes05Tokens.secondary)
                 } else if laterEvents.isEmpty {
-                    Text(coverageComplete ? "Майбутніх подій немає" : (coverageLoadFailed ? "Не вдалося підтвердити повний список" : "Список майбутніх подій ще завантажується"))
+                    Text(agendaFilter != .all ? "У завантаженому списку немає подій цієї категорії" : (coverageComplete ? "Майбутніх подій немає" : (coverageLoadFailed ? "Не вдалося підтвердити повний список" : "Список майбутніх подій ще завантажується")))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Routes05Tokens.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -715,41 +796,85 @@ struct OrbitCalendarV2View: View {
     private var sourceManager: some View {
         NavigationStack {
             List {
-                Section {
-                    Text("Виберіть, які календарі відображаються. Фільтр змінює календар і блок «Далі».")
-                        .font(.footnote)
+                Section("Вигляд") {
+                    Toggle("Фіксувати навігацію", isOn: $navigationPinned)
                 }
-                ForEach(sources) { source in
-                    Toggle(isOn: Binding(
-                        get: { enabledSourceIDs.contains(source.id) },
-                        set: { enabled in
-                            setSourceEnabled(source.id, enabled)
-                        }
-                    )) {
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(spacing: 8) {
-                                Circle().fill(source.color).frame(width: 12, height: 12)
-                                Text(source.name).font(.headline)
+                Section {
+                    ForEach(sources) { source in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 10) {
+                                Button {
+                                    colorPickerSourceID = colorPickerSourceID == source.id ? nil : source.id
+                                } label: {
+                                    ZStack {
+                                        Circle().fill(calendarColor(source)).frame(width: 24, height: 24)
+                                        Image(systemName: "chevron.down")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(.white)
+                                    }
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Колір календаря \(source.name)")
+                                Toggle(isOn: Binding(
+                                    get: { enabledSourceIDs.contains(source.id) },
+                                    set: { setSourceEnabled(source.id, $0) }
+                                )) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(source.name).font(.subheadline.weight(.semibold))
+                                        if !source.writable {
+                                            Text("Лише перегляд").font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
                             }
-                            Text(source.accountLabel)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("Прив’язка до сімейних профілів не надана сервером")
-                                .font(.caption)
-                            if !source.writable {
-                                Label("Лише перегляд", systemImage: "eye")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                            if colorPickerSourceID == source.id {
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 0), count: 6), spacing: 4) {
+                                    ForEach(Self.calendarPalette.indices, id: \.self) { index in
+                                        let entry = Self.calendarPalette[index]
+                                        Button {
+                                            chooseColor(entry.hex, for: source)
+                                        } label: {
+                                            ZStack {
+                                                Circle().fill(Color(calendarHex: entry.hex) ?? Routes05Tokens.blue)
+                                                    .frame(width: 28, height: 28)
+                                                if colorOverrides[source.id] == entry.hex {
+                                                    Image(systemName: "checkmark")
+                                                        .font(.caption.weight(.bold))
+                                                        .foregroundStyle(.white)
+                                                }
+                                            }
+                                            .frame(minWidth: 44, minHeight: 44)
+                                            .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel(entry.name)
+                                        .accessibilityAddTraits(colorOverrides[source.id] == entry.hex ? .isSelected : [])
+                                    }
+                                }
+                                Button("Початковий колір") { chooseColor(nil, for: source) }
+                                    .buttonStyle(.plain)
+                                    .font(.caption.weight(.semibold))
+                                    .frame(minHeight: 44)
                             }
                         }
                     }
+                } header: {
+                    Text("Календарі")
+                } footer: {
+                    Text("Кольори зберігаються на цьому iPhone. Вибір календарів обмежує показані події, а не права доступу.")
                 }
             }
             .navigationTitle("Календарі")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Усі") { enabledSourceIDs = Set(sources.map(\.id)) }
+                    Button("Усі") {
+                        hiddenLocalSources.removeAll()
+                        savePreferences()
+                        enabledSourceIDs = Set(sources.map(\.id))
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Готово") { showingSources = false }
@@ -770,6 +895,13 @@ struct OrbitCalendarV2View: View {
         if enabled { enabledSourceIDs.insert(id) }
         else { enabledSourceIDs.remove(id) }
         guard sources.contains(where: { $0.id == id }) else { return }
+        if isLocalPresentationSource(id) {
+            if preferencesScope != preferenceKey { restorePreferences() }
+            if enabled { hiddenLocalSources.remove(id) }
+            else { hiddenLocalSources.insert(id) }
+            savePreferences()
+            return
+        }
         Task {
             do {
                 _ = try await MainProductAPI.shared.updateCalendarSource(id: id, selected: enabled)
@@ -782,7 +914,7 @@ struct OrbitCalendarV2View: View {
     private func eventDetail(_ event: ConceptCalendarEvent) -> some View {
         let live = liveEvents.first {
             if let occurrenceId = event.occurrenceId { return $0.occurrenceId == occurrenceId }
-            return $0.id == event.id && ($0.sourceIdentifier ?? $0.sourceType) == event.sourceID
+            return $0.id == event.id && $0.sourceType == event.sourceType && $0.sourceIdentifier == event.sourceIdentifier
         }
         return NavigationStack {
             List {
@@ -833,7 +965,8 @@ struct OrbitCalendarV2View: View {
         if debugFixtureMode {
             let fixture = ConceptCalendarDates.debugFixture(referenceDate: referenceDate)
             sources = fixture.sources
-            enabledSourceIDs = Set(fixture.sources.map(\.id))
+            providerSourceIDs = []
+            enabledSourceIDs = Set(fixture.sources.map(\.id)).subtracting(hiddenLocalSources)
             events = fixture.events
             liveEvents = []
             people = fixture.people
@@ -873,17 +1006,13 @@ struct OrbitCalendarV2View: View {
 
             people = profiles.map { ConceptCalendarPerson(id: $0.personId, name: $0.displayName) }
             let mappedSources = apiSources.map(ConceptCalendarSource.init)
+            providerSourceIDs = Set(apiSources.map(\.id))
             // Later-mode rows carry recurrence identity and local all-day dates;
             // keep those richer values when the same occurrence is also in a legacy window.
             let allAPIEvents = deduplicated(upcoming.events + monthEvents + weekEvents)
-            let missingSources = allAPIEvents.compactMap { event -> ConceptCalendarSource? in
-                let sourceID = event.sourceIdentifier ?? event.sourceType
-                guard !mappedSources.contains(where: { $0.id == sourceID }) else { return nil }
-                return ConceptCalendarSource(event: event)
-            }
-            sources = deduplicatedSources(mappedSources + missingSources)
+            sources = deduplicatedSources(mappedSources)
             enabledSourceIDs = Set(apiSources.filter(\.selected).map(\.id))
-            enabledSourceIDs.formUnion(missingSources.map(\.id))
+            registerPresentationSources(for: allAPIEvents)
             let isLatestNavigation = navigationGeneration == agendaNavigationGeneration
             let committedEvents = isLatestNavigation
                 ? allAPIEvents
@@ -926,6 +1055,7 @@ struct OrbitCalendarV2View: View {
             )
             guard navigationGeneration == agendaNavigationGeneration else { return }
             let combined = deduplicated(upcoming.events + liveEvents)
+            registerPresentationSources(for: combined)
             liveEvents = combined
             events = combined.map { ConceptCalendarEvent(apiEvent: $0) }
             coverageText = upcoming.coverageDescription
@@ -978,6 +1108,7 @@ struct OrbitCalendarV2View: View {
                     let currentWeekStart = OrbitCalendarV2Logic.weekInterval(containing: day, calendar: calendar)?.start ?? day
                     let retained = liveEvents.filter { $0.startsAt >= currentWeekStart || $0.endsAt > referenceDate }
                     let merged = deduplicated(loaded + retained)
+                    registerPresentationSources(for: merged)
                     liveEvents = merged
                     events = merged.map { ConceptCalendarEvent(apiEvent: $0) }
                     loadError = nil
@@ -1030,7 +1161,7 @@ struct OrbitCalendarV2View: View {
     private func source(_ event: ConceptCalendarEvent) -> ConceptCalendarSource {
         if let source = sources.first(where: { $0.id == event.sourceID }) { return source }
         if let live = liveEvents.first(where: {
-            $0.id == event.id && ($0.sourceIdentifier ?? $0.sourceType) == event.sourceID
+            $0.id == event.id && $0.sourceType == event.sourceType && $0.sourceIdentifier == event.sourceIdentifier
         }) {
             return ConceptCalendarSource(event: live)
         }
@@ -1138,7 +1269,7 @@ private struct ConceptCalendarSource: Identifiable {
     }
 
     init(event: OrbitCalendarEvent) {
-        id = event.sourceIdentifier ?? event.sourceType
+        id = OrbitCalendarV2Logic.calendarSourceID(sourceType: event.sourceType, sourceIdentifier: event.sourceIdentifier, canonicalID: event.calendarSourceId)
         name = event.sourceName ?? (event.sourceType == "orbit_family" ? "Сімейний Orbit" : "Зовнішній календар")
         accountLabel = event.sourceType == "orbit_family" ? "Orbit · сімейний" : "Зовнішнє підключення"
         color = Color(calendarHex: event.sourceColor) ?? (event.sourceType == "orbit_family" ? Routes05Tokens.mint : Routes05Tokens.blue)
@@ -1159,9 +1290,9 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
     let occurrenceId: String?
     let calendarOwnerIDs: [String]
     let attendees: [OrbitCalendarAttendee]
-
-    var sourceType: String { sourceID }
-    var sourceIdentifier: String? { nil }
+    let sourceType: String
+    let sourceIdentifier: String?
+    let isSchool: Bool
     var identityKey: String { OrbitCalendarV2Logic.eventKey(self) }
 
     init(id: String, title: String, startsAt: Date, endsAt: Date, allDay: Bool, sourceID: String, involvedPersonIDs: [String], notes: String) {
@@ -1171,6 +1302,9 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
         self.endsAt = endsAt
         self.allDay = allDay
         self.sourceID = sourceID
+        self.sourceType = sourceID
+        self.sourceIdentifier = nil
+        self.isSchool = OrbitCalendarV2Logic.isSchoolEvent(sourceType: sourceID, sourceIdentifier: nil)
         self.involvedPersonIDs = involvedPersonIDs
         self.notes = notes
         self.occurrenceId = nil
@@ -1184,7 +1318,10 @@ private struct ConceptCalendarEvent: Identifiable, OrbitCalendarV2EventLike {
         startsAt = apiEvent.startsAt
         endsAt = apiEvent.endsAt
         allDay = apiEvent.allDay
-        sourceID = apiEvent.sourceIdentifier ?? apiEvent.sourceType
+        sourceID = OrbitCalendarV2Logic.calendarSourceID(sourceType: apiEvent.sourceType, sourceIdentifier: apiEvent.sourceIdentifier, canonicalID: apiEvent.calendarSourceId)
+        sourceType = apiEvent.sourceType
+        sourceIdentifier = apiEvent.sourceIdentifier
+        isSchool = OrbitCalendarV2Logic.isSchoolEvent(sourceType: apiEvent.sourceType, sourceIdentifier: apiEvent.sourceIdentifier, category: apiEvent.category)
         involvedPersonIDs = []
         notes = apiEvent.notes
         occurrenceId = apiEvent.occurrenceId
@@ -1271,6 +1408,9 @@ private enum ConceptCalendarDates {
         ]
         let events = [
             ConceptCalendarEvent(id: "fixture-today", title: "Сьогодні · сімейний обід", startsAt: date(0, 12), endsAt: date(0, 13), allDay: false, sourceID: "fixture-family", involvedPersonIDs: [], notes: "Synthetic fixture"),
+            ConceptCalendarEvent(id: "fixture-today-2", title: "Математика", startsAt: date(0, 13), endsAt: date(0, 14), allDay: false, sourceID: "fixture-school", involvedPersonIDs: [], notes: "Synthetic fixture"),
+            ConceptCalendarEvent(id: "fixture-today-3", title: "Зустріч", startsAt: date(0, 15), endsAt: date(0, 16), allDay: false, sourceID: "fixture-icloud", involvedPersonIDs: [], notes: "Synthetic fixture"),
+            ConceptCalendarEvent(id: "fixture-today-4", title: "Покупки", startsAt: date(0, 17), endsAt: date(0, 18), allDay: false, sourceID: "fixture-family", involvedPersonIDs: [], notes: "Synthetic fixture"),
             ConceptCalendarEvent(id: "fixture-detail", title: "Сімейна вечеря", startsAt: date(1, 18, 30), endsAt: date(1, 20), allDay: false, sourceID: "fixture-family", involvedPersonIDs: [], notes: "Місце: кухня"),
             ConceptCalendarEvent(id: "fixture-all-day", title: "Осінні канікули", startsAt: date(3, 0), endsAt: date(6, 0), allDay: true, sourceID: "fixture-icloud", involvedPersonIDs: [], notes: "Multi-day fixture"),
             ConceptCalendarEvent(id: "fixture-overlap", title: "Плавання", startsAt: date(4, 17), endsAt: date(4, 18), allDay: false, sourceID: "fixture-school", involvedPersonIDs: [], notes: "Overlapping source"),
@@ -1289,11 +1429,13 @@ private enum ConceptCalendarDates {
 #Preview("Calendar · light") {
     OrbitCalendarV2View()
         .preferredColorScheme(.light)
+        .environmentObject(OrbitAuthentication())
 }
 
 #Preview("Calendar · dark") {
     OrbitCalendarV2View()
         .preferredColorScheme(.dark)
+        .environmentObject(OrbitAuthentication())
 }
 
 private extension Color {

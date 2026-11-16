@@ -35,6 +35,42 @@ enum OrbitCalendarV2Logic {
         }
     }
 
+    // Calendar identity is distinct from event provenance and occurrence identity.
+    enum AgendaFilter: String, CaseIterable, Hashable {
+        case all, family, school
+        var title: String {
+            switch self {
+            case .all: return "Усі"
+            case .family: return "Сімейні"
+            case .school: return "Школа"
+            }
+        }
+        func includes(isSchool: Bool) -> Bool {
+            switch self {
+            case .all: return true
+            case .family: return !isSchool
+            case .school: return isSchool
+            }
+        }
+    }
+
+    static func calendarSourceID(sourceType: String, sourceIdentifier: String?, canonicalID: String? = nil) -> String {
+        if let canonicalID, !canonicalID.isEmpty { return canonicalID }
+        if sourceType == "orbit_family" { return "orbit_local" }
+        if sourceType == "school_gymnasium" { return "school:gymnasium" }
+        return sourceIdentifier ?? sourceType
+    }
+
+    static func isSchoolEvent(sourceType: String, sourceIdentifier: String?, category: String? = nil) -> Bool {
+        if let category {
+            if category == "school" { return true }
+            if category == "family" || category == "external" { return false }
+        }
+        if sourceType == "school_gymnasium" || sourceType == "fixture-school" { return true }
+        guard sourceType == "orbit_family", let identifier = sourceIdentifier else { return false }
+        return identifier.hasPrefix("schulmanager-ics:") || identifier.hasPrefix("schulmanager-item-date-v1:")
+    }
+
     struct Timeline<Event> {
         let today: [Event]
         let thisWeek: [Event]
@@ -215,4 +251,6 @@ enum OrbitCalendarV2Logic {
 nonisolated enum OrbitCalendarCardMetrics {
     static let weekdayTopInset: CGFloat = 6
     static let weekCardMinHeight: CGFloat = 50
+    static let monthCellMinHeight: CGFloat = 44
+    static let agendaRowMinHeight: CGFloat = 48
 }
