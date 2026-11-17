@@ -118,7 +118,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build iOS application for SideStore signing
+      - name: Build unsigned iOS application
         env:
           CPV_OVERRIDE: ${{ steps.buildnum.outputs.build_number && format('CURRENT_PROJECT_VERSION={0}', steps.buildnum.outputs.build_number) || '' }}
         run: |
