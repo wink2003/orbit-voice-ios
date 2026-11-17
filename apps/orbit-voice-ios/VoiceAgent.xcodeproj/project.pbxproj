@@ -76,7 +76,7 @@
 		};
 		D11900000000000000000009 /* Exceptions for "WidgetDev" folder in "SchoolTasksWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (Info.plist, SchoolTasksWidgetExtension.entitlements, SchoolTasksWidgetPublisher.swift,);
+			membershipExceptions = (Info.plist, INTEGRATION.md, SchoolTasksWidgetExtension.entitlements, SchoolTasksWidgetPublisher.swift,);
 			target = D1190000000000000000000A /* SchoolTasksWidgetExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
