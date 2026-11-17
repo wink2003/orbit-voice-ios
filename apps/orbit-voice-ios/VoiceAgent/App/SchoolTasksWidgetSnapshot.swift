@@ -48,10 +48,10 @@ nonisolated enum SchoolTasksWidgetLayout {
         coverageComplete: Bool
     ) -> Int {
         let rowHeight = max(16, captionPointSize + (accessibilitySize ? 9 : 5))
-        let accessibilityOverhead = accessibilitySize
-            ? max(0, captionPointSize + 8 - 19) + (captionPointSize - 11) * 2
-            : 0
-        let overhead = 51 + accessibilityOverhead + (coverageComplete ? 0 : 10)
+        // At accessibility sizes section captions move into the compact header,
+        // freeing room for readable task rows and a separate overflow link.
+        let overhead = (accessibilitySize ? captionPointSize + 13 : 51)
+            + (coverageComplete ? 0 : 10)
         return max(0, Int((availableHeight - overhead) / rowHeight))
     }
 
@@ -61,6 +61,29 @@ nonisolated enum SchoolTasksWidgetLayout {
 
     static func hiddenRowCount(totalRows: Int, visibleRows: Int) -> Int {
         max(0, totalRows - visibleRows)
+    }
+}
+
+/// Publishing requires the active, resolved profile and successful reads from
+/// the current load. Unknown permissions may proceed only after the authorized
+/// action-task read itself succeeds; an explicit deny always closes the gate.
+nonisolated enum SchoolTasksWidgetPublicationEligibility {
+    static func allows(
+        resolvedPersonID: String?,
+        itemsReadForCurrentLoad: Bool,
+        tasksReadForCurrentLoad: Bool,
+        actionTasksReadForCurrentLoad: Bool,
+        hasReadableActionAccess: Bool,
+        schoolReadPermission: Bool?
+    ) -> Bool {
+        guard let personID = resolvedPersonID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !personID.isEmpty, personID != "-",
+              itemsReadForCurrentLoad,
+              tasksReadForCurrentLoad,
+              actionTasksReadForCurrentLoad,
+              hasReadableActionAccess,
+              schoolReadPermission != false else { return false }
+        return true
     }
 }
 

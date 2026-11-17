@@ -162,15 +162,16 @@ final class SchoolHubStore {
     }
 
     private func publishWidgetSnapshot() {
-        let scope = gate.scopeKey ?? ""
-        let hasResolvedPerson = scope.split(separator: "|", omittingEmptySubsequences: false).first.map(String.init) != nil
-            && scope.split(separator: "|", omittingEmptySubsequences: false).first.map(String.init) != "-"
-        let currentReadSucceeded = hasResolvedPerson
-            && itemsPhase == .loaded && tasksPhase == .loaded && actionTasksPhase == .loaded
-            && actionTasksLoadedOnce && actionTasksReadForCurrentLoad
-            && (actionCapability == .available || actionCapability == .readOnly)
-            && OrbitPermissionStore.shared.permissions?.resources.school.read != false
-        guard currentReadSucceeded else { SchoolTasksWidgetPublisher.clear(); return }
+        let personID = gate.scopeKey?.split(separator: "|", omittingEmptySubsequences: false).first.map(String.init)
+        let eligible = SchoolTasksWidgetPublicationEligibility.allows(
+            resolvedPersonID: personID,
+            itemsReadForCurrentLoad: itemsPhase == .loaded,
+            tasksReadForCurrentLoad: tasksPhase == .loaded,
+            actionTasksReadForCurrentLoad: actionTasksPhase == .loaded
+                && actionTasksLoadedOnce && actionTasksReadForCurrentLoad,
+            hasReadableActionAccess: actionCapability == .available || actionCapability == .readOnly,
+            schoolReadPermission: OrbitPermissionStore.shared.permissions?.resources.school.read)
+        guard eligible else { SchoolTasksWidgetPublisher.clear(); return }
         SchoolTasksWidgetPublisher.publish(
             tasks: hubTasks,
             sourceDates: sourceDates,

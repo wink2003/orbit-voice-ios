@@ -44,7 +44,25 @@ struct SchoolTasksWidgetProjectionTests {
                      "overflow link reports all three hidden rows")
         precondition(SchoolTasksWidgetLayout.mediumRowBudget(
             availableHeight: 136, captionPointSize: 22, accessibilitySize: true,
-            coverageComplete: true) < mediumBudget, "accessibility text reduces row count rather than clipping")
+            coverageComplete: true) == 3, "accessibility rows and overflow link fit without clipping")
+        precondition(SchoolTasksWidgetLayout.visibleRowCount(totalRows: 5, rowBudget: 3) == 2)
+        let readableProfile = SchoolTasksWidgetPublicationEligibility.allows(
+            resolvedPersonID: "child-42", itemsReadForCurrentLoad: true,
+            tasksReadForCurrentLoad: true, actionTasksReadForCurrentLoad: true,
+            hasReadableActionAccess: true, schoolReadPermission: true)
+        precondition(readableProfile)
+        precondition(!SchoolTasksWidgetPublicationEligibility.allows(
+            resolvedPersonID: "-", itemsReadForCurrentLoad: true,
+            tasksReadForCurrentLoad: true, actionTasksReadForCurrentLoad: true,
+            hasReadableActionAccess: true, schoolReadPermission: true), "unresolved identity fails closed")
+        precondition(!SchoolTasksWidgetPublicationEligibility.allows(
+            resolvedPersonID: "child-42", itemsReadForCurrentLoad: true,
+            tasksReadForCurrentLoad: true, actionTasksReadForCurrentLoad: false,
+            hasReadableActionAccess: true, schoolReadPermission: true), "stale action read fails closed")
+        precondition(!SchoolTasksWidgetPublicationEligibility.allows(
+            resolvedPersonID: "child-42", itemsReadForCurrentLoad: true,
+            tasksReadForCurrentLoad: true, actionTasksReadForCurrentLoad: true,
+            hasReadableActionAccess: true, schoolReadPermission: false), "revoked permission fails closed")
         precondition(snapshot.allPrioritized.allSatisfy { $0.id != "next" && $0.id != "undated" })
         precondition(snapshot.isUsable(at: now))
         precondition(!snapshot.isUsable(at: now.addingTimeInterval(-300)))
