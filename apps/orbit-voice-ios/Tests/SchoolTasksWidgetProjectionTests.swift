@@ -9,6 +9,19 @@ private func makeTask(_ id: String, _ due: String?, completed: Bool = false) -> 
 @main
 struct SchoolTasksWidgetProjectionTests {
     @MainActor static func main() throws {
+        let requestedGroup = SchoolTasksWidgetAppGroup.requestedIdentifier
+        precondition(SchoolTasksWidgetAppGroup.identifier(in: [:]) == requestedGroup)
+        precondition(SchoolTasksWidgetAppGroup.identifier(in: ["ALTAppGroups": [requestedGroup]]) == requestedGroup)
+        precondition(SchoolTasksWidgetAppGroup.identifier(in: [
+            "ALTAppGroups": ["group.com.altstore", requestedGroup + ".TEAM123"]
+        ]) == requestedGroup + ".TEAM123", "use SideStore's team-scoped group")
+        precondition(SchoolTasksWidgetAppGroup.identifier(in: [
+            "ALTAppGroups": ["group.com.altstore"]
+        ]) == requestedGroup, "ignore unrelated sideloader groups")
+        precondition(SchoolTasksWidgetAppGroup.identifier(in: [
+            "ALTAppGroups": [requestedGroup + ".TEAM123", requestedGroup + ".TEAM456"]
+        ]) == requestedGroup, "ambiguous group metadata fails closed")
+
         let clock = ISO8601DateFormatter()
         let now = clock.date(from: "2026-11-16T12:00:00Z")!
         let tasks = [

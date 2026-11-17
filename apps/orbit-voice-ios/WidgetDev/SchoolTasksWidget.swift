@@ -17,8 +17,9 @@ private struct SchoolWidgetReadResult {
 }
 
 private enum SchoolWidgetStorage {
-    // Configuration requires actual matching App Group entitlement on both targets.
-    static let group = "group.net.opik.orbit.voice"
+    // SideStore rewrites group IDs per signing team and injects the effective
+    // value in ALTAppGroups. Local Xcode signing falls back to the source ID.
+    static var group: String { SchoolTasksWidgetAppGroup.currentIdentifier }
     static let key = "school.tasks.widget.snapshot.v1"
 
     static func current(at date: Date) -> SchoolWidgetReadResult {

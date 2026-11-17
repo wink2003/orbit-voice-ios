@@ -19,7 +19,7 @@ enum SchoolTasksWidgetDiagnosticStore {
 // no network client, credentials, or task mutation path.
 @MainActor
 enum SchoolTasksWidgetPublisher {
-    private static let suite = "group.net.opik.orbit.voice"
+    private static var suite: String { SchoolTasksWidgetAppGroup.currentIdentifier }
     private static let key = "school.tasks.widget.snapshot.v1"
     private static let kind = "orbit.school.tasks"
 

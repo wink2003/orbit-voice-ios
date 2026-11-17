@@ -17,17 +17,23 @@ events, or Gymnasium events.
 
 ## Shared data and identity
 
-Both targets declare `group.net.opik.orbit.voice`. The app writes only a minimized task
-snapshot after successful School Hub reads for a resolved profile scope. It clears the
+Both targets request `group.net.opik.orbit.voice`. The release build carries that request
+in ad-hoc Mach-O signatures so SideStore can discover it, register the team-scoped group,
+and provision both targets during its ordinary signing flow. SideStore injects the
+effective group list in `ALTAppGroups`; the app and extension resolve the matching
+team-scoped identifier from their own bundle metadata. Local Xcode signing falls back to
+the source identifier. The app writes only a minimized task snapshot after successful
+School Hub reads for a resolved profile scope. It clears the
 snapshot on scope reset, logout, pairing removal, profile/impersonation changes, denied
 school read permission, or failed authorization. A failed/incomplete refresh does not
 publish cached task rows. The extension accepts snapshots no older than 12 hours and
 rejects a snapshot after the Monday school-week rollover.
 
-CI builds do **not** prove that SideStore preserves the App Group entitlement or that the
-signed extension can read the app's value. The owner will verify that on a physical
-iPhone after the normal guarded Main Orbit publication. Keep App Group sharing marked
-unverified until that test has actually passed.
+CI verifies the ad-hoc entitlement request and bundle-level group resolution only. It does
+not prove that SideStore successfully creates/associates profiles or that the signed
+extension can read the app's value. The owner will verify that on a physical iPhone after
+the normal guarded Main Orbit publication. Keep App Group sharing marked unverified until
+that test has actually passed.
 
 The focused layout contract uses the iPhone 12 medium-family size of 338×158 pt from
 [Apple's Widget HIG](https://developer.apple.com/design/human-interface-guidelines/widgets)
