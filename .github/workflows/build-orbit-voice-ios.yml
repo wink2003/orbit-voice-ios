@@ -321,6 +321,7 @@ jobs:
             apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolDateDecoding.swift \
             "$RUNNER_TEMP/orbit-widget-school-models.swift" \
             apps/orbit-voice-ios/VoiceAgent/App/SchoolHubLogic.swift \
+            apps/orbit-voice-ios/VoiceAgent/App/SchoolTasksWidgetSnapshot.swift \
             apps/orbit-voice-ios/VoiceAgent/App/SchoolTasksWidgetProjection.swift \
             apps/orbit-voice-ios/Tests/SchoolTasksWidgetProjectionTests.swift \
             -o "$RUNNER_TEMP/orbit-school-widget-projection-tests"

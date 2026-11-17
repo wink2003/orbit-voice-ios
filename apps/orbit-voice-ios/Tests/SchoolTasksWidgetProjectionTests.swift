@@ -8,7 +8,7 @@ private func makeTask(_ id: String, _ due: String?, completed: Bool = false) -> 
 
 @main
 struct SchoolTasksWidgetProjectionTests {
-    static func main() throws {
+    @MainActor static func main() throws {
         let clock = ISO8601DateFormatter()
         let now = clock.date(from: "2026-11-16T12:00:00Z")!
         let tasks = [
