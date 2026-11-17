@@ -9,8 +9,10 @@ Current repo baseline at implementation start: release/main-orbit
 Task: https://github.com/wink2003/orbit-voice-ios/issues/119
 
 ## Source layout
-- VoiceAgent/App/SchoolTasksWidgetProjection.swift: compiled into the existing Main Orbit app
-  and focused-test build; the only place canonical SchoolHubLogic.taskSections is called.
+- VoiceAgent/App/SchoolTasksWidgetSnapshot.swift: dependency-free shared Codable row/snapshot model. Add
+  this exact file to both the Main Orbit app and the widget extension targets.
+- VoiceAgent/App/SchoolTasksWidgetProjection.swift: compiled in Main Orbit app only;
+  the only place canonical SchoolHubLogic.taskSections is called.
 - WidgetDev/SchoolTasksWidget.swift: WidgetKit small/medium read-only view + TimelineProvider.
 - WidgetDev/SchoolTasksWidgetPublisher.swift: app-side App Group snapshot writer, fail closed.
 - Tests/SchoolTasksWidgetProjectionTests.swift: synthetic pure group/rollover/JSON tests.
@@ -21,8 +23,8 @@ Task: https://github.com/wink2003/orbit-voice-ios/issues/119
    an unsigned CI build. Known 2026 SideStore widget/App Group issue #1437.
 2. Add **dedicated WidgetKit extension target** to VoiceAgent.xcodeproj; compile
    SchoolTasksWidget.swift in widget target ONLY; add shared
-   SchoolTasksWidgetProjection.swift to both targets (or factor its Codable structs
-   into a separate shared Swift source if Widget target can't compile SchoolHubLogic).
+   SchoolTasksWidgetSnapshot.swift to both targets; compile SchoolTasksWidgetProjection.swift
+   in the app target only (it depends on SchoolHubLogic).
    SchoolTasksWidgetPublisher.swift belongs to the app target ONLY.
 3. Register the actual tested App Group on BOTH the app and widget entitlements.
    The proposed group name is group.net.opik.orbit.voice, not verified as provisioned.
