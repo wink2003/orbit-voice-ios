@@ -4,11 +4,18 @@ import SwiftUI
 /// Existing destination views retain their stores and detail routes.
 struct NovaShellView: View {
     @Binding var selection: OrbitMainTab
+    @Binding var schoolWidgetDeepLink: SchoolTasksWidgetDeepLink?
     #if DEBUG
     private let debugFixture: Routes05DebugScreen?
-    init(selection: Binding<OrbitMainTab>, debugFixture: Routes05DebugScreen? = nil) {
+    init(selection: Binding<OrbitMainTab>, schoolWidgetDeepLink: Binding<SchoolTasksWidgetDeepLink?> = .constant(nil), debugFixture: Routes05DebugScreen? = nil) {
         _selection = selection
+        _schoolWidgetDeepLink = schoolWidgetDeepLink
         self.debugFixture = debugFixture
+    }
+    #else
+    init(selection: Binding<OrbitMainTab>, schoolWidgetDeepLink: Binding<SchoolTasksWidgetDeepLink?> = .constant(nil)) {
+        _selection = selection
+        _schoolWidgetDeepLink = schoolWidgetDeepLink
     }
     #endif
     @State private var dockTopY: CGFloat = .infinity
@@ -19,6 +26,8 @@ struct NovaShellView: View {
     @State private var rootGeneration = 0
     private let unsavedInput = Routes05UnsavedInputTracker.shared
     @State private var pendingDiscard: OrbitMainTab?
+    @State private var handledWidgetDeepLinkID: UUID?
+    @State private var widgetDeepLinkNeedsDiscard = false
 
     var body: some View {
         destination
@@ -41,8 +50,13 @@ struct NovaShellView: View {
                 Button("Відкинути й перейти", role: .destructive) {
                     if let tab = pendingDiscard { apply(tab) }
                     pendingDiscard = nil
+                    widgetDeepLinkNeedsDiscard = false
                 }
-                Button("Залишитись", role: .cancel) { pendingDiscard = nil }
+                Button("Залишитись", role: .cancel) {
+                    pendingDiscard = nil
+                    if widgetDeepLinkNeedsDiscard { schoolWidgetDeepLink = nil }
+                    widgetDeepLinkNeedsDiscard = false
+                }
             } message: {
                 Text("На цьому екрані є текст, який ще не збережено або не надіслано.")
             }
@@ -50,6 +64,14 @@ struct NovaShellView: View {
                 // Same guard as the dock; an already open School stays where the user is.
                 guard OrbitRootNavigationPolicy.canonical(selection) != .school else { return }
                 request(.school)
+            }
+            .onChange(of: schoolWidgetDeepLink?.requestID) { _, requestID in
+                guard requestID != nil else { return }
+                openPendingWidgetDestination()
+            }
+            .task {
+                // A widget URL can arrive while the app lock or pairing screen is open.
+                openPendingWidgetDestination()
             }
     }
 
@@ -107,7 +129,7 @@ struct NovaShellView: View {
     private var productionDestination: some View {
         switch selection {
         case .home, .today: OrbitTodayView(open: select, displayName: nil)
-        case .school: SchoolHubView()
+        case .school: SchoolHubView(widgetDeepLink: $schoolWidgetDeepLink)
         case .orbit, .chats: OrbitChatsView()
         case .family: MainOrbit3FamilyView()
         case .more: OrbitMoreView()
@@ -136,6 +158,14 @@ struct NovaShellView: View {
         } else {
             selection = tab
         }
+    }
+
+    private func openPendingWidgetDestination() {
+        guard let deepLink = schoolWidgetDeepLink,
+              handledWidgetDeepLinkID != deepLink.requestID else { return }
+        handledWidgetDeepLinkID = deepLink.requestID
+        widgetDeepLinkNeedsDiscard = unsavedInput.hasUnsavedInput
+        request(.school)
     }
 }
 
