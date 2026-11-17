@@ -4,7 +4,18 @@ import SwiftUI
 
 @MainActor @Observable
 final class SchoolHubStore {
-    enum Phase: Equatable { case idle, loading, loaded, failed }
+    enum Phase: Equatable {
+        case idle, loading, loaded, failed
+
+        var widgetDiagnosticCode: String {
+            switch self {
+            case .idle: "idle"
+            case .loading: "loading"
+            case .loaded: "loaded"
+            case .failed: "failed"
+            }
+        }
+    }
 
     var itemsPhase: Phase = .idle
     var calendarPhase: Phase = .idle
@@ -55,6 +66,7 @@ final class SchoolHubStore {
     #endif
 
     func reset(to key: String) {
+        SchoolTasksWidgetPublisher.recordScopeReset()
         SchoolTasksWidgetPublisher.clear()
         gate.reset(to: key)
         items = []; events = []; canonicalTasks = []; actionTasks = []; studentNames = []; studentClass = nil
@@ -143,7 +155,10 @@ final class SchoolHubStore {
         #if DEBUG
         if fixture != nil { return }
         #endif
-        guard gate.token() != nil else { SchoolTasksWidgetPublisher.clear(); return }
+        guard gate.token() != nil else {
+            SchoolTasksWidgetPublisher.recordLoadBlocked(reason: "authorization_scope_unavailable")
+            SchoolTasksWidgetPublisher.clear(); return
+        }
         // The newest load supersedes older in-flight ones: a cancelled/stale request must not overwrite fresher state.
         gate.advance()
         guard let token = gate.token() else { return }
@@ -162,8 +177,12 @@ final class SchoolHubStore {
     }
 
     private func publishWidgetSnapshot() {
+        SchoolTasksWidgetPublisher.recordLoadOutcome(
+            items: itemsPhase.widgetDiagnosticCode,
+            tasks: tasksPhase.widgetDiagnosticCode,
+            actionTasks: actionTasksPhase.widgetDiagnosticCode)
         let personID = gate.scopeKey?.split(separator: "|", omittingEmptySubsequences: false).first.map(String.init)
-        let eligible = SchoolTasksWidgetPublicationEligibility.allows(
+        let rejectionReasons = SchoolTasksWidgetPublicationEligibility.rejectionReasons(
             resolvedPersonID: personID,
             itemsReadForCurrentLoad: itemsPhase == .loaded,
             tasksReadForCurrentLoad: tasksPhase == .loaded,
@@ -171,7 +190,8 @@ final class SchoolHubStore {
                 && actionTasksLoadedOnce && actionTasksReadForCurrentLoad,
             hasReadableActionAccess: actionCapability == .available || actionCapability == .readOnly,
             schoolReadPermission: OrbitPermissionStore.shared.permissions?.resources.school.read)
-        guard eligible else { SchoolTasksWidgetPublisher.clear(); return }
+        SchoolTasksWidgetPublisher.recordEligibility(reasons: rejectionReasons)
+        guard rejectionReasons.isEmpty else { SchoolTasksWidgetPublisher.clear(); return }
         SchoolTasksWidgetPublisher.publish(
             tasks: hubTasks,
             sourceDates: sourceDates,

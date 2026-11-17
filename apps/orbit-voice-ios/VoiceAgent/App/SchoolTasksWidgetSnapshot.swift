@@ -22,9 +22,17 @@ nonisolated struct SchoolTasksWidgetSnapshot: Codable, Equatable {
 
     /// Fail closed when stale, generated in the future or crossing a school week.
     func isUsable(at now: Date) -> Bool {
+        unusableReason(at: now) == nil
+    }
+
+    /// Non-sensitive reason code surfaced by owner-only diagnostics and the widget fallback.
+    func unusableReason(at now: Date) -> String? {
+        guard schemaVersion == 1 else { return "schema_mismatch" }
         let age = now.timeIntervalSince(generatedAt)
-        return schemaVersion == 1 && age >= -60 && age <= 12 * 3600
-            && weekStart == Self.schoolWeekStart(for: now)
+        guard age >= -60 else { return "generated_in_future" }
+        guard weekStart == Self.schoolWeekStart(for: now) else { return "week_mismatch" }
+        guard age <= 12 * 3600 else { return "stale" }
+        return nil
     }
 
     /// Matches the Monday-first school calendar using Europe/Berlin civil days.
@@ -68,6 +76,28 @@ nonisolated enum SchoolTasksWidgetLayout {
 /// the current load. Unknown permissions may proceed only after the authorized
 /// action-task read itself succeeds; an explicit deny always closes the gate.
 nonisolated enum SchoolTasksWidgetPublicationEligibility {
+    static func rejectionReasons(
+        resolvedPersonID: String?,
+        itemsReadForCurrentLoad: Bool,
+        tasksReadForCurrentLoad: Bool,
+        actionTasksReadForCurrentLoad: Bool,
+        hasReadableActionAccess: Bool,
+        schoolReadPermission: Bool?
+    ) -> [String] {
+        var reasons: [String] = []
+        guard let personID = resolvedPersonID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !personID.isEmpty, personID != "-" else {
+            reasons.append("identity_unresolved")
+            return reasons
+        }
+        if !itemsReadForCurrentLoad { reasons.append("items_read_not_current") }
+        if !tasksReadForCurrentLoad { reasons.append("tasks_read_not_current") }
+        if !actionTasksReadForCurrentLoad { reasons.append("action_tasks_read_not_current") }
+        if !hasReadableActionAccess { reasons.append("action_access_unavailable") }
+        if schoolReadPermission == false { reasons.append("school_read_denied") }
+        return reasons
+    }
+
     static func allows(
         resolvedPersonID: String?,
         itemsReadForCurrentLoad: Bool,
@@ -76,14 +106,14 @@ nonisolated enum SchoolTasksWidgetPublicationEligibility {
         hasReadableActionAccess: Bool,
         schoolReadPermission: Bool?
     ) -> Bool {
-        guard let personID = resolvedPersonID?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !personID.isEmpty, personID != "-",
-              itemsReadForCurrentLoad,
-              tasksReadForCurrentLoad,
-              actionTasksReadForCurrentLoad,
-              hasReadableActionAccess,
-              schoolReadPermission != false else { return false }
-        return true
+        rejectionReasons(
+            resolvedPersonID: resolvedPersonID,
+            itemsReadForCurrentLoad: itemsReadForCurrentLoad,
+            tasksReadForCurrentLoad: tasksReadForCurrentLoad,
+            actionTasksReadForCurrentLoad: actionTasksReadForCurrentLoad,
+            hasReadableActionAccess: hasReadableActionAccess,
+            schoolReadPermission: schoolReadPermission
+        ).isEmpty
     }
 }
 

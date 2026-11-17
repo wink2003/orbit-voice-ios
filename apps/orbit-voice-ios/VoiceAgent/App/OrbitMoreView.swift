@@ -308,7 +308,11 @@ struct OrbitMoreView: View {
         case .family: FamilyHubView()
         case .contacts: OrbitContactsView()
         case .integrations: OrbitToolsView()
-        case .admin: OrbitDashboardView(isSelected: true)
+        case .admin: OrbitDashboardView(
+            isSelected: true,
+            isWidgetDiagnosticsOwner: OrbitNavigation.canShowWidgetDiagnostics(
+                isVerifiedOwner: authentication.canViewServerOverview,
+                isImpersonating: authentication.impersonating))
         case .settings: OrbitSettingsView()
         case .memory: MemoryCenterView()
         case .calendarSettings: CalendarSettingsView()
