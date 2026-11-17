@@ -11,17 +11,41 @@ private enum SchoolWidgetTheme {
     static let overdue = Color(red: 0.85, green: 0.28, blue: 0.23)
 }
 
+private struct SchoolWidgetReadResult {
+    let snapshot: SchoolTasksWidgetSnapshot?
+    let statusCode: String
+}
+
 private enum SchoolWidgetStorage {
     // Configuration requires actual matching App Group entitlement on both targets.
     static let group = "group.net.opik.orbit.voice"
     static let key = "school.tasks.widget.snapshot.v1"
 
-    static func current(at date: Date) -> SchoolTasksWidgetSnapshot? {
-        guard let defaults = UserDefaults(suiteName: group),
-              let data = defaults.data(forKey: key),
-              let snapshot = try? JSONDecoder().decode(SchoolTasksWidgetSnapshot.self, from: data),
-              snapshot.isUsable(at: date) else { return nil }
-        return snapshot
+    static func current(at date: Date) -> SchoolWidgetReadResult {
+        let groupContainerAvailable = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: group) != nil
+        guard groupContainerAvailable else { return SchoolWidgetReadResult(snapshot: nil, statusCode: "R_GROUP_UNAVAILABLE") }
+        guard let defaults = UserDefaults(suiteName: group) else {
+            return SchoolWidgetReadResult(snapshot: nil, statusCode: "R_SUITE_UNAVAILABLE")
+        }
+        guard let data = defaults.data(forKey: key) else {
+            return SchoolWidgetReadResult(snapshot: nil, statusCode: "R_SNAPSHOT_MISSING")
+        }
+        guard let snapshot = try? JSONDecoder().decode(SchoolTasksWidgetSnapshot.self, from: data) else {
+            return SchoolWidgetReadResult(snapshot: nil, statusCode: "R_DECODE_FAILED")
+        }
+        if let reason = snapshot.unusableReason(at: date) {
+            let code: String
+            switch reason {
+            case "schema_mismatch": code = "R_SCHEMA"
+            case "generated_in_future": code = "R_FUTURE"
+            case "stale": code = "R_STALE"
+            case "week_mismatch": code = "R_WEEK"
+            default: code = "R_INVALID"
+            }
+            return SchoolWidgetReadResult(snapshot: nil, statusCode: code)
+        }
+        return SchoolWidgetReadResult(snapshot: snapshot, statusCode: "R_OK")
     }
 }
 
@@ -39,6 +63,7 @@ private enum SchoolWidgetLink {
 private struct SchoolWidgetEntry: TimelineEntry {
     let date: Date
     let snapshot: SchoolTasksWidgetSnapshot?
+    let diagnosticStatus: String
 }
 
 private struct SchoolWidgetProvider: TimelineProvider {
@@ -54,17 +79,26 @@ private struct SchoolWidgetProvider: TimelineProvider {
                 .init(id: "fixture-2", title: "Узгодити зустріч", effectiveDay: nil, completed: true),
                 .init(id: "fixture-3", title: "Перевірити завдання", effectiveDay: nil, completed: false),
                 .init(id: "fixture-4", title: "Зібрати речі", effectiveDay: nil, completed: true)
-            ], completedThisWeek: 2, totalThisWeek: 4, coverageComplete: true))
+            ], completedThisWeek: 2, totalThisWeek: 4, coverageComplete: true), diagnosticStatus: "PREVIEW")
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SchoolWidgetEntry) -> Void) {
         let now = Date()
-        completion(context.isPreview ? placeholder(in: context) : SchoolWidgetEntry(date: now, snapshot: SchoolWidgetStorage.current(at: now)))
+        if context.isPreview {
+            completion(placeholder(in: context))
+        } else {
+            let result = SchoolWidgetStorage.current(at: now)
+            completion(SchoolWidgetEntry(date: now, snapshot: result.snapshot, diagnosticStatus: "SNAPSHOT/\(result.statusCode)"))
+        }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<SchoolWidgetEntry>) -> Void) {
         let now = Date()
-        completion(Timeline(entries: [SchoolWidgetEntry(date: now, snapshot: SchoolWidgetStorage.current(at: now))], policy: .after(now.addingTimeInterval(15 * 60))))
+        let result = SchoolWidgetStorage.current(at: now)
+        completion(Timeline(entries: [SchoolWidgetEntry(
+            date: now, snapshot: result.snapshot,
+            diagnosticStatus: "TIMELINE/\(result.statusCode)"
+        )], policy: .after(now.addingTimeInterval(15 * 60))))
     }
 }
 
@@ -93,6 +127,10 @@ private struct SchoolTasksWidgetView: View {
                     Text("Щоб оновити справи школи")
                         .font(.system(size: captionPointSize))
                         .foregroundStyle(secondary)
+                    Text("\(entry.diagnosticStatus) · \(entry.date.formatted(date: .omitted, time: .shortened))")
+                        .font(.system(size: max(8, captionPointSize - 3), design: .monospaced))
+                        .foregroundStyle(secondary)
+                        .lineLimit(1)
                     Spacer(minLength: 0)
                 }
                 .widgetURL(SchoolWidgetLink.tasks())

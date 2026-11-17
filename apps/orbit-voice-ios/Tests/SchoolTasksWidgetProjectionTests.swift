@@ -63,11 +63,19 @@ struct SchoolTasksWidgetProjectionTests {
             resolvedPersonID: "child-42", itemsReadForCurrentLoad: true,
             tasksReadForCurrentLoad: true, actionTasksReadForCurrentLoad: true,
             hasReadableActionAccess: true, schoolReadPermission: false), "revoked permission fails closed")
+        let rejected = SchoolTasksWidgetPublicationEligibility.rejectionReasons(
+            resolvedPersonID: "child-42", itemsReadForCurrentLoad: false,
+            tasksReadForCurrentLoad: true, actionTasksReadForCurrentLoad: false,
+            hasReadableActionAccess: false, schoolReadPermission: false)
+        precondition(rejected == ["items_read_not_current", "action_tasks_read_not_current", "action_access_unavailable", "school_read_denied"], "status codes identify producer eligibility failures without identity data")
         precondition(snapshot.allPrioritized.allSatisfy { $0.id != "next" && $0.id != "undated" })
         precondition(snapshot.isUsable(at: now))
         precondition(!snapshot.isUsable(at: now.addingTimeInterval(-300)))
         precondition(!snapshot.isUsable(at: now.addingTimeInterval(13 * 3600)))
         precondition(!snapshot.isUsable(at: now.addingTimeInterval(7 * 86400)))
+        precondition(snapshot.unusableReason(at: now.addingTimeInterval(-300)) == "generated_in_future")
+        precondition(snapshot.unusableReason(at: now.addingTimeInterval(13 * 3600)) == "stale")
+        precondition(snapshot.unusableReason(at: now.addingTimeInterval(7 * 86400)) == "week_mismatch")
         let roundTrip = try JSONDecoder().decode(SchoolTasksWidgetSnapshot.self, from: JSONEncoder().encode(snapshot))
         precondition(roundTrip == snapshot)
         let currentWeekPast = SchoolTasksWidgetProjection.make(
