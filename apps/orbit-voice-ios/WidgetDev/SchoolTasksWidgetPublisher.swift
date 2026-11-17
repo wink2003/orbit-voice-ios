@@ -44,6 +44,10 @@ enum SchoolTasksWidgetPublisher {
     static func recordScopeReset() {
         SchoolTasksWidgetDiagnosticStore.record("not_evaluated:scope_reset", for: SchoolTasksWidgetDiagnosticStore.eligibilityKey)
         SchoolTasksWidgetDiagnosticStore.record("not_run:scope_reset", for: SchoolTasksWidgetDiagnosticStore.loadKey)
+        SchoolTasksWidgetDiagnosticStore.record("not_checked:scope_reset", for: SchoolTasksWidgetDiagnosticStore.containerKey)
+        SchoolTasksWidgetDiagnosticStore.record("not_run:scope_reset", for: SchoolTasksWidgetDiagnosticStore.writeKey)
+        // clear() immediately records a fresh reload request for this reset.
+        SchoolTasksWidgetDiagnosticStore.record("not_requested:scope_reset", for: SchoolTasksWidgetDiagnosticStore.reloadKey)
     }
 
     static func publish(
