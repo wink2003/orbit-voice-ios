@@ -65,6 +65,28 @@ jobs:
           grep -F '.supportedFamilies([.systemSmall, .systemMedium])' \
             apps/orbit-voice-ios/WidgetDev/SchoolTasksWidget.swift
           ! grep -F 'systemLarge' apps/orbit-voice-ios/WidgetDev/SchoolTasksWidget.swift
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+
+          root = Path('apps/orbit-voice-ios')
+          app_groups = plistlib.loads((root / 'VoiceAgent/VoiceAgent.entitlements').read_bytes())['com.apple.security.application-groups']
+          extension_groups = plistlib.loads((root / 'WidgetDev/SchoolTasksWidgetExtension.entitlements').read_bytes())['com.apple.security.application-groups']
+          extension_info = plistlib.loads((root / 'WidgetDev/Info.plist').read_bytes())
+          assert len(app_groups) == 1 and app_groups == extension_groups, 'app and extension must declare the same single App Group'
+          assert extension_info['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension'
+          project = (root / 'VoiceAgent.xcodeproj/project.pbxproj').read_text()
+          assert 'net.opik.orbit.voice.schooltaskswidget' in project
+          assert 'SchoolTasksWidgetPublisher.swift,);' in project, 'publisher must be excluded from the widget extension target'
+          publisher = (root / 'WidgetDev/SchoolTasksWidgetPublisher.swift').read_text()
+          widget = (root / 'WidgetDev/SchoolTasksWidget.swift').read_text()
+          assert app_groups[0] in publisher and app_groups[0] in widget, 'app, publisher, and extension must use the same App Group'
+          widget_sources = '\n'.join((root / path).read_text() for path in (
+              'WidgetDev/SchoolTasksWidget.swift', 'VoiceAgent/App/SchoolTasksWidgetSnapshot.swift'))
+          for forbidden in ('MainProductAPI', 'URLSession', 'URLRequest', 'KeychainStore', 'OrbitAuthentication', 'Authorization: Bearer'):
+              assert forbidden not in widget_sources, f'widget extension must not contain {forbidden}'
+          print('Widget extension membership, App Group, and credential-isolation checks passed')
+          PY
 
       - name: Normalize Main Orbit icon
         run: |

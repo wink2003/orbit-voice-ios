@@ -165,22 +165,28 @@ private struct SchoolTasksWidgetView: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
                     header
-                    Text("\(snapshot.openCount) відкритих")
+                    Text(typeSize.isAccessibilitySize
+                         ? "\(snapshot.openCount) відкритих · \(snapshot.completedThisWeek)/\(snapshot.totalThisWeek) тижня"
+                         : "\(snapshot.openCount) відкритих")
                         .font(.system(size: max(9, captionPointSize - 1), weight: .bold))
                         .lineLimit(1)
                 }
                 .frame(height: max(19, captionPointSize + 8))
                 if !overdueRows.isEmpty {
-                    section("ПРОСТРОЧЕНІ", color: SchoolWidgetTheme.overdue)
+                    if !typeSize.isAccessibilitySize {
+                        section("ПРОСТРОЧЕНІ", color: SchoolWidgetTheme.overdue)
+                    }
                     ForEach(overdueRows) { item in row(item, overdue: true, height: rowHeight) }
                 }
                 if !weekRows.isEmpty {
-                    HStack {
-                        section("ЦЕЙ ТИЖДЕНЬ", color: secondary)
-                        Spacer(minLength: 3)
-                        Text("\(snapshot.completedThisWeek)/\(snapshot.totalThisWeek)")
-                            .font(.system(size: max(9, captionPointSize - 2)))
-                            .foregroundStyle(secondary)
+                    if !typeSize.isAccessibilitySize {
+                        HStack {
+                            section("ЦЕЙ ТИЖДЕНЬ", color: secondary)
+                            Spacer(minLength: 3)
+                            Text("\(snapshot.completedThisWeek)/\(snapshot.totalThisWeek)")
+                                .font(.system(size: max(9, captionPointSize - 2)))
+                                .foregroundStyle(secondary)
+                        }
                     }
                     ForEach(weekRows) { item in row(item, overdue: false, height: rowHeight) }
                 }
