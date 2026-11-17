@@ -38,3 +38,29 @@ nonisolated struct SchoolTasksWidgetSnapshot: Codable, Equatable {
     }
 }
 
+/// Small, deterministic row budget used by the non-scrollable medium widget.
+/// It reserves a row for the overflow link instead of silently hiding tasks.
+nonisolated enum SchoolTasksWidgetLayout {
+    static func mediumRowBudget(
+        availableHeight: Double,
+        captionPointSize: Double,
+        accessibilitySize: Bool,
+        coverageComplete: Bool
+    ) -> Int {
+        let rowHeight = max(16, captionPointSize + (accessibilitySize ? 9 : 5))
+        let accessibilityOverhead = accessibilitySize
+            ? max(0, captionPointSize + 8 - 19) + (captionPointSize - 11) * 2
+            : 0
+        let overhead = 51 + accessibilityOverhead + (coverageComplete ? 0 : 10)
+        return max(0, Int((availableHeight - overhead) / rowHeight))
+    }
+
+    static func visibleRowCount(totalRows: Int, rowBudget: Int) -> Int {
+        max(0, rowBudget - (totalRows > rowBudget ? 1 : 0))
+    }
+
+    static func hiddenRowCount(totalRows: Int, visibleRows: Int) -> Int {
+        max(0, totalRows - visibleRows)
+    }
+}
+

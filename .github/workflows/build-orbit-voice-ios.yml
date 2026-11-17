@@ -124,6 +124,29 @@ jobs:
             exit "$status"
           fi
 
+      - name: Select or create iPhone 12 simulator
+        id: widget-simulator
+        run: |
+          set -euo pipefail
+          device_line=$(xcrun simctl list devices available | awk '/iPhone 12[^()]*\(/ { print; exit }')
+          created=false
+          if [ -z "$device_line" ]; then
+            device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-12"
+            runtime_id=$(xcrun simctl list runtimes available | sed -nE 's/.* - (com.apple.CoreSimulator.SimRuntime.[^ ]+).*/\1/p' | awk '/iOS/ { print; exit }')
+            test -n "$runtime_id"
+            simulator_name="Orbit Issue 119 iPhone 12"
+            simulator_id=$(xcrun simctl create "$simulator_name" "$device_type" "$runtime_id")
+            created=true
+          else
+            simulator_id=$(printf '%s\n' "$device_line" | sed -E 's/.*\(([A-F0-9-]{36})\).*/\1/')
+            simulator_name="iPhone 12"
+          fi
+          echo "id=$simulator_id" >> "$GITHUB_OUTPUT"
+          echo "created=$created" >> "$GITHUB_OUTPUT"
+          printf 'WidgetKit simulator: %s (%s); created=%s\n' "$simulator_name" "$simulator_id" "$created"
+          xcrun simctl boot "$simulator_id" || true
+          xcrun simctl bootstatus "$simulator_id" -b
+
       - name: Build Main Orbit and WidgetKit for iPhone 12 Simulator
         run: |
           set -euo pipefail
@@ -132,12 +155,16 @@ jobs:
             -scheme VoiceAgent \
             -configuration Debug \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 12' \
+            -destination 'platform=iOS Simulator,id=${{ steps.widget-simulator.outputs.id }}' \
             -derivedDataPath "$RUNNER_TEMP/orbit-widget-simulator" \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build
+
+      - name: Delete isolated iPhone 12 simulator
+        if: always() && steps.widget-simulator.outputs.created == 'true'
+        run: xcrun simctl delete '${{ steps.widget-simulator.outputs.id }}'
 
       - name: Test codec fmtp privacy parser
         run: |

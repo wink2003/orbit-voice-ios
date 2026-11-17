@@ -27,6 +27,24 @@ struct SchoolTasksWidgetProjectionTests {
         precondition(snapshot.thisWeek.map(\.id) == ["week-a", "week-b", "week-c", "week-d"])
         precondition(snapshot.completedThisWeek == 2 && snapshot.totalThisWeek == 4)
         precondition(snapshot.allPrioritized.count == 5)
+        // iPhone 12 is 390x844 pt; Apple's iOS dimensions specify a 338x158 pt
+        // medium widget. With this view's 11 pt vertical padding, 136 pt remain.
+        let mediumBudget = SchoolTasksWidgetLayout.mediumRowBudget(
+            availableHeight: 136, captionPointSize: 11, accessibilitySize: false,
+            coverageComplete: true)
+        precondition(mediumBudget == 5)
+        precondition(SchoolTasksWidgetLayout.visibleRowCount(totalRows: snapshot.allPrioritized.count, rowBudget: mediumBudget) == 5)
+        precondition(snapshot.overdue.count == 1 && snapshot.thisWeek.count == 4)
+        precondition(snapshot.completedThisWeek == 2 && snapshot.totalThisWeek == 4)
+        let overflowBudget = SchoolTasksWidgetLayout.mediumRowBudget(
+            availableHeight: 136, captionPointSize: 11, accessibilitySize: false,
+            coverageComplete: true)
+        precondition(SchoolTasksWidgetLayout.visibleRowCount(totalRows: 7, rowBudget: overflowBudget) == 4)
+        precondition(SchoolTasksWidgetLayout.hiddenRowCount(totalRows: 7, visibleRows: 4) == 3,
+                     "overflow link reports all three hidden rows")
+        precondition(SchoolTasksWidgetLayout.mediumRowBudget(
+            availableHeight: 136, captionPointSize: 22, accessibilitySize: true,
+            coverageComplete: true) < mediumBudget, "accessibility text reduces row count rather than clipping")
         precondition(snapshot.allPrioritized.allSatisfy { $0.id != "next" && $0.id != "undated" })
         precondition(snapshot.isUsable(at: now))
         precondition(!snapshot.isUsable(at: now.addingTimeInterval(-300)))

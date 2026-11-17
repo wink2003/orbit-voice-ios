@@ -286,6 +286,7 @@ final class SchoolHubStore {
         guard actionTasksPhase == .loaded else { throw SchoolHubActionError.unavailable }
         guard task.identityStable else { throw SchoolHubActionError.unstableIdentity }
         guard !updatingTaskIDs.contains(task.id) else { return }
+        guard let mutationScope = gate.scopeKey, let mutationToken = gate.token() else { throw SchoolHubActionError.unavailable }
         updatingTaskIDs.insert(task.id)
         defer { updatingTaskIDs.remove(task.id) }
         do {
@@ -296,6 +297,8 @@ final class SchoolHubStore {
                 guard !task.sourceItemId.isEmpty else { return }
                 updated = completed ? try await MainProductAPI.shared.completeSourceSchoolTask(itemId: task.sourceItemId, taskKey: task.sourceTaskKey) : try await MainProductAPI.shared.reopenSourceSchoolTask(itemId: task.sourceItemId, taskKey: task.sourceTaskKey)
             }
+            guard gate.scopeKey == mutationScope else { return }
+            guard gate.accepts(mutationToken) else { SchoolTasksWidgetPublisher.clear(); return }
             actionTasks.removeAll { $0.id == updated.id }
             actionTasks.append(updated)
             publishWidgetSnapshot()
@@ -313,6 +316,7 @@ final class SchoolHubStore {
         guard task.identityStable else { throw SchoolHubActionError.unstableIdentity }
         guard SchoolHubLogic.date(fromDayKey: dayKey) != nil else { return }
         guard !updatingTaskIDs.contains(task.id) else { return }
+        guard let mutationScope = gate.scopeKey, let mutationToken = gate.token() else { throw SchoolHubActionError.unavailable }
         updatingTaskIDs.insert(task.id)
         defer { updatingTaskIDs.remove(task.id) }
         do {
@@ -324,6 +328,8 @@ final class SchoolHubStore {
                 guard !task.sourceItemId.isEmpty else { return }
                 updated = try await MainProductAPI.shared.planSourceSchoolTask(itemId: task.sourceItemId, taskKey: task.sourceTaskKey, planningDate: dayKey, revision: revision)
             }
+            guard gate.scopeKey == mutationScope else { return }
+            guard gate.accepts(mutationToken) else { SchoolTasksWidgetPublisher.clear(); return }
             actionTasks.removeAll { $0.id == updated.id }
             actionTasks.append(updated)
             publishWidgetSnapshot()
@@ -349,8 +355,14 @@ final class SchoolHubStore {
     }
 
     func createFamilyTask(title: String, description: String, planningDate: String?) async throws {
+        guard let mutationScope = gate.scopeKey, let mutationToken = gate.token() else { throw SchoolHubActionError.unavailable }
         _ = try await MainProductAPI.shared.createSchoolActionTask(title: title, description: description, planningDate: planningDate)
-        actionTasks = try await MainProductAPI.shared.schoolActionTasks().tasks
+        guard gate.scopeKey == mutationScope else { return }
+        SchoolTasksWidgetPublisher.clear()
+        let refreshedTasks = try await MainProductAPI.shared.schoolActionTasks().tasks
+        guard gate.scopeKey == mutationScope else { return }
+        guard gate.accepts(mutationToken) else { SchoolTasksWidgetPublisher.clear(); return }
+        actionTasks = refreshedTasks
         actionTasksLoadedOnce = true
         actionTasksPhase = .loaded
         actionTasksReadForCurrentLoad = true

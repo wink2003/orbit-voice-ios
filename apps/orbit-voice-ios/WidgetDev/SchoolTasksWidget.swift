@@ -72,6 +72,8 @@ private struct SchoolTasksWidgetView: View {
     @Environment(\.widgetFamily) private var family
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .caption) private var captionPointSize: CGFloat = 11
+    @ScaledMetric(relativeTo: .largeTitle) private var countPointSize: CGFloat = 35
     let entry: SchoolWidgetEntry
 
     private var ink: Color { scheme == .dark ? .white : SchoolWidgetTheme.ink }
@@ -87,9 +89,9 @@ private struct SchoolTasksWidgetView: View {
                     header
                     Spacer(minLength: 0)
                     Text("Відкрийте Orbit")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.system(size: captionPointSize + 2, weight: .bold, design: .rounded))
                     Text("Щоб оновити справи школи")
-                        .font(.system(size: 11))
+                        .font(.system(size: captionPointSize))
                         .foregroundStyle(secondary)
                     Spacer(minLength: 0)
                 }
@@ -108,7 +110,7 @@ private struct SchoolTasksWidgetView: View {
         HStack(spacing: 5) {
             Circle().fill(SchoolWidgetTheme.mint).frame(width: 7, height: 7)
             Text("orbit / Школа")
-                .font(.system(size: 12, weight: .black, design: .rounded))
+                .font(.system(size: captionPointSize + 1, weight: .black, design: .rounded))
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -119,22 +121,23 @@ private struct SchoolTasksWidgetView: View {
             header
             Spacer(minLength: 0)
             Text(String(snapshot.openCount))
-                .font(.system(size: 35, weight: .black, design: .rounded))
+                .font(.system(size: countPointSize, weight: .black, design: .rounded))
                 .minimumScaleFactor(0.7)
+                .lineLimit(1)
             Text("Відкритих справ")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: captionPointSize, weight: .semibold))
                 .lineLimit(1)
             Spacer(minLength: 0)
             Label("\(snapshot.overdue.count) прострочених", systemImage: "square")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: max(9, captionPointSize - 1), weight: .semibold))
                 .foregroundStyle(SchoolWidgetTheme.overdue)
                 .lineLimit(1)
             Label("Тиждень: \(snapshot.completedThisWeek)/\(snapshot.totalThisWeek)", systemImage: "checkmark.square.fill")
-                .font(.system(size: 10))
+                .font(.system(size: max(9, captionPointSize - 1)))
                 .foregroundStyle(secondary)
                 .lineLimit(1)
             if !snapshot.coverageComplete {
-                Text("Неповні дані").font(.system(size: 9)).foregroundStyle(secondary)
+                Text("Неповні дані").font(.system(size: max(9, captionPointSize - 2))).foregroundStyle(secondary)
             }
         }
         .widgetURL(SchoolWidgetLink.tasks())
@@ -144,24 +147,29 @@ private struct SchoolTasksWidgetView: View {
         GeometryReader { geometry in
             // A medium widget is not scrollable. Determine a truthful row budget
             // without hiding overflow. At standard Dynamic Type aim for 1+4 rows.
-            let rowHeight: CGFloat = typeSize.isAccessibilitySize ? 27 : 16
-            let overhead: CGFloat = 51 + (snapshot.coverageComplete ? 0 : 10)
-            let maximumRows = max(0, Int((geometry.size.height - overhead) / rowHeight))
+            let rowHeight = max(16, captionPointSize + (typeSize.isAccessibilitySize ? 9 : 5))
+            let maximumRows = SchoolTasksWidgetLayout.mediumRowBudget(
+                availableHeight: Double(geometry.size.height),
+                captionPointSize: Double(captionPointSize),
+                accessibilitySize: typeSize.isAccessibilitySize,
+                coverageComplete: snapshot.coverageComplete)
             let prioritized = snapshot.allPrioritized
             let overflows = prioritized.count > maximumRows
-            let visibleCount = max(0, maximumRows - (overflows ? 1 : 0))
+            let visibleCount = SchoolTasksWidgetLayout.visibleRowCount(totalRows: prioritized.count, rowBudget: maximumRows)
             let overdueRows = Array(snapshot.overdue.prefix(visibleCount))
             let weekRows = Array(snapshot.thisWeek.prefix(max(0, visibleCount - overdueRows.count)))
-            let hidden = max(0, prioritized.count - overdueRows.count - weekRows.count)
+            let hidden = SchoolTasksWidgetLayout.hiddenRowCount(
+                totalRows: prioritized.count,
+                visibleRows: overdueRows.count + weekRows.count)
 
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
                     header
                     Text("\(snapshot.openCount) відкритих")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: max(9, captionPointSize - 1), weight: .bold))
                         .lineLimit(1)
                 }
-                .frame(height: 19)
+                .frame(height: max(19, captionPointSize + 8))
                 if !overdueRows.isEmpty {
                     section("ПРОСТРОЧЕНІ", color: SchoolWidgetTheme.overdue)
                     ForEach(overdueRows) { item in row(item, overdue: true, height: rowHeight) }
@@ -171,7 +179,7 @@ private struct SchoolTasksWidgetView: View {
                         section("ЦЕЙ ТИЖДЕНЬ", color: secondary)
                         Spacer(minLength: 3)
                         Text("\(snapshot.completedThisWeek)/\(snapshot.totalThisWeek)")
-                            .font(.system(size: 9))
+                            .font(.system(size: max(9, captionPointSize - 2)))
                             .foregroundStyle(secondary)
                     }
                     ForEach(weekRows) { item in row(item, overdue: false, height: rowHeight) }
@@ -180,7 +188,7 @@ private struct SchoolTasksWidgetView: View {
                     Text(snapshot.coverageComplete
                          ? (snapshot.openCount == 0 ? "Усі справи виконані" : "Цього тижня справ немає")
                          : "Список тимчасово недоступний")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: captionPointSize, weight: .medium))
                         .foregroundStyle(secondary)
                         .lineLimit(2)
                         .padding(.top, 5)
@@ -188,7 +196,7 @@ private struct SchoolTasksWidgetView: View {
                 if hidden > 0 {
                     Link(destination: SchoolWidgetLink.tasks()) {
                         Text("Ще \(hidden) справ · відкрити всі")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: max(9, captionPointSize - 1), weight: .semibold))
                             .foregroundStyle(secondary)
                             .lineLimit(1)
                     }
@@ -196,7 +204,7 @@ private struct SchoolTasksWidgetView: View {
                 }
                 if !snapshot.coverageComplete {
                     Text("Часткові дані")
-                        .font(.system(size: 9))
+                        .font(.system(size: max(9, captionPointSize - 2)))
                         .foregroundStyle(SchoolWidgetTheme.overdue)
                 }
                 Spacer(minLength: 0)
@@ -205,8 +213,8 @@ private struct SchoolTasksWidgetView: View {
     }
 
     private func section(_ title: String, color: Color) -> some View {
-        Text(title).font(.system(size: 9, weight: .black, design: .rounded))
-            .foregroundStyle(color).frame(height: 13, alignment: .bottomLeading)
+        Text(title).font(.system(size: max(9, captionPointSize - 2), weight: .black, design: .rounded))
+            .foregroundStyle(color).frame(height: max(13, captionPointSize + 2), alignment: .bottomLeading)
     }
 
     private func row(_ item: SchoolTasksWidgetRow, overdue: Bool, height: CGFloat) -> some View {
@@ -217,7 +225,7 @@ private struct SchoolTasksWidgetView: View {
                     .foregroundStyle(overdue ? SchoolWidgetTheme.overdue : ink)
                     .frame(width: 15)
                 Text(item.title)
-                    .font(.system(size: 11, weight: item.completed ? .regular : .semibold))
+                    .font(.system(size: captionPointSize, weight: item.completed ? .regular : .semibold))
                     .foregroundStyle(item.completed ? secondary : ink)
                     .lineLimit(1)
                     .truncationMode(.tail)
