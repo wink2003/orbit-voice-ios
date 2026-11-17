@@ -107,11 +107,6 @@ struct SchoolTasksWidgetDeepLink: Equatable, Identifiable {
         guard taskID.map({ !$0.isEmpty && $0.count <= 160 }) ?? true else { return nil }
         return SchoolTasksWidgetDeepLink(taskID: taskID)
     }
-
-    static func isSmokeURL(_ url: URL) -> Bool {
-        url.scheme?.lowercased() == "orbit" && url.host?.lowercased() == "widget-smoke"
-            && (url.path.isEmpty || url.path == "/") && url.query == nil
-    }
 }
 
 nonisolated enum OrbitCalendarRouteOrigin: Equatable {
