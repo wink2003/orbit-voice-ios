@@ -620,6 +620,8 @@ struct CalendarChoiceSections: View {
 struct SchoolCalendarChoiceSheet: View {
     @Environment(\.dismiss) private var dismiss
     let eventTitle: String
+    /// Read-only lines under the title (when / where) so the user sees what will be added: date and time are never hidden.
+    let detail: [String]
     let addLocal: () async throws -> String
     let addProvider: (String, [String]) async throws -> OrbitProviderWriteResult
     let onResult: (String) -> Void
@@ -628,17 +630,19 @@ struct SchoolCalendarChoiceSheet: View {
     @State private var saving = false
     @State private var message: String?
 
-    init(eventTitle: String, addLocal: @escaping () async throws -> String, addProvider: @escaping (String, [String]) async throws -> OrbitProviderWriteResult, onResult: @escaping (String) -> Void) {
+    init(eventTitle: String, detail: [String] = [], addLocal: @escaping () async throws -> String, addProvider: @escaping (String, [String]) async throws -> OrbitProviderWriteResult, onResult: @escaping (String) -> Void) {
         self.eventTitle = eventTitle
+        self.detail = detail
         self.addLocal = addLocal
         self.addProvider = addProvider
         self.onResult = onResult
     }
 
     /// School calendar events (by Schulmanager uid).
-    init(eventTitle: String, uid: String, onResult: @escaping (String) -> Void) {
+    init(eventTitle: String, detail: [String] = [], uid: String, onResult: @escaping (String) -> Void) {
         self.init(
             eventTitle: eventTitle,
+            detail: detail,
             addLocal: {
                 let result = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: uid, confirm: true)
                 return result.duplicate == true ? "Цю подію вже додано." : (result.created ? "Подію додано до сімейного календаря Orbit." : "Не вдалося додати подію.")
@@ -653,7 +657,10 @@ struct SchoolCalendarChoiceSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section { Text(eventTitle).font(.headline) }
+                Section {
+                    Text(eventTitle).font(.headline)
+                    ForEach(detail, id: \.self) { line in Text(line).font(.subheadline).foregroundStyle(.secondary) }
+                }
                 CalendarChoiceSections(targetId: $targetId, invitees: $invitees)
                 if let message { Section { Text(message).font(.footnote).foregroundStyle(.red) } }
             }
