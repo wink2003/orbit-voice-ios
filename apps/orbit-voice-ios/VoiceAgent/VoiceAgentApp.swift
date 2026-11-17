@@ -4,9 +4,6 @@ import SwiftUI
 @main
 struct VoiceAgentApp: App {
     @State private var schoolWidgetDeepLink: SchoolTasksWidgetDeepLink?
-    #if DEBUG
-    @State private var widgetSmokeRequested = false
-    #endif
     @StateObject private var authentication: OrbitAuthentication
     @StateObject private var appLock: OrbitAppLock
     private let session: Session
@@ -41,10 +38,7 @@ struct VoiceAgentApp: App {
     @ViewBuilder
     private var rootContent: some View {
         #if DEBUG
-        if widgetSmokeRequested {
-            SchoolTasksWidgetSmokeView()
-                .environmentObject(authentication)
-        } else if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--routes05-") }) {
+        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--routes05-") }) {
             Routes05DebugRoot()
                 .environmentObject(session)
                 .environmentObject(localMedia)
@@ -99,12 +93,6 @@ struct VoiceAgentApp: App {
     }
 
     private func handleOpenURL(_ url: URL) {
-        #if DEBUG
-        if SchoolTasksWidgetDeepLink.isSmokeURL(url) {
-            widgetSmokeRequested = true
-            return
-        }
-        #endif
         if let route = SchoolTasksWidgetDeepLink.parse(url) {
             schoolWidgetDeepLink = route
         }

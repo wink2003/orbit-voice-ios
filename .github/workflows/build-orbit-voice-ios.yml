@@ -18,14 +18,27 @@ permissions:
   contents: read
 
 jobs:
-  widget-focused-tests:
+  # Build-number scripts: hermetic python tests (cheap, ubuntu).  The release-branch build number is DERIVED in the build job
+  # (published SideStore build + 1; owner decision 2026-11-12, replaces the manual bump PR); the canonical ipa-plan stays the authority.
+  build-number-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Build number scripts (monotonic check + derivation)
+        working-directory: scripts
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_check_build_monotonic test_derive_build_number
+
+  build:
     runs-on: macos-26
-    timeout-minutes: 10
+    timeout-minutes: 45
+
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Test School Tasks widget projection
+      - name: Focused School Tasks widget projection and navigation tests
         run: |
           set -euo pipefail
           printf '%s\n' 'import Foundation' > "$RUNNER_TEMP/orbit-widget-school-models.swift"
@@ -44,10 +57,6 @@ jobs:
             apps/orbit-voice-ios/Tests/SchoolTasksWidgetProjectionTests.swift \
             -o "$RUNNER_TEMP/orbit-school-widget-projection-tests"
           "$RUNNER_TEMP/orbit-school-widget-projection-tests"
-
-      - name: Test authorized widget navigation URL parsing
-        run: |
-          set -euo pipefail
           xcrun swiftc \
             apps/orbit-voice-ios/VoiceAgent/App/OrbitNavigation.swift \
             apps/orbit-voice-ios/Tests/OrbitNavigationTests.swift \
@@ -56,27 +65,6 @@ jobs:
           grep -F '.supportedFamilies([.systemSmall, .systemMedium])' \
             apps/orbit-voice-ios/WidgetDev/SchoolTasksWidget.swift
           ! grep -F 'systemLarge' apps/orbit-voice-ios/WidgetDev/SchoolTasksWidget.swift
-
-  # Build-number scripts: hermetic python tests (cheap, ubuntu).  The release-branch build number is DERIVED in the build job
-  # (published SideStore build + 1; owner decision 2026-11-12, replaces the manual bump PR); the canonical ipa-plan stays the authority.
-  build-number-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-      - name: Build number scripts (monotonic check + derivation)
-        working-directory: scripts
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_check_build_monotonic test_derive_build_number
-
-  build:
-    needs: widget-focused-tests
-    runs-on: macos-26
-    timeout-minutes: 45
-
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
 
       - name: Normalize Main Orbit icon
         run: |
@@ -150,34 +138,6 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build
-
-      - name: Build fixture-only Widget App Group smoke IPA
-        run: |
-          set -euo pipefail
-          xcodebuild \
-            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
-            -scheme VoiceAgent \
-            -configuration Debug \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath "$RUNNER_TEMP/orbit-widget-smoke" \
-            -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build
-          mkdir -p "$RUNNER_TEMP/orbit-widget-smoke-ipa/Payload"
-          cp -R "$RUNNER_TEMP/orbit-widget-smoke/Build/Products/Debug-iphoneos/VoiceAgent.app" \
-            "$RUNNER_TEMP/orbit-widget-smoke-ipa/Payload/"
-          cd "$RUNNER_TEMP/orbit-widget-smoke-ipa"
-          /usr/bin/zip -qry Orbit-Widget-AppGroup-Smoke.ipa Payload
-
-      - name: Upload fixture-only Widget App Group smoke IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: Orbit-Widget-AppGroup-Smoke-IPA
-          path: ${{ runner.temp }}/orbit-widget-smoke-ipa/Orbit-Widget-AppGroup-Smoke.ipa
-          retention-days: 7
-          if-no-files-found: error
 
       - name: Test codec fmtp privacy parser
         run: |
