@@ -29,10 +29,11 @@ signed extension can read the app's value. The owner will verify that on a physi
 iPhone after the normal guarded Main Orbit publication. Keep App Group sharing marked
 unverified until that test has actually passed.
 
-The focused layout contract uses the iPhone 12 medium-family size of 338×158 pt and the
-widget's 11 pt vertical inset, leaving 136 pt for content. Its standard text budget fits
-the reference fixture's one overdue plus four current-week rows; larger accessibility
-text intentionally reduces the row budget and exposes overflow.
+The focused layout contract uses the iPhone 12 medium-family size of 338×158 pt from
+[Apple's Widget HIG](https://developer.apple.com/design/human-interface-guidelines/widgets)
+and the widget's 11 pt vertical inset, leaving 136 pt for content. Its standard text
+budget fits the reference fixture's one overdue plus four current-week rows; larger
+accessibility text intentionally reduces the row budget and exposes overflow.
 
 ## CI coverage and limits
 
