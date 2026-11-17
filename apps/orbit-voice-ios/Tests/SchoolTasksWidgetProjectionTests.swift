@@ -39,6 +39,16 @@ struct SchoolTasksWidgetProjectionTests {
             now: clock.date(from: "2026-11-19T12:00:00Z")!, coverageComplete: false)
         precondition(currentWeekPast.overdue.isEmpty && currentWeekPast.thisWeek.count == 1)
         precondition(!currentWeekPast.coverageComplete)
+        let sunday = SchoolTasksWidgetProjection.make(
+            tasks: [makeTask("sunday", "2026-11-15")], sourceDates: [:],
+            now: clock.date(from: "2026-11-15T12:00:00Z")!, coverageComplete: true)
+        precondition(sunday.weekStart == "2026-11-09" && sunday.thisWeek.map(\.id) == ["sunday"])
+        let mondayRollover = SchoolTasksWidgetProjection.make(
+            tasks: [makeTask("sunday", "2026-11-15")], sourceDates: [:],
+            now: clock.date(from: "2026-11-16T12:00:00Z")!, coverageComplete: true)
+        precondition(mondayRollover.weekStart == "2026-11-16" && mondayRollover.overdue.map(\.id) == ["sunday"])
+        let empty = SchoolTasksWidgetProjection.make(tasks: [], sourceDates: [:], now: now, coverageComplete: true)
+        precondition(empty.openCount == 0 && empty.overdue.isEmpty && empty.thisWeek.isEmpty)
         let completedPrevious = SchoolTasksWidgetProjection.make(
             tasks: [makeTask("previous", "2026-11-11", completed: true)], sourceDates: [:], now: now, coverageComplete: true)
         precondition(completedPrevious.overdue.isEmpty)

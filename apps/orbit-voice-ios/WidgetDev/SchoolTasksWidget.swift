@@ -144,7 +144,7 @@ private struct SchoolTasksWidgetView: View {
         GeometryReader { geometry in
             // A medium widget is not scrollable. Determine a truthful row budget
             // without hiding overflow. At standard Dynamic Type aim for 1+4 rows.
-            let rowHeight: CGFloat = typeSize.isAccessibilitySize ? 27 : 18
+            let rowHeight: CGFloat = typeSize.isAccessibilitySize ? 27 : 16
             let overhead: CGFloat = 51 + (snapshot.coverageComplete ? 0 : 10)
             let maximumRows = max(0, Int((geometry.size.height - overhead) / rowHeight))
             let prioritized = snapshot.allPrioritized
@@ -175,6 +175,15 @@ private struct SchoolTasksWidgetView: View {
                             .foregroundStyle(secondary)
                     }
                     ForEach(weekRows) { item in row(item, overdue: false, height: rowHeight) }
+                }
+                if snapshot.allPrioritized.isEmpty {
+                    Text(snapshot.coverageComplete
+                         ? (snapshot.openCount == 0 ? "Усі справи виконані" : "Цього тижня справ немає")
+                         : "Список тимчасово недоступний")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(secondary)
+                        .lineLimit(2)
+                        .padding(.top, 5)
                 }
                 if hidden > 0 {
                     Link(destination: SchoolWidgetLink.tasks()) {

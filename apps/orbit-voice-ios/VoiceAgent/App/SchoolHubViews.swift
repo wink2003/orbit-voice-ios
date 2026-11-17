@@ -21,6 +21,7 @@ final class SchoolHubStore {
     var tasksPhase: Phase = .idle
     var actionTasksPhase: Phase = .idle
     private(set) var actionTasksLoadedOnce = false
+    private var actionTasksReadForCurrentLoad = false
     var actionTasks: [OrbitSchoolActionTask] = []
     var actionCapability: SchoolActionsCapability = .unknown
     var calendarLinks: [String: String] = [:]
@@ -54,9 +55,11 @@ final class SchoolHubStore {
     #endif
 
     func reset(to key: String) {
+        SchoolTasksWidgetPublisher.clear()
         gate.reset(to: key)
         items = []; events = []; canonicalTasks = []; actionTasks = []; studentNames = []; studentClass = nil
         actionCapability = .unknown
+        actionTasksReadForCurrentLoad = false
         calendarLinks = [:]; updatingTaskIDs = []
         itemsLoadedOnce = false; calendarLoadedOnce = false; tasksLoadedOnce = false; actionTasksLoadedOnce = false; taskCoverage = nil; taskCoverageTruncated = false
         itemsPhase = .idle; calendarPhase = .idle; tasksPhase = .idle; actionTasksPhase = .idle
@@ -140,13 +143,14 @@ final class SchoolHubStore {
         #if DEBUG
         if fixture != nil { return }
         #endif
-        guard gate.token() != nil else { return }
+        guard gate.token() != nil else { SchoolTasksWidgetPublisher.clear(); return }
         // The newest load supersedes older in-flight ones: a cancelled/stale request must not overwrite fresher state.
         gate.advance()
         guard let token = gate.token() else { return }
         itemsPhase = .loading
         calendarPhase = .loading
         tasksPhase = .loading
+        actionTasksReadForCurrentLoad = false
         async let itemsResult: Void = loadItems(token)
         async let calendarResult: Void = loadCalendar(token)
         async let tasksResult: Void = loadTasks(token)
@@ -154,6 +158,25 @@ final class SchoolHubStore {
         async let namesResult: Void = loadNames(token)
         async let classResult: Void = loadStudentClass(token)
         _ = await (itemsResult, calendarResult, tasksResult, actionTasksResult, namesResult, classResult)
+        publishWidgetSnapshot()
+    }
+
+    private func publishWidgetSnapshot() {
+        let scope = gate.scopeKey ?? ""
+        let hasResolvedPerson = scope.split(separator: "|", omittingEmptySubsequences: false).first.map(String.init) != nil
+            && scope.split(separator: "|", omittingEmptySubsequences: false).first.map(String.init) != "-"
+        let currentReadSucceeded = hasResolvedPerson
+            && itemsPhase == .loaded && tasksPhase == .loaded && actionTasksPhase == .loaded
+            && actionTasksLoadedOnce && actionTasksReadForCurrentLoad
+            && (actionCapability == .available || actionCapability == .readOnly)
+            && OrbitPermissionStore.shared.permissions?.resources.school.read != false
+        guard currentReadSucceeded else { SchoolTasksWidgetPublisher.clear(); return }
+        SchoolTasksWidgetPublisher.publish(
+            tasks: hubTasks,
+            sourceDates: sourceDates,
+            now: .now,
+            verifiedCurrentScope: true,
+            coverageComplete: taskCoverage == "all" && !taskCoverageTruncated)
     }
 
     private func loadItems(_ token: Int) async {
@@ -236,6 +259,7 @@ final class SchoolHubStore {
             actionCapability = SchoolActionsCapability.afterReadSucceeded(canWrite: OrbitPermissionStore.shared.allows(.schoolWrite))
             actionTasksPhase = .loaded
             actionTasksLoadedOnce = true
+            actionTasksReadForCurrentLoad = true
         } catch where SchoolHubErrors.isCancellation(error) {
             guard gate.accepts(token) else { return }
             actionTasksPhase = actionTasksLoadedOnce ? .loaded : .idle
@@ -245,6 +269,9 @@ final class SchoolHubStore {
             let failure = Self.capability(for: error)
             actionTasksPhase = SchoolHubLogic.keepsLastActionList(after: failure, loadedOnce: actionTasksLoadedOnce) ? .loaded : .failed
             actionCapability = SchoolActionsCapability.afterFailure(current: actionCapability, error: failure)
+            if failure == .unauthorized || failure == .forbidden || failure == .unavailable {
+                SchoolTasksWidgetPublisher.clear()
+            }
         }
     }
 
@@ -271,8 +298,10 @@ final class SchoolHubStore {
             }
             actionTasks.removeAll { $0.id == updated.id }
             actionTasks.append(updated)
+            publishWidgetSnapshot()
         } catch {
             // The outcome of a failed request is unknown; re-read the confirmed state instead of guessing.
+            SchoolTasksWidgetPublisher.clear()
             if let token = gate.token() { await loadActionTasks(token) }
             throw error
         }
@@ -297,8 +326,10 @@ final class SchoolHubStore {
             }
             actionTasks.removeAll { $0.id == updated.id }
             actionTasks.append(updated)
+            publishWidgetSnapshot()
         } catch {
             // Unknown outcome: re-read the confirmed state instead of guessing.
+            SchoolTasksWidgetPublisher.clear()
             if let token = gate.token() { await loadActionTasks(token) }
             throw error
         }
@@ -312,12 +343,18 @@ final class SchoolHubStore {
 
     func refreshActionCapability() async {
         guard gate.token() != nil else { return }
+        actionTasksReadForCurrentLoad = false
         await loadActionTasks(gate.token() ?? 0)
+        publishWidgetSnapshot()
     }
 
     func createFamilyTask(title: String, description: String, planningDate: String?) async throws {
         _ = try await MainProductAPI.shared.createSchoolActionTask(title: title, description: description, planningDate: planningDate)
         actionTasks = try await MainProductAPI.shared.schoolActionTasks().tasks
+        actionTasksLoadedOnce = true
+        actionTasksPhase = .loaded
+        actionTasksReadForCurrentLoad = true
+        publishWidgetSnapshot()
     }
 }
 
@@ -1247,6 +1284,7 @@ final class SchoolHubV2Store {
 struct SchoolHubView: View {
     fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, email, notes(String, String), v2(SchoolV2Section), letter(String), task(String), event(String) }
 
+    @Binding private var widgetDeepLink: SchoolTasksWidgetDeepLink?
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
     @EnvironmentObject private var authentication: OrbitAuthentication
@@ -1254,7 +1292,8 @@ struct SchoolHubView: View {
     #if DEBUG
     private let fixture: Routes05SchoolFixture?
     private let initialDebugRoute: String?
-    init(fixture: Routes05SchoolFixture? = nil, initialDebugRoute: String? = nil) {
+    init(fixture: Routes05SchoolFixture? = nil, initialDebugRoute: String? = nil, widgetDeepLink: Binding<SchoolTasksWidgetDeepLink?> = .constant(nil)) {
+        _widgetDeepLink = widgetDeepLink
         self.fixture = fixture
         self.initialDebugRoute = initialDebugRoute
         _store = State(initialValue: SchoolHubStore(fixture: fixture))
@@ -1280,6 +1319,10 @@ struct SchoolHubView: View {
         case "history": return [.history]
         default: return []
         }
+    }
+    #else
+    init(widgetDeepLink: Binding<SchoolTasksWidgetDeepLink?> = .constant(nil)) {
+        _widgetDeepLink = widgetDeepLink
     }
     #endif
 
@@ -1366,7 +1409,14 @@ struct SchoolHubView: View {
                         SchoolTaskDetailView(store: store, task: SchoolHubTask(id: "family:routes05-family-task", title: "Підготувати спортивну сумку", action: "Перевірити речі до заняття", dueAt: nil, allDay: true, importance: "normal", target: "Учнівський профіль", confidence: 1, reason: "Сімейне планування Orbit", sourceItemId: "", kind: "family", actionID: "routes05-family-task"))
                     } else { ContentUnavailableView("Справу недоступно", systemImage: "exclamationmark.triangle") }
                     #else
-                    ContentUnavailableView("Справу недоступно", systemImage: "exclamationmark.triangle")
+                    if store.scopeKey == scopeKey,
+                       store.tasksPhase == .loaded,
+                       store.actionTasksPhase == .loaded,
+                       let task = store.hubTasks.first(where: { $0.id == id || $0.sourceTaskKey == id || $0.actionID == id }) {
+                        SchoolTaskDetailView(store: store, task: task)
+                    } else {
+                        ContentUnavailableView("Справу недоступно", systemImage: "exclamationmark.triangle")
+                    }
                     #endif
                 case let .event(id):
                     if let event = store.calendarEvent(uid: id) { SchoolEventDetailView(event: event) }
@@ -1380,7 +1430,27 @@ struct SchoolHubView: View {
             #endif
             if store.scopeKey != scopeKey { store.reset(to: scopeKey) }
             await store.load()
+            openWidgetDestinationIfRequested()
         }
+        .onChange(of: widgetDeepLink?.requestID) { _, _ in
+            guard store.tasksLoadedOnce else { return }
+            openWidgetDestinationIfRequested()
+        }
+    }
+
+    private func openWidgetDestinationIfRequested() {
+        guard let request = widgetDeepLink else { return }
+        path = [.tasks]
+        if store.scopeKey == scopeKey,
+           store.tasksPhase == .loaded,
+           store.actionTasksPhase == .loaded,
+           let taskID = request.taskID,
+           let task = store.hubTasks.first(where: { $0.id == taskID || $0.sourceTaskKey == taskID || $0.actionID == taskID }) {
+            // The detail view reuses the existing confirmation and permission gates.
+            path.append(.task(task.id))
+        }
+        // Missing, revoked, or stale task IDs safely remain on the authorized list.
+        widgetDeepLink = nil
     }
 }
 

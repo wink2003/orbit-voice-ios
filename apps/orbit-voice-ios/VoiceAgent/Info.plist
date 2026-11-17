@@ -11,5 +11,16 @@
 		<string>audio</string>
 		<string>voip</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>net.opik.orbit.voice.school</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>orbit</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

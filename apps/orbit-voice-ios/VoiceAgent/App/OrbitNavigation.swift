@@ -84,6 +84,36 @@ nonisolated enum OrbitNavigation {
     }
 }
 
+/// Authorized Main Orbit route carried by the read-only School Tasks widget.
+/// The task ID is only a lookup hint; SchoolHubStore rechecks current access.
+struct SchoolTasksWidgetDeepLink: Equatable, Identifiable {
+    let taskID: String?
+    let requestID: UUID
+    var id: UUID { requestID }
+
+    init(taskID: String?, requestID: UUID = UUID()) {
+        self.taskID = taskID
+        self.requestID = requestID
+    }
+
+    static func parse(_ url: URL) -> SchoolTasksWidgetDeepLink? {
+        guard url.scheme?.lowercased() == "orbit",
+              url.host?.lowercased() == "school",
+              url.path == "/tasks" || url.path == "tasks" else { return nil }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let taskItems = items.filter { $0.name == "task" }
+        guard taskItems.count <= 1 else { return nil }
+        let taskID = taskItems.first?.value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard taskID.map({ !$0.isEmpty && $0.count <= 160 }) ?? true else { return nil }
+        return SchoolTasksWidgetDeepLink(taskID: taskID)
+    }
+
+    static func isSmokeURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "orbit" && url.host?.lowercased() == "widget-smoke"
+            && (url.path.isEmpty || url.path == "/") && url.query == nil
+    }
+}
+
 nonisolated enum OrbitCalendarRouteOrigin: Equatable {
     case root
     case more

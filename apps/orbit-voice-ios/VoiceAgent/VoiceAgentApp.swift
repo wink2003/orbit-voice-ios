@@ -3,6 +3,10 @@ import SwiftUI
 
 @main
 struct VoiceAgentApp: App {
+    @State private var schoolWidgetDeepLink: SchoolTasksWidgetDeepLink?
+    #if DEBUG
+    @State private var widgetSmokeRequested = false
+    #endif
     @StateObject private var authentication: OrbitAuthentication
     @StateObject private var appLock: OrbitAppLock
     private let session: Session
@@ -22,6 +26,7 @@ struct VoiceAgentApp: App {
     var body: some Scene {
         WindowGroup {
             rootContent
+                .onOpenURL(perform: handleOpenURL)
         }
         #if os(macOS)
         .defaultSize(width: 900, height: 900)
@@ -36,7 +41,10 @@ struct VoiceAgentApp: App {
     @ViewBuilder
     private var rootContent: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--routes05-") }) {
+        if widgetSmokeRequested {
+            SchoolTasksWidgetSmokeView()
+                .environmentObject(authentication)
+        } else if ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--routes05-") }) {
             Routes05DebugRoot()
                 .environmentObject(session)
                 .environmentObject(localMedia)
@@ -63,7 +71,7 @@ struct VoiceAgentApp: App {
             if authentication.isPaired && appLock.isLocked {
                 OrbitAppLockView()
             } else if authentication.isPaired {
-                AppView()
+                AppView(schoolWidgetDeepLink: $schoolWidgetDeepLink)
             } else {
                 PairingView()
             }
@@ -83,8 +91,23 @@ struct VoiceAgentApp: App {
                 appLock.lockForBackground(isVoiceActive: session.isConnected)
             }
             .onChange(of: authentication.isPaired) { _, paired in
-                if !paired { appLock.disable() }
+                if !paired {
+                    schoolWidgetDeepLink = nil
+                    appLock.disable()
+                }
             }
+    }
+
+    private func handleOpenURL(_ url: URL) {
+        #if DEBUG
+        if SchoolTasksWidgetDeepLink.isSmokeURL(url) {
+            widgetSmokeRequested = true
+            return
+        }
+        #endif
+        if let route = SchoolTasksWidgetDeepLink.parse(url) {
+            schoolWidgetDeepLink = route
+        }
     }
 
     @Environment(\.scenePhase) private var scenePhase

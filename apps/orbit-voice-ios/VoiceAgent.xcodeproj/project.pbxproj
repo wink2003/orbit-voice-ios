@@ -12,6 +12,9 @@
 		ACAEBA692DE6EF4B0072E93E /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = ACAEBA682DE6EF4B0072E93E /* LiveKit */; };
 		B5E1B90F2D14E9EC00A38CB6 /* LiveKitComponents in Frameworks */ = {isa = PBXBuildFile; productRef = B5E1B90E2D14E9EC00A38CB6 /* LiveKitComponents */; };
 		B5E1B9122D14E9F500A38CB6 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = B5E1B9112D14E9F500A38CB6 /* LiveKit */; };
+		D11900000000000000000001 /* SchoolTasksWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D11900000000000000000005 /* SchoolTasksWidgetExtension.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D11900000000000000000002 /* SchoolTasksWidgetPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11900000000000000000006 /* SchoolTasksWidgetPublisher.swift */; };
+		D11900000000000000000003 /* SchoolTasksWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11900000000000000000007 /* SchoolTasksWidgetSnapshot.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -21,6 +24,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = ACAEBA572DE6EE970072E93E;
 			remoteInfo = BroadcastExtension;
+		};
+		D11900000000000000000004 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B5B5E3AA2D124AE00099C9BE /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D1190000000000000000000A;
+			remoteInfo = SchoolTasksWidgetExtension;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -32,6 +42,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				ACAEBA622DE6EE970072E93E /* BroadcastExtension.appex in Embed Foundation Extensions */,
+				D11900000000000000000001 /* SchoolTasksWidgetExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -42,6 +53,9 @@
 		ACAEBA582DE6EE970072E93E /* BroadcastExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BroadcastExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		ACAEBA5A2DE6EE970072E93E /* ReplayKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ReplayKit.framework; path = System/Library/Frameworks/ReplayKit.framework; sourceTree = SDKROOT; };
 		B5B5E3B22D124AE00099C9BE /* VoiceAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D11900000000000000000005 /* SchoolTasksWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SchoolTasksWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D11900000000000000000006 /* SchoolTasksWidgetPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDev/SchoolTasksWidgetPublisher.swift; sourceTree = SOURCE_ROOT; };
+		D11900000000000000000007 /* SchoolTasksWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAgent/App/SchoolTasksWidgetSnapshot.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -60,6 +74,11 @@
 			);
 			target = B5B5E3B12D124AE00099C9BE /* VoiceAgent */;
 		};
+		D11900000000000000000009 /* Exceptions for "WidgetDev" folder in "SchoolTasksWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (Info.plist, SchoolTasksWidgetExtension.entitlements, SchoolTasksWidgetPublisher.swift,);
+			target = D1190000000000000000000A /* SchoolTasksWidgetExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -77,6 +96,12 @@
 				B577A91F2D15FDB800B59A0B /* Exceptions for "VoiceAgent" folder in "VoiceAgent" target */,
 			);
 			path = VoiceAgent;
+			sourceTree = "<group>";
+		};
+		D11900000000000000000008 /* WidgetDev */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (D11900000000000000000009 /* Exceptions for "WidgetDev" folder in "SchoolTasksWidgetExtension" target */,);
+			path = WidgetDev;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -116,6 +141,7 @@
 			children = (
 				B5B5E3B42D124AE00099C9BE /* VoiceAgent */,
 				ACAEBA5C2DE6EE970072E93E /* BroadcastExtension */,
+				D11900000000000000000008 /* WidgetDev */,
 				ACAEBA592DE6EE970072E93E /* Frameworks */,
 				B5B5E3B32D124AE00099C9BE /* Products */,
 			);
@@ -126,6 +152,7 @@
 			children = (
 				B5B5E3B22D124AE00099C9BE /* VoiceAgent.app */,
 				ACAEBA582DE6EE970072E93E /* BroadcastExtension.appex */,
+				D11900000000000000000005 /* SchoolTasksWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -169,6 +196,7 @@
 			);
 			dependencies = (
 				ACAEBA612DE6EE970072E93E /* PBXTargetDependency */,
+				D1190000000000000000000F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				B5B5E3B42D124AE00099C9BE /* VoiceAgent */,
@@ -181,6 +209,24 @@
 			productName = VoiceAgent;
 			productReference = B5B5E3B22D124AE00099C9BE /* VoiceAgent.app */;
 			productType = "com.apple.product-type.application";
+		};
+		D1190000000000000000000A /* SchoolTasksWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D1190000000000000000000B /* Build configuration list for PBXNativeTarget "SchoolTasksWidgetExtension" */;
+			buildPhases = (
+				D1190000000000000000000E /* Sources */,
+				D1190000000000000000000C /* Frameworks */,
+				D1190000000000000000000D /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (
+				D11900000000000000000008 /* WidgetDev */,
+			);
+			name = SchoolTasksWidgetExtension;
+			productName = SchoolTasksWidgetExtension;
+			productReference = D11900000000000000000005 /* SchoolTasksWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -195,6 +241,7 @@
 					ACAEBA572DE6EE970072E93E = {
 						CreatedOnToolsVersion = 16.3;
 					};
+					D1190000000000000000000A = { CreatedOnToolsVersion = 16.3; };
 					B5B5E3B12D124AE00099C9BE = {
 						CreatedOnToolsVersion = 16.2;
 					};
@@ -220,6 +267,7 @@
 			targets = (
 				B5B5E3B12D124AE00099C9BE /* VoiceAgent */,
 				ACAEBA572DE6EE970072E93E /* BroadcastExtension */,
+				D1190000000000000000000A /* SchoolTasksWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -239,6 +287,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D1190000000000000000000D /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -253,9 +302,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D11900000000000000000002 /* SchoolTasksWidgetPublisher.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D1190000000000000000000E /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (D11900000000000000000003 /* SchoolTasksWidgetSnapshot.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+		D1190000000000000000000C /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -268,6 +320,7 @@
 			target = ACAEBA572DE6EE970072E93E /* BroadcastExtension */;
 			targetProxy = ACAEBA602DE6EE970072E93E /* PBXContainerItemProxy */;
 		};
+		D1190000000000000000000F /* PBXTargetDependency */ = {isa = PBXTargetDependency; platformFilters = (ios, ); target = D1190000000000000000000A /* SchoolTasksWidgetExtension */; targetProxy = D11900000000000000000004 /* PBXContainerItemProxy */; };
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -568,6 +621,59 @@
 			};
 			name = Release;
 		};
+		D11900000000000000000010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = WidgetDev/SchoolTasksWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 147;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WidgetDev/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks",);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = net.opik.orbit.voice.schooltaskswidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D11900000000000000000011 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = WidgetDev/SchoolTasksWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 147;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WidgetDev/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks",);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = net.opik.orbit.voice.schooltaskswidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -595,6 +701,12 @@
 				B5B5E3C22D124AE20099C9BE /* Debug */,
 				B5B5E3C32D124AE20099C9BE /* Release */,
 			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D1190000000000000000000B /* Build configuration list for PBXNativeTarget "SchoolTasksWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (D11900000000000000000010 /* Debug */, D11900000000000000000011 /* Release */,);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
