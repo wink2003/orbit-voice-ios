@@ -1,5 +1,26 @@
 import Foundation
 
+/// SideStore reads requested entitlements from each Mach-O signature, then
+/// provisions a team-scoped App Group and injects its effective identifier in
+/// ALTAppGroups. Xcode installs keep using the source identifier directly.
+nonisolated enum SchoolTasksWidgetAppGroup {
+    static let requestedIdentifier = "group.net.opik.orbit.voice"
+    private static let sideStoreInfoKey = "ALTAppGroups"
+
+    static func identifier(in infoDictionary: [String: Any]) -> String {
+        let groups = infoDictionary[sideStoreInfoKey] as? [String] ?? []
+        let provisioned = groups.filter { $0.hasPrefix(requestedIdentifier + ".") }
+        guard provisioned.count == 1, let identifier = provisioned.first else {
+            return requestedIdentifier
+        }
+        return identifier
+    }
+
+    static var currentIdentifier: String {
+        identifier(in: Bundle.main.infoDictionary ?? [:])
+    }
+}
+
 nonisolated struct SchoolTasksWidgetRow: Codable, Hashable, Identifiable {
     let id: String
     let title: String

@@ -80,7 +80,9 @@ jobs:
           assert 'SchoolTasksWidgetPublisher.swift,);' in project, 'publisher must be excluded from the widget extension target'
           publisher = (root / 'WidgetDev/SchoolTasksWidgetPublisher.swift').read_text()
           widget = (root / 'WidgetDev/SchoolTasksWidget.swift').read_text()
-          assert app_groups[0] in publisher and app_groups[0] in widget, 'app, publisher, and extension must use the same App Group'
+          group_resolver = (root / 'VoiceAgent/App/SchoolTasksWidgetSnapshot.swift').read_text()
+          assert app_groups[0] in group_resolver and 'ALTAppGroups' in group_resolver, 'resolve the SideStore-provisioned group from bundle metadata'
+          assert 'SchoolTasksWidgetAppGroup.currentIdentifier' in publisher and 'SchoolTasksWidgetAppGroup.currentIdentifier' in widget
           widget_sources = '\n'.join((root / path).read_text() for path in (
               'WidgetDev/SchoolTasksWidget.swift', 'VoiceAgent/App/SchoolTasksWidgetSnapshot.swift'))
           for forbidden in ('MainProductAPI', 'URLSession', 'URLRequest', 'KeychainStore', 'OrbitAuthentication', 'Authorization: Bearer'):
@@ -145,6 +147,36 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit "$status"
           fi
+
+      - name: Preserve App Group entitlement requests for SideStore
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/orbit-derived-data/Build/Products/Release-iphoneos/VoiceAgent.app"
+          widget="$app/PlugIns/SchoolTasksWidgetExtension.appex"
+          # SideStore inspects entitlements from each Mach-O signature before
+          # creating team-scoped App Groups and provisioning the app/extension.
+          # These ad-hoc signatures carry requests only; SideStore replaces them
+          # with its normal device-specific signing and provisioning on install.
+          codesign --force --sign - \
+            --entitlements apps/orbit-voice-ios/WidgetDev/SchoolTasksWidgetExtension.entitlements \
+            "$widget"
+          codesign --force --sign - \
+            --entitlements apps/orbit-voice-ios/VoiceAgent/VoiceAgent.entitlements \
+            "$app"
+          codesign -d --entitlements :- "$app" > "$RUNNER_TEMP/orbit-app-entitlements.plist" 2>/dev/null
+          codesign -d --entitlements :- "$widget" > "$RUNNER_TEMP/orbit-widget-entitlements.plist" 2>/dev/null
+          ORBIT_WIDGET_TMP="$RUNNER_TEMP" python3 - <<'PY'
+          import os
+          import plistlib
+          from pathlib import Path
+
+          expected = ["group.net.opik.orbit.voice"]
+          for name in ("orbit-app-entitlements.plist", "orbit-widget-entitlements.plist"):
+              path = Path(os.environ["ORBIT_WIDGET_TMP"]) / name
+              actual = plistlib.loads(path.read_bytes()).get("com.apple.security.application-groups")
+              assert actual == expected, f"{name} lost the App Group request: {actual!r}"
+          print("Ad-hoc app and widget signatures both preserve the App Group request")
+          PY
 
       - name: Select or create iPhone 12 simulator
         id: widget-simulator
