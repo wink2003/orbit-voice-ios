@@ -155,6 +155,8 @@ struct OrbitSchoolHubV2OverviewResponse: Decodable { let overview: OrbitSchoolHu
 struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
     let id: String
     let subject: String
+    /// Decoded subject name from the server (e.g. "E5" -> "Англійська мова"); nil when the code has no known decoding (issue #376).
+    let subjectNameUk: String?
     let dayKey: String
     let lessonStart: Int?
     let lessonEnd: Int?
@@ -174,7 +176,7 @@ struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
     let observedAt: Date?
 
     private enum CodingKeys: String, CodingKey {
-        case id, subject, dayKey, lessonStart, lessonEnd, startsAt, room, teacher, group, groupName,
+        case id, subject, subjectNameUk = "subject_name_uk", dayKey, lessonStart, lessonEnd, startsAt, room, teacher, group, groupName,
              startClassHourNumber, typeName, typeColor, typeVisibleForStudents, comment, status,
              source, sourceFingerprint, observedAt
     }
@@ -183,6 +185,7 @@ struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         subject = try container.decode(String.self, forKey: .subject)
+        subjectNameUk = try container.decodeIfPresent(String.self, forKey: .subjectNameUk)
         dayKey = try container.decode(String.self, forKey: .dayKey)
         lessonStart = try container.decodeIfPresent(Int.self, forKey: .lessonStart)
         lessonEnd = try container.decodeIfPresent(Int.self, forKey: .lessonEnd)
@@ -286,7 +289,7 @@ struct OrbitSchoolHubV2TimetableResponse: Decodable { let timetable: OrbitSchool
 #if DEBUG
 extension OrbitSchoolHubV2Exam {
     init(id: String, subject: String, dayKey: String, lessonStart: Int?, lessonEnd: Int?, startsAt: String?, room: String?, teacher: String?, group: String?, groupName: String?, startClassHourNumber: Int?, typeName: String?, typeColor: String?, typeVisibleForStudents: Bool?, comment: String?, status: String?, source: String?, sourceFingerprint: String?, observedAt: Date?) {
-        self.id = id; self.subject = subject; self.dayKey = dayKey; self.lessonStart = lessonStart; self.lessonEnd = lessonEnd; self.startsAt = startsAt; self.room = room; self.teacher = teacher; self.group = group; self.groupName = groupName; self.startClassHourNumber = startClassHourNumber; self.typeName = typeName; self.typeColor = typeColor; self.typeVisibleForStudents = typeVisibleForStudents; self.comment = comment; self.status = status; self.source = source; self.sourceFingerprint = sourceFingerprint; self.observedAt = observedAt
+        self.subjectNameUk = nil; self.id = id; self.subject = subject; self.dayKey = dayKey; self.lessonStart = lessonStart; self.lessonEnd = lessonEnd; self.startsAt = startsAt; self.room = room; self.teacher = teacher; self.group = group; self.groupName = groupName; self.startClassHourNumber = startClassHourNumber; self.typeName = typeName; self.typeColor = typeColor; self.typeVisibleForStudents = typeVisibleForStudents; self.comment = comment; self.status = status; self.source = source; self.sourceFingerprint = sourceFingerprint; self.observedAt = observedAt
     }
 }
 

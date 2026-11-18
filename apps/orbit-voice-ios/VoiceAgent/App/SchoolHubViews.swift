@@ -635,7 +635,12 @@ private struct SchoolHubV2View: View {
     private func examRow(_ exam: OrbitSchoolHubV2Exam) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
-                Text(exam.subject).font(.headline.weight(.bold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(exam.subjectNameUk ?? exam.subject).font(.headline.weight(.bold))
+                    if let full = exam.subjectNameUk, !full.isEmpty, full != exam.subject {
+                        Text(exam.subject).font(.caption.weight(.semibold)).foregroundStyle(Routes05Tokens.secondary)
+                    }
+                }
                 Spacer(minLength: 8)
                 if let type = exam.typeName, !type.isEmpty {
                     Text(type).font(.caption.weight(.bold)).padding(.horizontal, 8).padding(.vertical, 4).background(Routes05Tokens.lilac.opacity(0.55), in: Capsule())
