@@ -138,6 +138,27 @@ struct OrbitMoreView: View {
                 destinationRow(.memory, icon: "brain.head.profile", detail: "Особисті та спільні факти")
                 divider
                 destinationRow(.calendarSettings, icon: "calendar.badge.clock", detail: "Підключення та джерела календаря")
+                divider
+                // Medical section (orbit-family-ai#379): adults only; the server answers 404 until the owner enables it.
+                NavigationLink { MedicalHomeView() } label: {
+                    HStack(spacing: OrbitSpacing.medium) {
+                        Image(systemName: "cross.case")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Routes05Tokens.accentInk)
+                            .frame(width: 34, height: 34)
+                            .background(Routes05Tokens.yellow, in: RoundedRectangle(cornerRadius: OrbitRadius.chip))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Медицина").font(.body.weight(.semibold)).foregroundStyle(Routes05Tokens.ink)
+                            Text("Ліки, прийоми, діагнози, скани").font(.footnote).foregroundStyle(Routes05Tokens.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right").foregroundStyle(Routes05Tokens.secondary).accessibilityHidden(true)
+                    }
+                    .padding(.horizontal, OrbitSpacing.large)
+                    .frame(minHeight: 64)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
 
                 if authentication.impersonating {
                     divider

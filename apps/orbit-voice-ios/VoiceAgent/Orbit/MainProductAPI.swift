@@ -1246,3 +1246,37 @@ nonisolated enum OrbitSchoolSyncError: LocalizedError, Sendable {
         }
     }
 }
+
+// Medical section (orbit-family-ai#379): raw document upload/download share the app's session, base URL and refresh rules.
+extension MainProductAPI {
+    func medicalUploadDocument(subjectID: String, title: String, kind: String, filename: String, contentType: String, data: Data) async throws {
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/medical/subjects/\(subjectID)/documents"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "title", value: title), URLQueryItem(name: "kind", value: kind), URLQueryItem(name: "filename", value: filename)]
+        guard let token = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
+        guard let url = components?.url else { throw OrbitChatAPIError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        let (body, response) = try await URLSession.shared.upload(for: request, from: data)
+        guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            let code = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? String
+            throw OrbitHTTPResponseFailure(status: http.statusCode, code: code)
+        }
+    }
+
+    func medicalDownloadDocument(subjectID: String, documentID: String) async throws -> Data {
+        guard let token = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
+        guard let url = URL(string: "/api/medical/subjects/\(subjectID)/documents/\(documentID)", relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (body, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
+            throw OrbitHTTPResponseFailure(status: (response as? HTTPURLResponse)?.statusCode ?? 0, code: nil)
+        }
+        return body
+    }
+}
