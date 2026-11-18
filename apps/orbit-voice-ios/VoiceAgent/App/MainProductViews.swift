@@ -392,42 +392,34 @@ struct CalendarEventEditor: View {
         }
     }
     private var isProviderTarget: Bool { existing == nil && targetId != "orbit_local" }
+    private var formValues: Binding<OrbitEventFormValues> {
+        Binding(
+            get: { OrbitEventFormValues(title: title, notes: notes, location: location, allDay: allDay, startsAt: startsAt, endsAt: endsAt) },
+            set: { title = $0.title; notes = $0.notes; location = $0.location; allDay = $0.allDay; startsAt = $0.startsAt; endsAt = $0.endsAt }
+        )
+    }
+    private var formAvailability: OrbitEventFormAvailability {
+        OrbitEventFormAvailability(location: isProviderTarget, locationNote: "Місце доступне лише для подій у календарі iCloud.")
+    }
     var body: some View {
         NavigationStack {
             Form {
-                Section("Подія") {
-                    TextField("Назва", text: $title)
-                    TextField("Нотатки", text: $notes, axis: .vertical)
-                    Toggle("Весь день", isOn: $allDay)
-                }
-                Section("Час") {
-                    DatePicker("Початок", selection: $startsAt)
-                    DatePicker("Кінець", selection: $endsAt, in: startsAt...)
-                }
-                if existing == nil {
-                    Section("Календар") {
-                        if !targetsLoaded {
-                            ProgressView()
-                        } else if targets.isEmpty {
-                            Text("Немає календарів, у які ви можете додавати події.").font(.footnote).foregroundStyle(.secondary)
-                        } else {
-                            Picker("Календар", selection: $targetId) {
-                                ForEach(targets) { target in Text(target.name).tag(target.id) }
-                            }
-                            if isProviderTarget { TextField("Місце", text: $location) }
-                        }
-                    }
-                    if isProviderTarget && !inviteOptions.isEmpty {
-                        Section("Запросити") {
-                            ForEach(inviteOptions) { person in
-                                Toggle(person.name, isOn: Binding(
-                                    get: { invitees.contains(person.id) },
-                                    set: { isOn in if isOn { invitees.insert(person.id) } else { invitees.remove(person.id) } }
-                                ))
-                            }
+                // Same sections as every other event form; the place is gray unless the event goes to an iCloud calendar.
+                OrbitEventDetailSections(values: formValues, availability: formAvailability)
+                Section("Календар") {
+                    if existing != nil {
+                        Text("Календар існуючої події змінити не можна.").font(.footnote).foregroundStyle(.secondary)
+                    } else if !targetsLoaded {
+                        ProgressView()
+                    } else if targets.isEmpty {
+                        Text("Немає календарів, у які ви можете додавати події.").font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        Picker("Календар", selection: $targetId) {
+                            ForEach(targets) { target in Text(target.name).tag(target.id) }
                         }
                     }
                 }
+                OrbitInviteSection(options: inviteOptions, invitesAvailable: isProviderTarget, unavailableNote: existing == nil ? nil : "Гостей існуючої події тут змінити не можна.", invitees: $invitees)
                 if let message {
                     Section { Text(message).font(.footnote).foregroundStyle(.red) }
                 }
@@ -503,21 +495,21 @@ struct ProviderEventEditor: View {
     private var editable: Set<String> { Set(event.capabilities?.edit ?? []) }
     private var canDelete: Bool { event.capabilities?.delete == true }
     private var canEditTime: Bool { !event.allDay && editable.contains("starts_at") && editable.contains("ends_at") }
+    private var formValues: Binding<OrbitEventFormValues> {
+        Binding(
+            get: { OrbitEventFormValues(title: title, notes: notes, location: location, allDay: event.allDay, startsAt: startsAt, endsAt: endsAt) },
+            set: { title = $0.title; notes = $0.notes; location = $0.location; startsAt = $0.startsAt; endsAt = $0.endsAt }
+        )
+    }
+    private var formAvailability: OrbitEventFormAvailability {
+        OrbitEventFormAvailability(title: editable.contains("title"), notes: editable.contains("notes"), location: editable.contains("location"), allDay: false, time: canEditTime, locationNote: "Місце цього календаря змінити не можна.")
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Подія") {
-                    if editable.contains("title") { TextField("Назва", text: $title) } else { Text(event.title) }
-                    if editable.contains("notes") { TextField("Нотатки", text: $notes, axis: .vertical) }
-                    if editable.contains("location") { TextField("Місце", text: $location) }
-                }
-                if canEditTime {
-                    Section("Час") {
-                        DatePicker("Початок", selection: $startsAt)
-                        DatePicker("Кінець", selection: $endsAt, in: startsAt...)
-                    }
-                }
+                // Same sections as every other event form; what this iCloud calendar does not allow to change stays visible but gray.
+                OrbitEventDetailSections(values: formValues, availability: formAvailability)
                 if let message { Section { Text(message).font(.footnote).foregroundStyle(.red) } }
                 if canDelete {
                     Section { Button("Видалити подію", role: .destructive) { confirmDelete = true }.disabled(saving) }
@@ -572,6 +564,33 @@ struct ProviderEventEditor: View {
     }
 }
 
+/// "Запросити": always shown. Only iCloud calendars can invite people, so for the Orbit calendar the list stays visible but gray.
+struct OrbitInviteSection: View {
+    let options: [OrbitInviteOption]
+    let invitesAvailable: Bool
+    /// Overrides the default gray reason (e.g. an existing event's guests cannot be changed here).
+    var unavailableNote: String? = nil
+    @Binding var invitees: Set<String>
+
+    var body: some View {
+        Section("Запросити") {
+            ForEach(options) { person in
+                Toggle(person.name, isOn: Binding(
+                    get: { invitees.contains(person.id) },
+                    set: { isOn in if isOn { invitees.insert(person.id) } else { invitees.remove(person.id) } }
+                )).disabled(!invitesAvailable)
+            }
+            if let note = unavailableNote {
+                Text(note).font(.footnote).foregroundStyle(.secondary)
+            } else if options.isEmpty {
+                Text("Немає людей, яких можна запросити.").font(.footnote).foregroundStyle(.secondary)
+            } else if !invitesAvailable {
+                Text("Запрошення доступні лише для календарів iCloud.").font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 /// Calendar choice (Orbit family calendar or an iCloud calendar from the server list) and, for iCloud, whom to invite. Reused inside forms.
 struct CalendarChoiceSections: View {
     @Binding var targetId: String
@@ -593,16 +612,7 @@ struct CalendarChoiceSections: View {
             }
         }
         .task { await load() }
-        if targetId != "orbit_local" && !inviteOptions.isEmpty {
-            Section("Запросити") {
-                ForEach(inviteOptions) { person in
-                    Toggle(person.name, isOn: Binding(
-                        get: { invitees.contains(person.id) },
-                        set: { isOn in if isOn { invitees.insert(person.id) } else { invitees.remove(person.id) } }
-                    ))
-                }
-            }
-        }
+        OrbitInviteSection(options: inviteOptions, invitesAvailable: targetId != "orbit_local", invitees: $invitees)
     }
 
     private func load() async {
@@ -616,60 +626,93 @@ struct CalendarChoiceSections: View {
     }
 }
 
-/// School "add to calendar" sheet. The caller supplies what happens for the Orbit calendar and for an iCloud calendar (+ invitees).
+/// School "add to calendar" sheet: the SAME event form as everywhere else. What the school source does not let the user change stays visible but gray.
 struct SchoolCalendarChoiceSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let eventTitle: String
-    /// Read-only lines under the title (when / where) so the user sees what will be added: date and time are never hidden.
-    let detail: [String]
-    let addLocal: () async throws -> String
-    let addProvider: (String, [String]) async throws -> OrbitProviderWriteResult
+    let baseAvailability: OrbitEventFormAvailability
+    let addLocal: (OrbitEventFormValues) async throws -> String
+    let addProvider: (String, [String], OrbitEventFormValues) async throws -> OrbitProviderWriteResult
     let onResult: (String) -> Void
+    @State private var values: OrbitEventFormValues
     @State private var targetId = "orbit_local"
     @State private var invitees = Set<String>()
     @State private var saving = false
     @State private var message: String?
 
-    init(eventTitle: String, detail: [String] = [], addLocal: @escaping () async throws -> String, addProvider: @escaping (String, [String]) async throws -> OrbitProviderWriteResult, onResult: @escaping (String) -> Void) {
-        self.eventTitle = eventTitle
-        self.detail = detail
+    init(values: OrbitEventFormValues, availability: OrbitEventFormAvailability, addLocal: @escaping (OrbitEventFormValues) async throws -> String, addProvider: @escaping (String, [String], OrbitEventFormValues) async throws -> OrbitProviderWriteResult, onResult: @escaping (String) -> Void) {
+        _values = State(initialValue: values)
+        self.baseAvailability = availability
         self.addLocal = addLocal
         self.addProvider = addProvider
         self.onResult = onResult
     }
 
-    /// School calendar events (by Schulmanager uid).
-    init(eventTitle: String, detail: [String] = [], uid: String, onResult: @escaping (String) -> Void) {
+    /// An event extracted from a letter or message: title, notes, time and (for iCloud) place are editable; the server takes them from the request.
+    init(schoolEvent event: OrbitSchoolEvent, itemID: String, onResult: @escaping (String) -> Void) {
         self.init(
-            eventTitle: eventTitle,
-            detail: detail,
-            addLocal: {
+            values: OrbitEventFormValues(schoolEvent: event),
+            availability: .all,
+            addLocal: { edited in
+                let result = try await MainProductAPI.shared.addSchoolEvent(itemID: itemID, event: Self.edited(event, edited), notes: edited.notes, confirm: true)
+                return result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.")
+            },
+            addProvider: { target, people, edited in
+                try await MainProductAPI.shared.addSchoolEventToProvider(itemID: itemID, event: Self.edited(event, edited), notes: edited.notes, targetId: target, attendees: people)
+            },
+            onResult: onResult
+        )
+    }
+
+    /// A school calendar event (by Schulmanager uid) is added exactly as the school published it: every event field is gray.
+    init(schulmanagerEvent event: OrbitSchulmanagerCalendarEvent, onResult: @escaping (String) -> Void) {
+        let uid = event.uid
+        self.init(
+            values: OrbitEventFormValues(schulmanagerEvent: event),
+            availability: .readOnly,
+            addLocal: { _ in
                 let result = try await MainProductAPI.shared.addSchoolCalendarEvent(uid: uid, confirm: true)
                 return result.duplicate == true ? "Цю подію вже додано." : (result.created ? "Подію додано до сімейного календаря Orbit." : "Не вдалося додати подію.")
             },
-            addProvider: { target, people in
+            addProvider: { target, people, _ in
                 try await MainProductAPI.shared.addSchoolCalendarEventToProvider(uid: uid, targetId: target, attendees: people)
             },
             onResult: onResult
         )
     }
 
+    private static func edited(_ event: OrbitSchoolEvent, _ values: OrbitEventFormValues) -> OrbitSchoolEvent {
+        OrbitSchoolEvent(
+            key: event.key,
+            title: values.title.trimmingCharacters(in: .whitespacesAndNewlines),
+            startsAt: values.startsAt,
+            endsAt: values.endsAt,
+            allDay: values.allDay,
+            location: values.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : values.location
+        )
+    }
+
+    /// The place exists only on iCloud events; everything else follows what the source allows.
+    private var availability: OrbitEventFormAvailability {
+        var result = baseAvailability
+        if targetId == "orbit_local" { result.location = false }
+        result.locationNote = "Місце доступне лише для подій у календарі iCloud."
+        return result
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Text(eventTitle).font(.headline)
-                    ForEach(detail, id: \.self) { line in Text(line).font(.subheadline).foregroundStyle(.secondary) }
-                }
+                OrbitEventDetailSections(values: $values, availability: availability)
                 CalendarChoiceSections(targetId: $targetId, invitees: $invitees)
                 if let message { Section { Text(message).font(.footnote).foregroundStyle(.red) } }
             }
             .navigationTitle("До календаря")
             .navigationBarTitleDisplayMode(.inline)
             .environment(\.locale, Locale(identifier: "uk_UA"))
+            .environment(\.timeZone, SchoolHubLogic.schoolTimeZone)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Додати") { Task { await add() } }.disabled(saving) }
+                ToolbarItem(placement: .confirmationAction) { Button("Додати") { Task { await add() } }.disabled(saving || values.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
             }
         }
     }
@@ -679,13 +722,13 @@ struct SchoolCalendarChoiceSheet: View {
         message = nil
         do {
             if targetId != "orbit_local" {
-                let result = try await addProvider(targetId, Array(invitees).sorted())
+                let result = try await addProvider(targetId, Array(invitees).sorted(), values)
                 if result.state == "accepted" || result.state == "already_requested" || result.state == "outcome_unknown" {
                     onResult(result.state == "accepted" ? "Подію додано до обраного календаря." : OrbitProviderWriteCopy.text(result))
                     dismiss()
                 } else { message = OrbitProviderWriteCopy.text(result) }
             } else {
-                onResult(try await addLocal())
+                onResult(try await addLocal(values))
                 dismiss()
             }
         } catch { message = "Не вдалося додати подію. Спробуйте ще раз." }
