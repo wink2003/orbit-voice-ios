@@ -854,6 +854,7 @@ struct SchoolDetailView: View {
         .sheet(item: $pendingCalendarEvent) { event in
             SchoolCalendarChoiceSheet(
                 eventTitle: event.title,
+                detail: calendarDetailLines(event),
                 addLocal: {
                     let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true)
                     return result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.")
@@ -944,6 +945,13 @@ struct SchoolDetailView: View {
         formatter.dateFormat = "d MMMM yyyy 'о' HH:mm"
         if let end = event.endsAt, end != start { return "\(formatter.string(from: start)) – \(formatter.string(from: end))" }
         return formatter.string(from: start)
+    }
+    /// When/where lines for the add-to-calendar sheet (the letter's own extracted event, Europe/Berlin).
+    private func calendarDetailLines(_ event: OrbitSchoolEvent) -> [String] {
+        var lines: [String] = []
+        if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) } else { lines.append("Дата й час не визначені") }
+        if let location = event.location, !location.isEmpty { lines.append(location) }
+        return lines
     }
     private var calendarPreviewMessage: String { guard let event = pendingCalendarEvent else { return "" }; var lines = [event.title]; if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location, !location.isEmpty { lines.append(location) }; return lines.joined(separator: "\n") }
     private func ensureHubStore() async {
