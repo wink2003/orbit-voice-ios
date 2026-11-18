@@ -14,7 +14,6 @@ struct OrbitChatsView: View {
     @State private var isLoading = true
     @State private var error: Error?
     @State private var familyProfiles: [OrbitFamilyProfile] = []
-    @State private var showingVoice = false
     @State private var isCreatingConversation = false
     @State private var selectedFilter = "Всі"
     #if DEBUG
@@ -54,11 +53,11 @@ struct OrbitChatsView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                    Routes05Mast(section: "core") { showingVoice = true }
+                    Routes05Mast(section: "core") { OrbitVoicePresence.shared.isExpanded = true }
                     Routes05RootHeader("ORBIT / 02", title: "Orbit / розмови", detail: "Ваші розмови, збережені в Orbit.") {
                         // Voice launch: the same OrbitVoiceSheet as the mast and the ГОЛОС row
                         // (existing authorized Main Orbit voice flow; no new session path).
-                        Button { showingVoice = true } label: {
+                        Button { OrbitVoicePresence.shared.isExpanded = true } label: {
                             Routes05VoiceBadge().contentShape(Circle())
                         }
                         .buttonStyle(.plain)
@@ -79,7 +78,7 @@ struct OrbitChatsView: View {
                                 .buttonStyle(.plain)
                         }
                     }
-                    Button { showingVoice = true } label: {
+                    Button { OrbitVoicePresence.shared.isExpanded = true } label: {
                         HStack {
                             Text("◉ ГОЛОС").font(.caption.weight(.black))
                             Text("Говорити з Orbit").font(.caption)
@@ -108,7 +107,6 @@ struct OrbitChatsView: View {
             .background(Routes05Tokens.canvas.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .routes05NativeSwipeBack()
-            .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
             .navigationDestination(item: $selectedChat) { chat in
                 #if DEBUG
                 OrbitConversationView(conversation: chat, initialDraft: contactPrompt, debugMessages: debugConversation ? Routes05DebugFixtures.conversationMessages : nil)
@@ -261,7 +259,6 @@ private struct OrbitConversationView: View {
     @State private var failedMessageID: String?
     @State private var agentPollTasks: [String: Task<Void, Never>] = [:]
     @State private var isStopping = false
-    @State private var showingVoice = false
     @State private var searchText = ""
     @AppStorage("orbit.chat.haptics") private var hapticsEnabled = true
     private let debugMessages: [OrbitChatMessage]?
@@ -437,12 +434,11 @@ private struct OrbitConversationView: View {
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Пошук у завантажених")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showingVoice = true } label: { Image(systemName: "waveform") }
+                Button { OrbitVoicePresence.shared.isExpanded = true } label: { Image(systemName: "waveform") }
                     .frame(minWidth: OrbitSpacing.minTarget, minHeight: OrbitSpacing.minTarget)
                     .accessibilityLabel("Голосова розмова")
             }
         }
-        .sheet(isPresented: $showingVoice) { OrbitVoiceSheet() }
         .toolbar(.hidden, for: .tabBar)
         .task { await loadMessages() }
         .onAppear { novaDockVisible.wrappedValue = false }
@@ -820,6 +816,7 @@ private struct SelectableMarkdownText: UIViewRepresentable, Equatable {
 }
 
 // Voice stays an explicit action: the session is only started by a button inside MainVoiceHomeView.
+// The window can be collapsed while connected (issue #374): the session lives in OrbitRuntime, the mini bar (OrbitVoiceMiniBar) keeps it reachable.
 struct OrbitVoiceSheet: View {
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
@@ -831,12 +828,10 @@ struct OrbitVoiceSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Закрити") { dismiss() }
-                            .disabled(session.isConnected)
+                        Button(session.isConnected ? "Згорнути" : "Закрити") { dismiss() }
                             .frame(minHeight: OrbitSpacing.minTarget)
                     }
                 }
         }
-        .interactiveDismissDisabled(session.isConnected)
     }
 }
