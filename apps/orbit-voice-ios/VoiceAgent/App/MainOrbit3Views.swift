@@ -152,7 +152,7 @@ struct MainOrbit3HomeView: View {
                     .environment(\.locale, Locale(identifier: "uk_UA"))
             }
             Spacer()
-            NavigationLink { OrbitVoiceSheet() } label: {
+            Button { OrbitVoicePresence.shared.isExpanded = true } label: {
                 Image(systemName: "waveform")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(.white)
@@ -249,7 +249,7 @@ struct MainOrbit3HomeView: View {
                 HStack(spacing: 9) {
                     NavigationLink { OrbitChatsView(contactPrompt: "Що мені потрібно зробити сьогодні?") } label: { Orbit3Prompt(title: "Мій день", icon: "sparkles") }
                     NavigationLink { OrbitChatsView(contactPrompt: "Що нового зі школи?") } label: { Orbit3Prompt(title: "Шкільні новини", icon: "graduationcap") }
-                    NavigationLink { OrbitVoiceSheet() } label: { Orbit3Prompt(title: "Голос", icon: "waveform") }
+                    Button { OrbitVoicePresence.shared.isExpanded = true } label: { Orbit3Prompt(title: "Голос", icon: "waveform") }
                 }
             }
         }

@@ -1241,6 +1241,15 @@ final class SchoolHubV2Store {
     }
 
     private func fetchExams() async throws -> (exams: [OrbitSchoolHubV2Exam], to: String, states: [String]) {
+        // Whole school year in one request (issue #375). An older server rejects windows over 31 days with HTTP 400: fall back to the chunked horizon.
+        if let year = SchoolHubLogic.schoolYearWindow(containing: weekStart) {
+            do {
+                let response = try await MainProductAPI.shared.schoolExams(from: year.from, to: year.to)
+                return (response.exams, response.to, response.coverage.map { [$0.state] } ?? [])
+            } catch let failure as OrbitHTTPResponseFailure where failure.status == 400 {
+                // fall through to the chunked request below
+            }
+        }
         var exams: [OrbitSchoolHubV2Exam] = []; var to = weekEnd; var states: [String] = []
         for window in SchoolHubLogic.windows(from: weekStart, days: 56) {
             let response = try await MainProductAPI.shared.schoolExams(from: window.from, to: window.to)

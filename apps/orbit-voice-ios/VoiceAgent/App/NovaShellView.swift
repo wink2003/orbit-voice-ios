@@ -18,6 +18,7 @@ struct NovaShellView: View {
         _schoolWidgetDeepLink = schoolWidgetDeepLink
     }
     #endif
+    @ObservedObject private var voicePresence = OrbitVoicePresence.shared
     @State private var dockTopY: CGFloat = .infinity
     @State private var dockHeight: CGFloat = 0
     @State private var dockVisible = true
@@ -33,16 +34,21 @@ struct NovaShellView: View {
         destination
             .id(rootGeneration)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if dockVisible {
-                    NovaDock(selection: selection, onSelect: request)
-                        .onGeometryChange(for: DockMetrics.self) { proxy in
-                            DockMetrics(top: proxy.frame(in: .global).minY, height: proxy.size.height)
-                        } action: { metrics in
-                            dockTopY = metrics.top
-                            dockHeight = metrics.height
-                        }
+                VStack(spacing: 0) {
+                    // Collapsed voice call (issue #374): the call keeps running while the user uses the app.
+                    OrbitVoiceMiniBar()
+                    if dockVisible {
+                        NovaDock(selection: selection, onSelect: request)
+                            .onGeometryChange(for: DockMetrics.self) { proxy in
+                                DockMetrics(top: proxy.frame(in: .global).minY, height: proxy.size.height)
+                            } action: { metrics in
+                                dockTopY = metrics.top
+                                dockHeight = metrics.height
+                            }
                     }
+                }
             }
+            .sheet(isPresented: $voicePresence.isExpanded) { OrbitVoiceSheet() }
             .environment(\.novaDockTopY, dockTopY)
             .environment(\.novaDockHeight, dockHeight)
             .environment(\.novaDockVisible, $dockVisible)
