@@ -537,6 +537,14 @@ nonisolated enum SchoolHubLogic {
         return result
     }
 
+    /// The school year (Aug 1 ... Jul 31; `to` is the exclusive Aug 1) containing a `yyyy-MM-dd` day key. Exams are requested for the whole year (issue #375).
+    static func schoolYearWindow(containing dayKey: String) -> (from: String, to: String)? {
+        let parts = dayKey.split(separator: "-")
+        guard parts.count == 3, let year = Int(parts[0]), let month = Int(parts[1]), (1...12).contains(month) else { return nil }
+        let startYear = month >= 8 ? year : year - 1
+        return ("\(startYear)-08-01", "\(startYear + 1)-08-01")
+    }
+
     /// Each argument is nil on success, else the HTTP status (0 for a non-HTTP failure).
     /// The whole hub fails only for auth problems or when every endpoint failed; otherwise sections with data stay usable.
     static func isHubWideFailure(overview: Int?, exams: Int?, timetable: Int?) -> Bool {

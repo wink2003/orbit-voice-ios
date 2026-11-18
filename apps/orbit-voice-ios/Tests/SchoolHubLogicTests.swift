@@ -563,6 +563,12 @@ struct SchoolHubLogicTests {
         supersedeGate.advance(); precondition(supersedeGate.token() == nil, "no scope -> no token")
         supersedeGate.reset(to: "p|own"); let t1 = supersedeGate.token(); supersedeGate.advance(); precondition(!supersedeGate.accepts(t1) && supersedeGate.accepts(supersedeGate.token()), "newer load supersedes older token")
 
+        // Exams for the whole school year (issue #375): Aug 1 ... next Aug 1 (exclusive), spring belongs to the year that started the previous August.
+        precondition(SchoolHubLogic.schoolYearWindow(containing: "2026-11-18")?.from == "2026-08-01" && SchoolHubLogic.schoolYearWindow(containing: "2026-11-18")?.to == "2027-08-01")
+        precondition(SchoolHubLogic.schoolYearWindow(containing: "2027-03-10")?.from == "2026-08-01")
+        precondition(SchoolHubLogic.schoolYearWindow(containing: "2027-08-02")?.from == "2027-08-01")
+        precondition(SchoolHubLogic.schoolYearWindow(containing: "garbage") == nil)
+
         print("school hub logic tests passed")
     }
 }
