@@ -72,7 +72,9 @@ struct OrbitSchoolAttachment: Decodable, Hashable {
 }
 struct OrbitSchoolItemsResponse: Decodable { let items: [OrbitSchoolItem]; let unreadCount: Int }
 struct OrbitSchulmanagerCalendarEvent: Decodable, Identifiable, Hashable { let uid: String; let title: String; let description: String; let location: String; let startsAt: String?; let endsAt: String?; let allDay: Bool; let timeZone: String?; let recurrenceRule: String?; let relevanceClass: String?; let audienceClass: String?; let relevanceReason: String?; var id: String { uid } }
-struct OrbitSchoolTask: Decodable, Identifiable, Hashable { let key: String; let stableIdentity: Bool?; let title: String; let action: String?; let dueAt: String?; var dueEndAt: String? = nil; let endsAt: String?; let allDay: Bool; let importance: String?; let target: String?; let confidence: Double?; let reason: String?; let location: String?; let sourceItemId: String; let sourceType: String; let sourceExternalId: String; let bucket: String?; let status: String?; let completedAt: String?; let actionTaskId: String?; let calendarEventId: String?; let effectiveDueAt: String?; let effectiveDueDateOrigin: String?; let group: String?; var id: String { key.hasPrefix("\(sourceItemId):") ? key : "\(sourceItemId):\(key)" } }
+/// One letter/message a merged school task comes from (server merges the same obligation announced in several letters, issue #358).
+struct OrbitSchoolTaskSource: Decodable, Hashable { let itemId: String; let type: String?; let externalId: String?; let key: String?; let title: String?; let date: String? }
+struct OrbitSchoolTask: Decodable, Identifiable, Hashable { let key: String; let stableIdentity: Bool?; let title: String; let action: String?; let dueAt: String?; var dueEndAt: String? = nil; let endsAt: String?; let allDay: Bool; let importance: String?; let target: String?; let confidence: Double?; let reason: String?; let location: String?; let sourceItemId: String; let sourceType: String; let sourceExternalId: String; let bucket: String?; let status: String?; let completedAt: String?; let actionTaskId: String?; let calendarEventId: String?; let effectiveDueAt: String?; let effectiveDueDateOrigin: String?; let group: String?; var sources: [OrbitSchoolTaskSource]? = nil; var id: String { key.hasPrefix("\(sourceItemId):") ? key : "\(sourceItemId):\(key)" } }
 struct OrbitSchulmanagerCalendarResponse: Decodable { let events: [OrbitSchulmanagerCalendarEvent] }
 struct OrbitSchoolTasksResponse: Decodable { let from: String; let to: String; let coverage: String?; let truncated: Bool?; let complete: Bool?; let completionState: String?; let tasks: [OrbitSchoolTask]; let importantEvents: [OrbitSchulmanagerCalendarEvent] }
 
@@ -854,17 +856,17 @@ final class MainProductAPI {
         return try await providerWrite(path: "/api/school/items/\(itemPath)/calendar-proposal", method: "POST", body: body)
     }
     /// School letter/message event -> a CHOSEN iCloud calendar with optional invitees.
-    func addSchoolEventToProvider(itemID: String, event: OrbitSchoolEvent, targetId: String, attendees: [String]) async throws -> OrbitProviderWriteResult {
-        struct Payload: Encodable { let key: String; let title: String; let startsAt: Date?; let endsAt: Date?; let allDay: Bool; let location: String?; let confirm: Bool; let targetId: String; let attendees: [String] }
-        let body = try encoder.encode(Payload(key: event.key, title: event.title, startsAt: event.startsAt, endsAt: event.endsAt, allDay: event.allDay, location: event.location, confirm: true, targetId: targetId, attendees: attendees))
+    func addSchoolEventToProvider(itemID: String, event: OrbitSchoolEvent, notes: String = "", targetId: String, attendees: [String]) async throws -> OrbitProviderWriteResult {
+        struct Payload: Encodable { let key: String; let title: String; let startsAt: Date?; let endsAt: Date?; let allDay: Bool; let location: String?; let notes: String; let confirm: Bool; let targetId: String; let attendees: [String] }
+        let body = try encoder.encode(Payload(key: event.key, title: event.title, startsAt: event.startsAt, endsAt: event.endsAt, allDay: event.allDay, location: event.location, notes: notes, confirm: true, targetId: targetId, attendees: attendees))
         let itemPath = itemID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemID
         return try await providerWrite(path: "/api/school/items/\(itemPath)/calendar-proposal", method: "POST", body: body)
     }
     func schoolItem(id: String) async throws -> OrbitSchoolItem { try await request(path: "/api/school/items/\(id)", as: SchoolItemResponse.self).item }
     func markSchoolItemRead(id: String) async throws { struct Response: Decodable { let ok: Bool }; _ = try await request(path: "/api/school/items/\(id)/read", method: "POST", body: nil, as: Response.self) }
-    func addSchoolEvent(itemID: String, event: OrbitSchoolEvent, confirm: Bool) async throws -> SchoolCalendarResult {
-        struct Payload: Encodable { let key: String; let title: String; let startsAt: Date?; let endsAt: Date?; let allDay: Bool; let location: String?; let confirm: Bool }
-        let body = try encoder.encode(Payload(key: event.key, title: event.title, startsAt: event.startsAt, endsAt: event.endsAt, allDay: event.allDay, location: event.location, confirm: confirm))
+    func addSchoolEvent(itemID: String, event: OrbitSchoolEvent, notes: String = "", confirm: Bool) async throws -> SchoolCalendarResult {
+        struct Payload: Encodable { let key: String; let title: String; let startsAt: Date?; let endsAt: Date?; let allDay: Bool; let location: String?; let notes: String; let confirm: Bool }
+        let body = try encoder.encode(Payload(key: event.key, title: event.title, startsAt: event.startsAt, endsAt: event.endsAt, allDay: event.allDay, location: event.location, notes: notes, confirm: confirm))
         return try await request(path: "/api/school/items/\(itemID)/calendar-proposal", method: "POST", body: body)
     }
 

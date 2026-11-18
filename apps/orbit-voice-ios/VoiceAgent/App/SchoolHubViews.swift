@@ -123,7 +123,8 @@ final class SchoolHubStore {
                     identityStable: task.stableIdentity ?? true,
                     calendarEventId: calendarLinks[task.id] ?? task.calendarEventId,
                     effectiveDueAt: state?.planningDate == nil ? task.effectiveDueAt : nil,
-                    effectiveDueDateOrigin: state?.planningDate == nil ? task.effectiveDueDateOrigin : nil
+                    effectiveDueDateOrigin: state?.planningDate == nil ? task.effectiveDueDateOrigin : nil,
+                    sources: task.sources ?? []
                 )
             }
         } else {
@@ -2326,6 +2327,16 @@ struct SchoolTaskDetailView: View {
     private var currentTask: SchoolHubTask { store.hubTasks.first { $0.id == task.id } ?? task }
     private var taskIsCompleted: Bool { currentTask.status == "completed" }
     private var source: OrbitSchoolItem? { store.item(id: task.sourceItemId) }
+    /// "Title · 17 листопада": the letter's own title plus its date, so the links of a merged task are distinguishable.
+    private func sourceLinkTitle(_ link: OrbitSchoolTaskSource, item: OrbitSchoolItem) -> String {
+        let name = item.displayTitle.isEmpty ? (link.title ?? "Лист") : item.displayTitle
+        guard let raw = link.date, let date = ISO8601DateFormatter().date(from: raw) ?? { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f.date(from: raw) }() else { return name }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "uk_UA")
+        formatter.timeZone = SchoolHubLogic.schoolTimeZone
+        formatter.dateFormat = "d MMMM"
+        return "\(name) · \(formatter.string(from: date))"
+    }
     private var dueKey: String? { SchoolHubLogic.dayKey(for: task.schoolDeadlineAt, allDay: task.schoolDeadlineAllDay) }
     private func loadHistory() async {
         guard let id = currentTask.actionID, !id.isEmpty else { history = []; return }
@@ -2443,7 +2454,21 @@ struct SchoolTaskDetailView: View {
                     }
                 }
                 if let reason = task.reason, !reason.isEmpty { detailCard { Text("КОНТЕКСТ").font(.caption.weight(.black).monospaced()); Text(reason).fixedSize(horizontal: false, vertical: true).textSelection(.enabled) } }
-                if task.kind == "source" {
+                if task.kind == "source", task.sources.count > 1 {
+                    detailCard {
+                        Text("03  ПОВ’ЯЗАНІ ЛИСТИ (\(task.sources.count))").font(.caption.weight(.black).monospaced())
+                        Text("Та сама справа згадується в кількох листах.").font(.footnote).foregroundStyle(.secondary)
+                        ForEach(task.sources, id: \.itemId) { link in
+                            if let item = store.item(id: link.itemId) {
+                                NavigationLink { SchoolDetailView(item: item, store: store) } label: {
+                                    Label(sourceLinkTitle(link, item: item), systemImage: item.type == "letter" ? "envelope.open" : "message")
+                                }.foregroundStyle(Routes05Tokens.blue).frame(minHeight: 44, alignment: .leading)
+                            } else {
+                                Label(link.title ?? "Лист недоступний", systemImage: "exclamationmark.triangle").foregroundStyle(.secondary).frame(minHeight: 44, alignment: .leading)
+                            }
+                        }
+                    }
+                } else if task.kind == "source" {
                     detailCard {
                         Text("03  ПОВ’ЯЗАНИЙ ЛИСТ").font(.caption.weight(.black).monospaced())
                         if let source { NavigationLink { SchoolDetailView(item: source, store: store) } label: { Label("Відкрити лист або повідомлення", systemImage: source.type == "letter" ? "envelope.open" : "message") }.foregroundStyle(Routes05Tokens.blue).frame(minHeight: OrbitSpacing.minTarget) }
@@ -3403,7 +3428,7 @@ struct SchoolEventDetailView: View {
         .novaDockAwareScrollContent()
         .alert("Календар школи", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("Гаразд") { message = nil } } message: { Text(message ?? "") }
         .sheet(isPresented: $pending) {
-            SchoolCalendarChoiceSheet(eventTitle: event.title, uid: event.uid) { message = $0 }
+            SchoolCalendarChoiceSheet(schulmanagerEvent: event) { message = $0 }
         }
     }
 

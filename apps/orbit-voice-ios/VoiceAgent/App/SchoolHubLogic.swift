@@ -198,6 +198,8 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     var calendarEventId: String? = nil
     var effectiveDueAt: String? = nil
     var effectiveDueDateOrigin: String? = nil
+    /// Every letter this one task comes from (>= 2 when the same obligation was announced again); empty for an ordinary task.
+    var sources: [OrbitSchoolTaskSource] = []
 }
 
 enum SchoolHubActionError: LocalizedError {

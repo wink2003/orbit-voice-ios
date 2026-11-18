@@ -458,7 +458,7 @@ struct SchoolCalendarView: View {
             }
         }.navigationTitle("Календар школи").task { await load() }.onChange(of: scope) { _, _ in Task { await load() } }.alert("Календар школи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
         .sheet(item: $pendingEvent) { event in
-            SchoolCalendarChoiceSheet(eventTitle: event.title, uid: event.uid) { error = $0 }
+            SchoolCalendarChoiceSheet(schulmanagerEvent: event) { error = $0 }
         }
     }
     private func calendarBadge(_ event: OrbitSchulmanagerCalendarEvent) -> (label: String, color: Color)? {
@@ -852,18 +852,7 @@ struct SchoolDetailView: View {
         .alert("Скопійовано", isPresented: $copyNotice) { Button("Гаразд", role: .cancel) {} } message: { Text("Текст доступний для виділення та копіювання.") }
         .alert("Календар", isPresented: .constant(calendarMessage != nil)) { Button("Гаразд") { calendarMessage = nil } } message: { Text(calendarMessage ?? "") }
         .sheet(item: $pendingCalendarEvent) { event in
-            SchoolCalendarChoiceSheet(
-                eventTitle: event.title,
-                detail: calendarDetailLines(event),
-                addLocal: {
-                    let result = try await MainProductAPI.shared.addSchoolEvent(itemID: item.id, event: event, confirm: true)
-                    return result.duplicate == true ? "Подію вже додано." : (result.created ? "Подію додано до календаря." : "Не вдалося додати подію.")
-                },
-                addProvider: { target, people in
-                    try await MainProductAPI.shared.addSchoolEventToProvider(itemID: item.id, event: event, targetId: target, attendees: people)
-                },
-                onResult: { calendarMessage = $0 }
-            )
+            SchoolCalendarChoiceSheet(schoolEvent: event, itemID: item.id) { calendarMessage = $0 }
         }
     }
     private var displayTitle: String { item.displayTitle }
@@ -945,13 +934,6 @@ struct SchoolDetailView: View {
         formatter.dateFormat = "d MMMM yyyy 'о' HH:mm"
         if let end = event.endsAt, end != start { return "\(formatter.string(from: start)) – \(formatter.string(from: end))" }
         return formatter.string(from: start)
-    }
-    /// When/where lines for the add-to-calendar sheet (the letter's own extracted event, Europe/Berlin).
-    private func calendarDetailLines(_ event: OrbitSchoolEvent) -> [String] {
-        var lines: [String] = []
-        if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) } else { lines.append("Дата й час не визначені") }
-        if let location = event.location, !location.isEmpty { lines.append(location) }
-        return lines
     }
     private var calendarPreviewMessage: String { guard let event = pendingCalendarEvent else { return "" }; var lines = [event.title]; if event.startsAt != nil { lines.append(event.allDay ? schoolAllDayRange(event) : schoolTimedDateRange(event)) }; if let location = event.location, !location.isEmpty { lines.append(location) }; return lines.joined(separator: "\n") }
     private func ensureHubStore() async {
