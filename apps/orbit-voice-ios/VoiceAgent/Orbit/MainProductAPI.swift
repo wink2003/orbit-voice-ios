@@ -155,6 +155,8 @@ struct OrbitSchoolHubV2OverviewResponse: Decodable { let overview: OrbitSchoolHu
 struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
     let id: String
     let subject: String
+    /// Decoded subject name from the server (e.g. "E5" -> "Англійська мова"); nil when the code has no known decoding (issue #376).
+    let subjectNameUk: String?
     let dayKey: String
     let lessonStart: Int?
     let lessonEnd: Int?
@@ -174,7 +176,7 @@ struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
     let observedAt: Date?
 
     private enum CodingKeys: String, CodingKey {
-        case id, subject, dayKey, lessonStart, lessonEnd, startsAt, room, teacher, group, groupName,
+        case id, subject, subjectNameUk = "subject_name_uk", dayKey, lessonStart, lessonEnd, startsAt, room, teacher, group, groupName,
              startClassHourNumber, typeName, typeColor, typeVisibleForStudents, comment, status,
              source, sourceFingerprint, observedAt
     }
@@ -183,6 +185,7 @@ struct OrbitSchoolHubV2Exam: Decodable, Identifiable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         subject = try container.decode(String.self, forKey: .subject)
+        subjectNameUk = try container.decodeIfPresent(String.self, forKey: .subjectNameUk)
         dayKey = try container.decode(String.self, forKey: .dayKey)
         lessonStart = try container.decodeIfPresent(Int.self, forKey: .lessonStart)
         lessonEnd = try container.decodeIfPresent(Int.self, forKey: .lessonEnd)
@@ -286,7 +289,7 @@ struct OrbitSchoolHubV2TimetableResponse: Decodable { let timetable: OrbitSchool
 #if DEBUG
 extension OrbitSchoolHubV2Exam {
     init(id: String, subject: String, dayKey: String, lessonStart: Int?, lessonEnd: Int?, startsAt: String?, room: String?, teacher: String?, group: String?, groupName: String?, startClassHourNumber: Int?, typeName: String?, typeColor: String?, typeVisibleForStudents: Bool?, comment: String?, status: String?, source: String?, sourceFingerprint: String?, observedAt: Date?) {
-        self.id = id; self.subject = subject; self.dayKey = dayKey; self.lessonStart = lessonStart; self.lessonEnd = lessonEnd; self.startsAt = startsAt; self.room = room; self.teacher = teacher; self.group = group; self.groupName = groupName; self.startClassHourNumber = startClassHourNumber; self.typeName = typeName; self.typeColor = typeColor; self.typeVisibleForStudents = typeVisibleForStudents; self.comment = comment; self.status = status; self.source = source; self.sourceFingerprint = sourceFingerprint; self.observedAt = observedAt
+        self.subjectNameUk = nil; self.id = id; self.subject = subject; self.dayKey = dayKey; self.lessonStart = lessonStart; self.lessonEnd = lessonEnd; self.startsAt = startsAt; self.room = room; self.teacher = teacher; self.group = group; self.groupName = groupName; self.startClassHourNumber = startClassHourNumber; self.typeName = typeName; self.typeColor = typeColor; self.typeVisibleForStudents = typeVisibleForStudents; self.comment = comment; self.status = status; self.source = source; self.sourceFingerprint = sourceFingerprint; self.observedAt = observedAt
     }
 }
 
@@ -1241,5 +1244,39 @@ nonisolated enum OrbitSchoolSyncError: LocalizedError, Sendable {
         case .network, .serviceUnavailable: "Не вдалося передати шкільний тригер до Orbit."
         case .invalidResponse: "Orbit повернув неочікувану відповідь."
         }
+    }
+}
+
+// Medical section (orbit-family-ai#379): raw document upload/download share the app's session, base URL and refresh rules.
+extension MainProductAPI {
+    func medicalUploadDocument(subjectID: String, title: String, kind: String, filename: String, contentType: String, data: Data) async throws {
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/medical/subjects/\(subjectID)/documents"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "title", value: title), URLQueryItem(name: "kind", value: kind), URLQueryItem(name: "filename", value: filename)]
+        guard let token = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
+        guard let url = components?.url else { throw OrbitChatAPIError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        let (body, response) = try await URLSession.shared.upload(for: request, from: data)
+        guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            let code = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? String
+            throw OrbitHTTPResponseFailure(status: http.statusCode, code: code)
+        }
+    }
+
+    func medicalDownloadDocument(subjectID: String, documentID: String) async throws -> Data {
+        guard let token = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
+        guard let url = URL(string: "/api/medical/subjects/\(subjectID)/documents/\(documentID)", relativeTo: baseURL) else { throw OrbitChatAPIError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (body, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
+            throw OrbitHTTPResponseFailure(status: (response as? HTTPURLResponse)?.statusCode ?? 0, code: nil)
+        }
+        return body
     }
 }
