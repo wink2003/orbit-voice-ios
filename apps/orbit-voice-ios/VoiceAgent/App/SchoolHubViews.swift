@@ -124,7 +124,7 @@ final class SchoolHubStore {
                     calendarEventId: calendarLinks[task.id] ?? task.calendarEventId,
                     effectiveDueAt: state?.planningDate == nil ? task.effectiveDueAt : nil,
                     effectiveDueDateOrigin: state?.planningDate == nil ? task.effectiveDueDateOrigin : nil,
-                    sources: task.sources ?? []
+                    sources: (task.sources ?? []).map { SchoolTaskSourceLink(itemId: $0.itemId, title: $0.title, date: $0.date) }
                 )
             }
         } else {
@@ -2328,7 +2328,7 @@ struct SchoolTaskDetailView: View {
     private var taskIsCompleted: Bool { currentTask.status == "completed" }
     private var source: OrbitSchoolItem? { store.item(id: task.sourceItemId) }
     /// "Title · 17 листопада": the letter's own title plus its date, so the links of a merged task are distinguishable.
-    private func sourceLinkTitle(_ link: OrbitSchoolTaskSource, item: OrbitSchoolItem) -> String {
+    private func sourceLinkTitle(_ link: SchoolTaskSourceLink, item: OrbitSchoolItem) -> String {
         let name = item.displayTitle.isEmpty ? (link.title ?? "Лист") : item.displayTitle
         guard let raw = link.date, let date = ISO8601DateFormatter().date(from: raw) ?? { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f.date(from: raw) }() else { return name }
         let formatter = DateFormatter()

@@ -170,6 +170,13 @@ nonisolated struct SchoolHubEvent: Hashable, Identifiable {
     var id: String { uid }
 }
 
+/// One letter/message a merged school task comes from (this file is compiled standalone, so it cannot use the API model types).
+nonisolated struct SchoolTaskSourceLink: Hashable {
+    let itemId: String
+    let title: String?
+    let date: String?
+}
+
 nonisolated struct SchoolHubTask: Hashable, Identifiable {
     let id: String
     let title: String
@@ -199,7 +206,7 @@ nonisolated struct SchoolHubTask: Hashable, Identifiable {
     var effectiveDueAt: String? = nil
     var effectiveDueDateOrigin: String? = nil
     /// Every letter this one task comes from (>= 2 when the same obligation was announced again); empty for an ordinary task.
-    var sources: [OrbitSchoolTaskSource] = []
+    var sources: [SchoolTaskSourceLink] = []
 }
 
 enum SchoolHubActionError: LocalizedError {
