@@ -4,6 +4,10 @@
 <dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Orbit дзеркалить справи зі Школи у ваш список нагадувань «Школа» і повертає зміни назад. Без вашого дозволу нічого не читається й не пишеться.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Orbit дзеркалить справи зі Школи у ваш список нагадувань «Школа» і повертає зміни назад.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID захищає приватний вміст Main Orbit на цьому пристрої.</string>
 	<key>UIBackgroundModes</key>

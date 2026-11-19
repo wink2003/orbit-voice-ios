@@ -386,6 +386,15 @@ jobs:
             -o "$RUNNER_TEMP/orbit-app-lock-tests"
           "$RUNNER_TEMP/orbit-app-lock-tests"
 
+      - name: Test School reminders mirror logic
+        run: |
+          set -euo pipefail
+          xcrun swiftc \
+            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolRemindersMirrorLogic.swift \
+            apps/orbit-voice-ios/Tests/SchoolRemindersMirrorLogicTests.swift \
+            -o "$RUNNER_TEMP/school-reminders-mirror-tests"
+          "$RUNNER_TEMP/school-reminders-mirror-tests"
+
       - name: Test Main account session state
         run: |
           set -euo pipefail

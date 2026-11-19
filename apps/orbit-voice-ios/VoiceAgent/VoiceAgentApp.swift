@@ -81,6 +81,7 @@ struct VoiceAgentApp: App {
             // The temporary LiveKit transcript UI is intentionally hidden.
             .environment(\.textEnabled, false)
             .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await SchoolRemindersMirror.shared.syncIfEnabled() } }   // School ↔ Reminders mirror (opt-in)
                 guard phase == .background || phase == .inactive else { return }
                 appLock.lockForBackground(isVoiceActive: session.isConnected)
             }
