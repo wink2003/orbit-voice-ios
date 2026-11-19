@@ -54,6 +54,11 @@ struct SchoolRemindersMirrorLogicTests {
         // create cap
         let many = (0..<100).map { task("k\($0)", snap("T\($0)")) }
         check(L.plan(orbit: many, reminders: [], state: MirrorState()).count == L.maxCreatesPerRun, "creates are capped per run")
+        // saved state of the first release has no version: it still decodes (version 0) so its reminders can be migrated
+        let legacyJSON = Data(#"{"links":[{"key":"k","reminderId":"r","base":{"title":"T","notes":"","due":null,"done":false}}],"detached":["x"]}"#.utf8)
+        let legacy = try! JSONDecoder().decode(MirrorState.self, from: legacyJSON)
+        check(legacy.version == 0 && legacy.links.count == 1 && legacy.detached == ["x"], "old saved state decodes with version 0")
+        check(MirrorState().version == 0 && MirrorState.currentVersion == 2, "fresh state is migrated to the current version on the first run")
         print("school reminders mirror logic tests passed")
     }
 }

@@ -37,9 +37,20 @@ struct MirrorLink: Codable, Equatable {
 }
 
 struct MirrorState: Codable, Equatable {
+    /// 2 = tasks assembled exactly like the School Hub list (coverage «all», source tasks keyed `src:<item>:<key>`). 0/1 = first release.
+    static let currentVersion = 2
     var links: [MirrorLink] = []
     /// Keys whose reminder the user deleted in iCloud: never recreated.
     var detached: [String] = []
+    var version: Int = 0
+
+    init(links: [MirrorLink] = [], detached: [String] = [], version: Int = 0) { self.links = links; self.detached = detached; self.version = version }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        links = try c.decodeIfPresent([MirrorLink].self, forKey: .links) ?? []
+        detached = try c.decodeIfPresent([String].self, forKey: .detached) ?? []
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 0
+    }
 }
 
 enum MirrorAction: Equatable {
