@@ -38,57 +38,14 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Focused School Tasks widget projection and navigation tests
+      - name: Focused navigation tests
         run: |
           set -euo pipefail
-          printf '%s\n' 'import Foundation' > "$RUNNER_TEMP/orbit-widget-school-models.swift"
-          awk '
-            /^private extension KeyedDecodingContainer/ { emit=1 }
-            /^struct OrbitSchoolActionTask/ { emit=0 }
-            emit { print }
-          ' apps/orbit-voice-ios/VoiceAgent/Orbit/MainProductAPI.swift \
-            >> "$RUNNER_TEMP/orbit-widget-school-models.swift"
-          xcrun swiftc \
-            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolDateDecoding.swift \
-            "$RUNNER_TEMP/orbit-widget-school-models.swift" \
-            apps/orbit-voice-ios/VoiceAgent/App/SchoolHubLogic.swift \
-            apps/orbit-voice-ios/VoiceAgent/App/SchoolTasksWidgetSnapshot.swift \
-            apps/orbit-voice-ios/VoiceAgent/App/SchoolTasksWidgetProjection.swift \
-            apps/orbit-voice-ios/Tests/SchoolTasksWidgetProjectionTests.swift \
-            -o "$RUNNER_TEMP/orbit-school-widget-projection-tests"
-          "$RUNNER_TEMP/orbit-school-widget-projection-tests"
           xcrun swiftc \
             apps/orbit-voice-ios/VoiceAgent/App/OrbitNavigation.swift \
             apps/orbit-voice-ios/Tests/OrbitNavigationTests.swift \
             -o "$RUNNER_TEMP/orbit-navigation-tests"
           "$RUNNER_TEMP/orbit-navigation-tests"
-          grep -F '.supportedFamilies([.systemSmall, .systemMedium])' \
-            apps/orbit-voice-ios/WidgetDev/SchoolTasksWidget.swift
-          ! grep -F 'systemLarge' apps/orbit-voice-ios/WidgetDev/SchoolTasksWidget.swift
-          python3 - <<'PY'
-          import plistlib
-          from pathlib import Path
-
-          root = Path('apps/orbit-voice-ios')
-          app_groups = plistlib.loads((root / 'VoiceAgent/VoiceAgent.entitlements').read_bytes())['com.apple.security.application-groups']
-          extension_groups = plistlib.loads((root / 'WidgetDev/SchoolTasksWidgetExtension.entitlements').read_bytes())['com.apple.security.application-groups']
-          extension_info = plistlib.loads((root / 'WidgetDev/Info.plist').read_bytes())
-          assert len(app_groups) == 1 and app_groups == extension_groups, 'app and extension must declare the same single App Group'
-          assert extension_info['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension'
-          project = (root / 'VoiceAgent.xcodeproj/project.pbxproj').read_text()
-          assert 'net.opik.orbit.voice.schooltaskswidget' in project
-          assert 'SchoolTasksWidgetPublisher.swift,);' in project, 'publisher must be excluded from the widget extension target'
-          publisher = (root / 'WidgetDev/SchoolTasksWidgetPublisher.swift').read_text()
-          widget = (root / 'WidgetDev/SchoolTasksWidget.swift').read_text()
-          group_resolver = (root / 'VoiceAgent/App/SchoolTasksWidgetSnapshot.swift').read_text()
-          assert app_groups[0] in group_resolver and 'ALTAppGroups' in group_resolver, 'resolve the SideStore-provisioned group from bundle metadata'
-          assert 'SchoolTasksWidgetAppGroup.currentIdentifier' in publisher and 'SchoolTasksWidgetAppGroup.currentIdentifier' in widget
-          widget_sources = '\n'.join((root / path).read_text() for path in (
-              'WidgetDev/SchoolTasksWidget.swift', 'VoiceAgent/App/SchoolTasksWidgetSnapshot.swift'))
-          for forbidden in ('MainProductAPI', 'URLSession', 'URLRequest', 'KeychainStore', 'OrbitAuthentication', 'Authorization: Bearer'):
-              assert forbidden not in widget_sources, f'widget extension must not contain {forbidden}'
-          print('Widget extension membership, App Group, and credential-isolation checks passed')
-          PY
 
       - name: Normalize Main Orbit icon
         run: |
@@ -152,73 +109,24 @@ jobs:
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/orbit-derived-data/Build/Products/Release-iphoneos/VoiceAgent.app"
-          widget="$app/PlugIns/SchoolTasksWidgetExtension.appex"
-          # SideStore inspects entitlements from each Mach-O signature before
-          # creating team-scoped App Groups and provisioning the app/extension.
-          # These ad-hoc signatures carry requests only; SideStore replaces them
-          # with its normal device-specific signing and provisioning on install.
-          codesign --force --sign - \
-            --entitlements apps/orbit-voice-ios/WidgetDev/SchoolTasksWidgetExtension.entitlements \
-            "$widget"
+          # SideStore inspects entitlements from the Mach-O signature before creating the team-scoped App Group and
+          # provisioning the app. This ad-hoc signature carries the request only; SideStore replaces it with its normal
+          # device-specific signing and provisioning on install. (The School Tasks widget extension was removed 2026-11-19.)
           codesign --force --sign - \
             --entitlements apps/orbit-voice-ios/VoiceAgent/VoiceAgent.entitlements \
             "$app"
           codesign -d --entitlements :- "$app" > "$RUNNER_TEMP/orbit-app-entitlements.plist" 2>/dev/null
-          codesign -d --entitlements :- "$widget" > "$RUNNER_TEMP/orbit-widget-entitlements.plist" 2>/dev/null
-          ORBIT_WIDGET_TMP="$RUNNER_TEMP" python3 - <<'PY'
+          ORBIT_APP_TMP="$RUNNER_TEMP" python3 - <<'PY'
           import os
           import plistlib
           from pathlib import Path
 
           expected = ["group.net.opik.orbit.voice"]
-          for name in ("orbit-app-entitlements.plist", "orbit-widget-entitlements.plist"):
-              path = Path(os.environ["ORBIT_WIDGET_TMP"]) / name
-              actual = plistlib.loads(path.read_bytes()).get("com.apple.security.application-groups")
-              assert actual == expected, f"{name} lost the App Group request: {actual!r}"
-          print("Ad-hoc app and widget signatures both preserve the App Group request")
+          path = Path(os.environ["ORBIT_APP_TMP"]) / "orbit-app-entitlements.plist"
+          actual = plistlib.loads(path.read_bytes()).get("com.apple.security.application-groups")
+          assert actual == expected, f"app lost the App Group request: {actual!r}"
+          print("Ad-hoc app signature preserves the App Group request")
           PY
-
-      - name: Select or create iPhone 12 simulator
-        id: widget-simulator
-        run: |
-          set -euo pipefail
-          device_line=$(xcrun simctl list devices available | awk '/iPhone 12[^()]*\(/ { print; exit }')
-          created=false
-          if [ -z "$device_line" ]; then
-            device_type="com.apple.CoreSimulator.SimDeviceType.iPhone-12"
-            runtime_id=$(xcrun simctl list runtimes available | sed -nE 's/.* - (com.apple.CoreSimulator.SimRuntime.[^ ]+).*/\1/p' | awk '/iOS/ { print; exit }')
-            test -n "$runtime_id"
-            simulator_name="Orbit Issue 119 iPhone 12"
-            simulator_id=$(xcrun simctl create "$simulator_name" "$device_type" "$runtime_id")
-            created=true
-          else
-            simulator_id=$(printf '%s\n' "$device_line" | sed -E 's/.*\(([A-F0-9-]{36})\).*/\1/')
-            simulator_name="iPhone 12"
-          fi
-          echo "id=$simulator_id" >> "$GITHUB_OUTPUT"
-          echo "created=$created" >> "$GITHUB_OUTPUT"
-          printf 'WidgetKit simulator: %s (%s); created=%s\n' "$simulator_name" "$simulator_id" "$created"
-          xcrun simctl boot "$simulator_id" || true
-          xcrun simctl bootstatus "$simulator_id" -b
-
-      - name: Build Main Orbit and WidgetKit for iPhone 12 Simulator
-        run: |
-          set -euo pipefail
-          xcodebuild \
-            -project apps/orbit-voice-ios/VoiceAgent.xcodeproj \
-            -scheme VoiceAgent \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,id=${{ steps.widget-simulator.outputs.id }}' \
-            -derivedDataPath "$RUNNER_TEMP/orbit-widget-simulator" \
-            -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build
-
-      - name: Delete isolated iPhone 12 simulator
-        if: always() && steps.widget-simulator.outputs.created == 'true'
-        run: xcrun simctl delete '${{ steps.widget-simulator.outputs.id }}'
 
       - name: Test codec fmtp privacy parser
         run: |
@@ -439,26 +347,6 @@ jobs:
             apps/orbit-voice-ios/Tests/OrbitCalendarV2LogicTests.swift \
             -o "$RUNNER_TEMP/orbit-calendar-v2-logic-tests"
           "$RUNNER_TEMP/orbit-calendar-v2-logic-tests"
-
-      - name: Test School Tasks Widget projection (issue 119)
-        run: |
-          set -euo pipefail
-          printf '%s\n' 'import Foundation' > "$RUNNER_TEMP/orbit-widget-school-models.swift"
-          awk '
-            /^private extension KeyedDecodingContainer/ { emit=1 }
-            /^struct OrbitSchoolActionTask/ { emit=0 }
-            emit { print }
-          ' apps/orbit-voice-ios/VoiceAgent/Orbit/MainProductAPI.swift \
-            >> "$RUNNER_TEMP/orbit-widget-school-models.swift"
-          xcrun swiftc \
-            apps/orbit-voice-ios/VoiceAgent/Orbit/SchoolDateDecoding.swift \
-            "$RUNNER_TEMP/orbit-widget-school-models.swift" \
-            apps/orbit-voice-ios/VoiceAgent/App/SchoolHubLogic.swift \
-            apps/orbit-voice-ios/VoiceAgent/App/SchoolTasksWidgetSnapshot.swift \
-            apps/orbit-voice-ios/VoiceAgent/App/SchoolTasksWidgetProjection.swift \
-            apps/orbit-voice-ios/Tests/SchoolTasksWidgetProjectionTests.swift \
-            -o "$RUNNER_TEMP/orbit-school-widget-projection-tests"
-          "$RUNNER_TEMP/orbit-school-widget-projection-tests"
 
       - name: Test School Hub logic
         run: |

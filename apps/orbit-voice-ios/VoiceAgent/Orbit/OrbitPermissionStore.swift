@@ -10,10 +10,9 @@ final class OrbitPermissionStore: ObservableObject {
     func update(_ contract: OrbitEffectivePermissions?, isMinor: Bool?) {
         if let next = OrbitPermissionPolicy.resolved(contract: contract, isMinor: isMinor) {
             permissions = next
-            if !next.resources.school.read { SchoolTasksWidgetPublisher.clear() }
         }
     }
-    func reset() { permissions = nil; SchoolTasksWidgetPublisher.clear() }
+    func reset() { permissions = nil }
     func allows(_ permission: OrbitWritePermission) -> Bool { OrbitPermissionPolicy.allows(permission, permissions: permissions) }
 }
 

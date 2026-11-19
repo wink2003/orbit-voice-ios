@@ -5,7 +5,6 @@ import SwiftUI
 /// (AdminSections.swift); the drill-down detail views below use the same card design.
 struct OrbitDashboardView: View {
     let isSelected: Bool
-    let isWidgetDiagnosticsOwner: Bool
     @StateObject private var store = ServerOverviewStore()
     @StateObject private var stagingStore = StagingCleanupStore()
     @StateObject private var aiProvidersStore = AIProvidersStore()
@@ -13,7 +12,6 @@ struct OrbitDashboardView: View {
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
             Routes05ContextHeader(section: "system", eyebrow: "SYSTEM / 24", title: "Admin", detail: "Read-only operational overview; actions remain guarded.", accent: Routes05Tokens.mint)
-            if isWidgetDiagnosticsOwner { SchoolTasksWidgetDiagnosticsCard() }
             content
         }.padding(.bottom, 16) }.background(Routes05Tokens.canvas).routes05ContextSurface().navigationTitle("Admin · сервер").toolbar { Button { store.loadIfNeeded(force: true) } label: { Image(systemName: "arrow.clockwise") }.disabled(store.isLoading) }.refreshable { store.loadIfNeeded(force: true) }
         .sheet(isPresented: Binding(get: { stagingStore.proposal != nil }, set: { if !$0 { stagingStore.clear() } })) { StagingCleanupConfirmationView(store: stagingStore) }
@@ -84,51 +82,6 @@ struct OrbitDashboardView: View {
             NavigationLink { sectionPage(section, items: items) } label: { AdminAttentionRow(item: item) }.buttonStyle(.plain)
         } else {
             AdminAttentionRow(item: item)
-        }
-    }
-}
-
-/// Owner-only technical state for issue #119. It contains no task, profile or account data.
-private struct SchoolTasksWidgetDiagnosticsCard: View {
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.load.v1") private var loadStatus = "not_run"
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.load.v1.updatedAt") private var loadUpdatedAt = 0.0
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.eligibility.v1") private var eligibilityStatus = "not_run"
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.eligibility.v1.updatedAt") private var eligibilityUpdatedAt = 0.0
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.appGroup.v1") private var appGroupStatus = "not_checked"
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.appGroup.v1.updatedAt") private var appGroupUpdatedAt = 0.0
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.write.v1") private var writeStatus = "not_run"
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.write.v1.updatedAt") private var writeUpdatedAt = 0.0
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.reload.v1") private var reloadStatus = "not_requested"
-    @AppStorage("orbit.schoolTasksWidgetDiagnostics.reloadAt.v1") private var reloadAt = 0.0
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("School Tasks Widget · технічний стан")
-                .font(.headline.weight(.semibold))
-            statusRow("Producer reads", value: loadStatus, at: loadUpdatedAt)
-            statusRow("Eligibility", value: eligibilityStatus, at: eligibilityUpdatedAt)
-            statusRow("App Group container (app)", value: appGroupStatus, at: appGroupUpdatedAt)
-            statusRow("Snapshot write/read-back (app)", value: writeStatus, at: writeUpdatedAt)
-            statusRow("WidgetKit reload request", value: reloadStatus, at: reloadAt)
-            Text("Reader-код і час виклику timeline provider показуються у віджеті. Тут немає назв справ, ідентифікаторів, профілю чи секретів.")
-                .font(.caption)
-                .foregroundStyle(Routes05Tokens.secondary)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Routes05Tokens.surface, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Routes05Tokens.rule, lineWidth: 1))
-        .accessibilityElement(children: .contain)
-    }
-
-    private func statusRow(_ title: String, value: String, at timestamp: Double) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.caption.weight(.medium))
-            Spacer(minLength: 8)
-            Text(timestamp > 0 ? "\(value) · \(Date(timeIntervalSince1970: timestamp).formatted(date: .omitted, time: .shortened))" : value)
-                .font(.caption.monospaced())
-                .multilineTextAlignment(.trailing)
-                .textSelection(.enabled)
         }
     }
 }
