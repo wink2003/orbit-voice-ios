@@ -51,7 +51,6 @@ final class OrbitAuthentication: ObservableObject {
     struct ImpersonationTargetsResponse: Decodable { let targets: [ImpersonationTarget] }
 
     func pair(code: String) async throws {
-        SchoolTasksWidgetPublisher.clear()
         let normalized = code.filter(\.isNumber)
         guard normalized.count == 6 else {
             throw PairingFailure.message("Введіть шестизначний код.")
@@ -96,9 +95,6 @@ final class OrbitAuthentication: ObservableObject {
     }
 
     func refreshIdentity() async {
-        // Until the current identity and permissions are revalidated, a cached
-        // widget snapshot must not outlive an app identity transition.
-        SchoolTasksWidgetPublisher.clear()
         guard isPaired else { identityResolved = true; return }
         if let token = KeychainStore.readSessionToken() {
             if await restoreSession(token: token) { identityResolved = true; return }
@@ -114,7 +110,6 @@ final class OrbitAuthentication: ObservableObject {
         defer { identityResolved = true }
         guard let (data, response) = try? await URLSession.shared.data(for: request), (response as? HTTPURLResponse)?.statusCode == 200,
               let value = try? JSONDecoder().decode(Response.self, from: data) else { return }
-        if personId != value.profile.personId { SchoolTasksWidgetPublisher.clear() }
         personId = value.profile.personId; principalPersonId = value.profile.personId
         // Permission-aware UX only; the backend enforces. An unknown profile (no isMinor, no contract) keeps the adult default.
         OrbitPermissionStore.shared.update(value.permissions, isMinor: value.profile.isMinor)
@@ -141,16 +136,12 @@ final class OrbitAuthentication: ObservableObject {
     }
 
     private func apply(_ profile: SessionProfile) {
-        if personId != profile.person_id || impersonating != (profile.impersonating ?? false) {
-            SchoolTasksWidgetPublisher.clear()
-        }
         displayName = profile.display_name; personId = profile.person_id; principalPersonId = profile.principal_person_id ?? profile.person_id
         impersonating = profile.impersonating ?? false; impersonationTargetName = impersonating ? profile.display_name : nil; identityResolved = true; isPaired = true
         UserDefaults.standard.set(profile.display_name, forKey: "orbit.displayName")
     }
 
     func logout() async {
-        SchoolTasksWidgetPublisher.clear()
         if let token = KeychainStore.readSessionToken() {
             var request = URLRequest(url: URL(string: "https://voice.orbit.opik.net/api/auth/logout")!); request.httpMethod = "POST"; request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             _ = try? await URLSession.shared.data(for: request)
@@ -175,7 +166,6 @@ final class OrbitAuthentication: ObservableObject {
     }
 
     func forgetDevice() {
-        SchoolTasksWidgetPublisher.clear()
         KeychainStore.removeSessionToken()
         OrbitPermissionStore.shared.reset()
         KeychainStore.removeDeviceToken()

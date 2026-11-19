@@ -79,11 +79,6 @@ nonisolated enum OrbitNavigation {
         OrbitMoreDestination.allCases.filter { $0 != .admin || isOwner }
     }
 
-    /// Diagnostic UI uses the same verified-owner identity and is hidden while impersonating.
-    static func canShowWidgetDiagnostics(isVerifiedOwner: Bool, isImpersonating: Bool) -> Bool {
-        isVerifiedOwner && !isImpersonating
-    }
-
     static func tab(forSchoolNotification: Bool, current: OrbitMainTab) -> OrbitMainTab {
         forSchoolNotification ? .school : current
     }

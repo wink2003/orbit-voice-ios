@@ -6,15 +6,6 @@ import SwiftUI
 final class SchoolHubStore {
     enum Phase: Equatable {
         case idle, loading, loaded, failed
-
-        var widgetDiagnosticCode: String {
-            switch self {
-            case .idle: "idle"
-            case .loading: "loading"
-            case .loaded: "loaded"
-            case .failed: "failed"
-            }
-        }
     }
 
     var itemsPhase: Phase = .idle
@@ -66,8 +57,6 @@ final class SchoolHubStore {
     #endif
 
     func reset(to key: String) {
-        SchoolTasksWidgetPublisher.recordScopeReset()
-        SchoolTasksWidgetPublisher.clear()
         gate.reset(to: key)
         items = []; events = []; canonicalTasks = []; actionTasks = []; studentNames = []; studentClass = nil
         actionCapability = .unknown
@@ -156,10 +145,7 @@ final class SchoolHubStore {
         #if DEBUG
         if fixture != nil { return }
         #endif
-        guard gate.token() != nil else {
-            SchoolTasksWidgetPublisher.recordLoadBlocked(reason: "authorization_scope_unavailable")
-            SchoolTasksWidgetPublisher.clear(); return
-        }
+        guard gate.token() != nil else { return }
         // The newest load supersedes older in-flight ones: a cancelled/stale request must not overwrite fresher state.
         gate.advance()
         guard let token = gate.token() else { return }
@@ -174,31 +160,6 @@ final class SchoolHubStore {
         async let namesResult: Void = loadNames(token)
         async let classResult: Void = loadStudentClass(token)
         _ = await (itemsResult, calendarResult, tasksResult, actionTasksResult, namesResult, classResult)
-        publishWidgetSnapshot()
-    }
-
-    private func publishWidgetSnapshot() {
-        SchoolTasksWidgetPublisher.recordLoadOutcome(
-            items: itemsPhase.widgetDiagnosticCode,
-            tasks: tasksPhase.widgetDiagnosticCode,
-            actionTasks: actionTasksPhase.widgetDiagnosticCode)
-        let personID = gate.scopeKey?.split(separator: "|", omittingEmptySubsequences: false).first.map(String.init)
-        let rejectionReasons = SchoolTasksWidgetPublicationEligibility.rejectionReasons(
-            resolvedPersonID: personID,
-            itemsReadForCurrentLoad: itemsPhase == .loaded,
-            tasksReadForCurrentLoad: tasksPhase == .loaded,
-            actionTasksReadForCurrentLoad: actionTasksPhase == .loaded
-                && actionTasksLoadedOnce && actionTasksReadForCurrentLoad,
-            hasReadableActionAccess: actionCapability == .available || actionCapability == .readOnly,
-            schoolReadPermission: OrbitPermissionStore.shared.permissions?.resources.school.read)
-        SchoolTasksWidgetPublisher.recordEligibility(reasons: rejectionReasons)
-        guard rejectionReasons.isEmpty else { SchoolTasksWidgetPublisher.clear(); return }
-        SchoolTasksWidgetPublisher.publish(
-            tasks: hubTasks,
-            sourceDates: sourceDates,
-            now: .now,
-            verifiedCurrentScope: true,
-            coverageComplete: taskCoverage == "all" && !taskCoverageTruncated)
     }
 
     private func loadItems(_ token: Int) async {
@@ -291,9 +252,6 @@ final class SchoolHubStore {
             let failure = Self.capability(for: error)
             actionTasksPhase = SchoolHubLogic.keepsLastActionList(after: failure, loadedOnce: actionTasksLoadedOnce) ? .loaded : .failed
             actionCapability = SchoolActionsCapability.afterFailure(current: actionCapability, error: failure)
-            if failure == .unauthorized || failure == .forbidden || failure == .unavailable {
-                SchoolTasksWidgetPublisher.clear()
-            }
         }
     }
 
@@ -320,13 +278,11 @@ final class SchoolHubStore {
                 updated = completed ? try await MainProductAPI.shared.completeSourceSchoolTask(itemId: task.sourceItemId, taskKey: task.sourceTaskKey) : try await MainProductAPI.shared.reopenSourceSchoolTask(itemId: task.sourceItemId, taskKey: task.sourceTaskKey)
             }
             guard gate.scopeKey == mutationScope else { return }
-            guard gate.accepts(mutationToken) else { SchoolTasksWidgetPublisher.clear(); return }
+            guard gate.accepts(mutationToken) else { return }
             actionTasks.removeAll { $0.id == updated.id }
             actionTasks.append(updated)
-            publishWidgetSnapshot()
         } catch {
             // The outcome of a failed request is unknown; re-read the confirmed state instead of guessing.
-            SchoolTasksWidgetPublisher.clear()
             if let token = gate.token() { await loadActionTasks(token) }
             throw error
         }
@@ -351,13 +307,11 @@ final class SchoolHubStore {
                 updated = try await MainProductAPI.shared.planSourceSchoolTask(itemId: task.sourceItemId, taskKey: task.sourceTaskKey, planningDate: dayKey, revision: revision)
             }
             guard gate.scopeKey == mutationScope else { return }
-            guard gate.accepts(mutationToken) else { SchoolTasksWidgetPublisher.clear(); return }
+            guard gate.accepts(mutationToken) else { return }
             actionTasks.removeAll { $0.id == updated.id }
             actionTasks.append(updated)
-            publishWidgetSnapshot()
         } catch {
             // Unknown outcome: re-read the confirmed state instead of guessing.
-            SchoolTasksWidgetPublisher.clear()
             if let token = gate.token() { await loadActionTasks(token) }
             throw error
         }
@@ -373,22 +327,19 @@ final class SchoolHubStore {
         guard gate.token() != nil else { return }
         actionTasksReadForCurrentLoad = false
         await loadActionTasks(gate.token() ?? 0)
-        publishWidgetSnapshot()
     }
 
     func createFamilyTask(title: String, description: String, planningDate: String?) async throws {
         guard let mutationScope = gate.scopeKey, let mutationToken = gate.token() else { throw SchoolHubActionError.unavailable }
         _ = try await MainProductAPI.shared.createSchoolActionTask(title: title, description: description, planningDate: planningDate)
         guard gate.scopeKey == mutationScope else { return }
-        SchoolTasksWidgetPublisher.clear()
         let refreshedTasks = try await MainProductAPI.shared.schoolActionTasks().tasks
         guard gate.scopeKey == mutationScope else { return }
-        guard gate.accepts(mutationToken) else { SchoolTasksWidgetPublisher.clear(); return }
+        guard gate.accepts(mutationToken) else { return }
         actionTasks = refreshedTasks
         actionTasksLoadedOnce = true
         actionTasksPhase = .loaded
         actionTasksReadForCurrentLoad = true
-        publishWidgetSnapshot()
     }
 }
 
