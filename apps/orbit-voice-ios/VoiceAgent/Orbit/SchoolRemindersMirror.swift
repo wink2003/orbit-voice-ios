@@ -91,30 +91,45 @@ final class SchoolRemindersMirror: ObservableObject {
         let api = MainProductAPI.shared
         let calendar = try reminderList()
         async let actionTasks = api.schoolActionTasks()
-        async let letterTasks = api.schoolTasks()
+        async let letterTasks = api.schoolTasks(coverage: "all")                // the Hub loads the full list, not just the current window
         let actionResponse = try await actionTasks
         let letterResponse = try await letterTasks
-        let actions = actionResponse.tasks, letters = letterResponse.tasks
+        let states = actionResponse.tasks
 
+        // Assembled exactly like SchoolHubStore.hubTasks so the reminders list equals what the School tab shows:
+        // a letter task takes its status and planned date from the action row matched by (source item, task key).
         var orbit: [MirrorOrbitTask] = []
         var sourceRefs: [String: (itemId: String, taskKey: String)] = [:]
         var revisions: [String: Int] = [:]
-        var actionIds = Set<String>()
-        for task in actions {
-            actionIds.insert(task.id); revisions[task.id] = task.revision
-            let due = task.planningDate ?? task.schoolDueAt.map { String($0.prefix(10)) }
-            orbit.append(MirrorOrbitTask(key: task.id, snapshot: MirrorSnapshot(title: task.title, notes: task.description, due: due, done: task.status == "completed"), canEditText: true, canEditDue: true))
-        }
-        for task in letters {
-            if let id = task.actionTaskId, !id.isEmpty { continue }              // represented by its action row above
+        var familyIds = Set<String>()
+        for task in letterResponse.tasks {
+            let state = states.first { $0.kind == "source" && $0.sourceItemId == task.sourceItemId && $0.sourceTaskKey == task.key }
+            let effective = SchoolHubLogic.effectiveDue(dueAt: task.dueAt, allDay: task.allDay, planningDate: state?.planningDate)
+            let hub = SchoolHubTask(
+                id: task.id, title: task.title, action: task.action, dueAt: effective.dueAt, allDay: effective.allDay, importance: task.importance,
+                target: task.target, confidence: task.confidence, reason: task.reason, sourceItemId: task.sourceItemId, sourceType: task.sourceType,
+                sourceExternalId: task.sourceExternalId, actionID: state?.id, status: state?.status ?? task.status ?? "open", planningDate: state?.planningDate,
+                effectiveDueAt: state?.planningDate == nil ? task.effectiveDueAt : nil, effectiveDueDateOrigin: state?.planningDate == nil ? task.effectiveDueDateOrigin : nil)
             let key = "src:\(task.sourceItemId):\(task.key)"
             sourceRefs[key] = (task.sourceItemId, task.key)
-            let due = task.effectiveDueAt.map { String($0.prefix(10)) }
-            orbit.append(MirrorOrbitTask(key: key, snapshot: MirrorSnapshot(title: task.title, notes: task.action ?? "", due: due, done: task.status == "completed"), canEditText: false, canEditDue: false))
+            let due = SchoolHubLogic.effectiveTaskDay(hub, sourceDates: [:]).map { String($0.prefix(10)) }
+            orbit.append(MirrorOrbitTask(key: key, snapshot: MirrorSnapshot(title: task.title, notes: task.action ?? "", due: due, done: SchoolHubLogic.isCompleted(hub)), canEditText: false, canEditDue: false))
+        }
+        for task in states where task.kind == "family" {
+            familyIds.insert(task.id); revisions[task.id] = task.revision
+            let due = SchoolHubLogic.planningDayKey(task.planningDate) ?? task.schoolDueAt.flatMap { SchoolHubLogic.dayKey(for: $0, allDay: false) }
+            orbit.append(MirrorOrbitTask(key: task.id, snapshot: MirrorSnapshot(title: task.title, notes: task.description, due: due, done: task.status == "completed"), canEditText: true, canEditDue: true))
         }
 
         var state = loadState()
-        let reminders = try await fetchReminders(in: calendar)
+        var reminders = try await fetchReminders(in: calendar)
+        if state.version < MirrorState.currentVersion {
+            // First release keyed and assembled tasks differently: drop only the reminders IT created (mirror-owned) and start clean.
+            let legacy = Set(state.links.map(\.reminderId))
+            for reminder in reminders where legacy.contains(reminder.calendarItemIdentifier) { try? store.remove(reminder, commit: false) }
+            reminders.removeAll { legacy.contains($0.calendarItemIdentifier) }
+            state = MirrorState(version: MirrorState.currentVersion)
+        }
         let mirrorReminders = reminders.map { MirrorReminder(id: $0.calendarItemIdentifier, snapshot: snapshot(of: $0), hasTime: $0.dueDateComponents?.hour != nil) }
         let byId = Dictionary(reminders.map { ($0.calendarItemIdentifier, $0) }, uniquingKeysWith: { a, _ in a })
         let orbitByKey = Dictionary(orbit.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
@@ -143,7 +158,7 @@ final class SchoolRemindersMirror: ObservableObject {
                     state.links.append(MirrorLink(key: created.id, reminderId: reminderId, base: MirrorSnapshot(title: created.title, notes: created.description, due: created.planningDate ?? snap.due, done: false)))
                     counts.toOrbit += 1
                 case let .updateOrbitTask(key, title, notes, due, dueChanged):
-                    guard orbitByKey[key]?.canEditText == true || orbitByKey[key]?.canEditDue == true else { continue }
+                    guard familyIds.contains(key) else { continue }
                     _ = try await api.updateSchoolActionTask(id: key, title: title, description: notes, planningDate: dueChanged ? due : nil, revision: revisions[key])
                     if let idx = state.links.firstIndex(where: { $0.key == key }), let o = orbitByKey[key] {
                         var base = state.links[idx].base
@@ -155,7 +170,7 @@ final class SchoolRemindersMirror: ObservableObject {
                     if let ref = sourceRefs[key] {
                         if done { _ = try await api.completeSourceSchoolTask(itemId: ref.itemId, taskKey: ref.taskKey) }
                         else { _ = try await api.reopenSourceSchoolTask(itemId: ref.itemId, taskKey: ref.taskKey) }
-                    } else if actionIds.contains(key) {
+                    } else if familyIds.contains(key) {
                         if done { _ = try await api.completeSchoolActionTask(id: key) } else { _ = try await api.reopenSchoolActionTask(id: key) }
                     } else { continue }
                     if let idx = state.links.firstIndex(where: { $0.key == key }) { state.links[idx].base.done = done }
