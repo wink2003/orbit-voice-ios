@@ -9,6 +9,8 @@ import SwiftUI
 extension Notification.Name {
     /// Posted after a successful create/update/complete/reopen of a School action task (see MainProductAPI.request).
     static let orbitSchoolTasksChanged = Notification.Name("orbit.school.tasks.changed")
+    /// Posted (main thread) after a mirror run changed School tasks in Orbit, so an open School tab reloads instead of showing stale state.
+    static let orbitSchoolMirrorApplied = Notification.Name("orbit.school.mirror.applied")
 }
 
 @MainActor
@@ -79,15 +81,16 @@ final class SchoolRemindersMirror: ObservableObject {
         running = true; phase = .syncing
         defer { running = false }
         do {
-            let summary = try await runOnce()
-            lastSyncAt = Date(); lastSummary = summary; phase = .idle
+            let result = try await runOnce()
+            lastSyncAt = Date(); lastSummary = result.summary; phase = .idle
+            if result.changedOrbit { NotificationCenter.default.post(name: .orbitSchoolMirrorApplied, object: nil) }
         } catch {
             phase = .failed(String(describing: error).prefix(120).description)
         }
     }
 
     // MARK: one run
-    private func runOnce() async throws -> String {
+    private func runOnce() async throws -> (summary: String, changedOrbit: Bool) {
         let api = MainProductAPI.shared
         let calendar = try reminderList()
         async let actionTasks = api.schoolActionTasks()
@@ -169,7 +172,7 @@ final class SchoolRemindersMirror: ObservableObject {
         try store.commit()
         saveState(state)
         let tail = failures > 0 ? " · помилок: \(failures)" : ""
-        return "У Нагадування: \(counts.toReminders) · у Orbit: \(counts.toOrbit)\(tail)"
+        return ("У Нагадування: \(counts.toReminders) · у Orbit: \(counts.toOrbit)\(tail)", counts.toOrbit > 0)
     }
 
     // MARK: EventKit helpers

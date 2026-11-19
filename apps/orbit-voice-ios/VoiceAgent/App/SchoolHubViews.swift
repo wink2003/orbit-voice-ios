@@ -1286,6 +1286,7 @@ struct SchoolHubView: View {
     @Binding private var widgetDeepLink: SchoolTasksWidgetDeepLink?
     @State private var store = SchoolHubStore()
     @State private var path: [Route] = []
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var authentication: OrbitAuthentication
 
     #if DEBUG
@@ -1434,6 +1435,16 @@ struct SchoolHubView: View {
         .onChange(of: widgetDeepLink?.requestID) { _, _ in
             guard store.tasksLoadedOnce else { return }
             openWidgetDestinationIfRequested()
+        }
+        // The tab stays alive in the background: reload when the app returns (a Shortcut or the Reminders mirror may have changed tasks)
+        // and right after a mirror run that changed tasks in Orbit.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, store.scopeKey == scopeKey, store.tasksLoadedOnce else { return }
+            Task { await store.load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .orbitSchoolMirrorApplied)) { _ in
+            guard store.scopeKey == scopeKey else { return }
+            Task { await store.load() }
         }
     }
 
