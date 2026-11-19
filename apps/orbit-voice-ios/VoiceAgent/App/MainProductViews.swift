@@ -1830,6 +1830,7 @@ struct OrbitSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                SchoolRemindersMirrorSettingsRow()
                 Section("Голос") {
                     Button { showingAudio = true } label: { LabeledContent("Обробка мікрофона", value: audioOptions.voiceProcessingModeLabel) }
                     LabeledContent("Стан голосу", value: "Готовий до запуску")

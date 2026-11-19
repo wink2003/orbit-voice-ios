@@ -1153,6 +1153,7 @@ final class MainProductAPI {
             if classifyUnavailable, let failure = OrbitHTTPFailure.classify(status: http.statusCode) { throw failure }
             throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
         }
+        if method != "GET", path.hasPrefix("/api/school/actions/tasks") { NotificationCenter.default.post(name: .orbitSchoolTasksChanged, object: nil) }
         do { return try decoder.decode(T.self, from: data) } catch { throw OrbitChatAPIError.invalidResponse }
     }
 
