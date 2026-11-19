@@ -6,6 +6,11 @@ import SwiftUI
 // Runs ON THE DEVICE: reminder lists upgraded to the iOS 13+ format are not reachable through CalDAV, only through EventKit.
 // It syncs when the app comes to the foreground and when the user taps «Синхронізувати зараз». Nothing runs unless the user switched it on.
 
+extension Notification.Name {
+    /// Posted after a successful create/update/complete/reopen of a School action task (see MainProductAPI.request).
+    static let orbitSchoolTasksChanged = Notification.Name("orbit.school.tasks.changed")
+}
+
 @MainActor
 final class SchoolRemindersMirror: ObservableObject {
     static let shared = SchoolRemindersMirror()
@@ -24,7 +29,27 @@ final class SchoolRemindersMirror: ObservableObject {
 
     var isEnabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
 
-    init() { phase = UserDefaults.standard.bool(forKey: "orbit.school.remindersMirror.enabled") ? .idle : .off }
+    private var pendingSync: Task<Void, Never>?
+    private var observer: NSObjectProtocol?
+
+    init() {
+        phase = UserDefaults.standard.bool(forKey: "orbit.school.remindersMirror.enabled") ? .idle : .off
+        // A change made in the app (new task, edit, complete/reopen) syncs right away, debounced so a burst of edits is one run.
+        observer = NotificationCenter.default.addObserver(forName: .orbitSchoolTasksChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.tasksChanged() }
+        }
+    }
+
+    /// Ignored while a run is in progress (the run's own API calls post the same notification); a trailing run is harmless: nothing is left to change.
+    private func tasksChanged() {
+        guard isEnabled, !running else { return }
+        pendingSync?.cancel()
+        pendingSync = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.sync()
+        }
+    }
 
     // MARK: settings
     func setEnabled(_ on: Bool) async {
