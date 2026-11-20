@@ -2471,6 +2471,7 @@ struct SchoolTaskDetailView: View {
             .padding(.horizontal, 16).padding(.bottom, 38)
             Color.clear.frame(height: 1).id("routes05-school-task-detail-bottom")
         }
+        .refreshable { await store.load(); await loadHistory() }
         .safeAreaPadding(.bottom, 96)
         .onAppear {
             guard Routes05DebugCapture.scrollToBottom else {
@@ -3466,6 +3467,7 @@ private struct SchoolTimelineView: View {
                 }
             }
         }
+        .refreshable { await store.load() }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -3551,6 +3553,7 @@ private struct SchoolUnifiedSearchView: View {
                 }
             }
         }
+        .refreshable { await store.load() }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Листи, справи, події")
@@ -3598,6 +3601,7 @@ private struct SchoolSearchResultsView: View {
                 Section { ForEach(tasks) { SchoolTaskRow(store: store, task: $0) } } header: { SchoolSectionHeader(title: "Справи", systemImage: "checklist", count: tasks.count) }
             }
         }
+        .refreshable { await store.load() }
     }
 }
 
