@@ -1251,13 +1251,14 @@ nonisolated enum OrbitSchoolSyncError: LocalizedError, Sendable {
 // Medical section (orbit-family-ai#379): raw document upload/download share the app's session, base URL and refresh rules.
 extension MainProductAPI {
     func medicalUploadDocument(subjectID: String, title: String, kind: String, filename: String, contentType: String, data: Data) async throws {
-        var components = URLComponents(url: baseURL.appendingPathComponent("api/medical/subjects/\(subjectID)/documents"), resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "title", value: title), URLQueryItem(name: "kind", value: kind), URLQueryItem(name: "filename", value: filename)]
+        // Medical metadata (title/kind/filename) goes in a header, never in the URL: query strings end up in server access logs (security review W1).
         guard let token = KeychainStore.readMainBearerToken() else { throw OrbitChatAPIError.notPaired }
-        guard let url = components?.url else { throw OrbitChatAPIError.invalidResponse }
+        guard let url = URL(string: "api/medical/subjects/\(subjectID)/documents", relativeTo: baseURL)?.absoluteURL,
+              let meta = try? JSONSerialization.data(withJSONObject: ["title": title, "kind": kind, "filename": filename]) else { throw OrbitChatAPIError.invalidResponse }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 60
+        request.setValue(meta.base64EncodedString(), forHTTPHeaderField: "X-Orbit-Doc-Meta")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         let (body, response) = try await URLSession.shared.upload(for: request, from: data)
