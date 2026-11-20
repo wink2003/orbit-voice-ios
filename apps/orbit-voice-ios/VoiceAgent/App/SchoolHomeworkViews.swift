@@ -7,7 +7,16 @@ private struct HomeworkOCRLine: Identifiable, Sendable {
     let id: Int
     let text: String
     let confidence: Double
-    let normalizedRegion: CGRect
+    let region: HomeworkOCRRegion
+}
+
+private struct HomeworkOCRRegion: Sendable {
+    let minX: Double
+    let minY: Double
+    let width: Double
+    let height: Double
+    var maxX: Double { minX + width }
+    var maxY: Double { minY + height }
 }
 
 private struct HomeworkOCRMatch {
@@ -461,7 +470,7 @@ struct SchoolHomeworkView: View {
                                     Image(systemName: selectedOCRLineIDs.contains(line.id) ? "checkmark.circle.fill" : "circle")
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(line.text).textSelection(.enabled).foregroundStyle(.primary)
-                                        Text("OCR · \(Int(line.confidence * 100))% · фрагмент \(Int(line.normalizedRegion.minX * 100))%, \(Int(line.normalizedRegion.minY * 100))%").font(.caption2).foregroundStyle(.secondary)
+                                        Text("OCR · \(Int(line.confidence * 100))% · фрагмент \(Int(line.region.minX * 100))%, \(Int(line.region.minY * 100))%").font(.caption2).foregroundStyle(.secondary)
                                     }
                                 }
                             }.buttonStyle(.plain)
@@ -503,10 +512,10 @@ struct SchoolHomeworkView: View {
             let selectedLines = ocrLines.filter { selectedOCRLineIDs.contains($0.id) }
             let region: String
             if let first = selectedLines.first {
-                let minX = selectedLines.map { $0.normalizedRegion.minX }.min() ?? first.normalizedRegion.minX
-                let minY = selectedLines.map { $0.normalizedRegion.minY }.min() ?? first.normalizedRegion.minY
-                let maxX = selectedLines.map { $0.normalizedRegion.maxX }.max() ?? first.normalizedRegion.maxX
-                let maxY = selectedLines.map { $0.normalizedRegion.maxY }.max() ?? first.normalizedRegion.maxY
+                let minX = selectedLines.map { $0.region.minX }.min() ?? first.region.minX
+                let minY = selectedLines.map { $0.region.minY }.min() ?? first.region.minY
+                let maxX = selectedLines.map { $0.region.maxX }.max() ?? first.region.maxX
+                let maxY = selectedLines.map { $0.region.maxY }.max() ?? first.region.maxY
                 region = String(format: "vision-unit-rect:%.4f,%.4f,%.4f,%.4f", minX, minY, maxX - minX, maxY - minY)
             } else { region = "parent-entered; source=full-page" }
             let confidence = selectedLines.isEmpty ? nil : selectedLines.map(\.confidence).reduce(0, +) / Double(selectedLines.count)
@@ -530,7 +539,8 @@ struct SchoolHomeworkView: View {
                 try VNImageRequestHandler(cgImage: cgImage).perform([request])
                 return (request.results ?? []).enumerated().compactMap { index, observation -> HomeworkOCRLine? in
                     guard let candidate = observation.topCandidates(1).first else { return nil }
-                    return HomeworkOCRLine(id: index, text: candidate.string, confidence: Double(candidate.confidence), normalizedRegion: observation.boundingBox)
+                    let box = observation.boundingBox
+                    return HomeworkOCRLine(id: index, text: candidate.string, confidence: Double(candidate.confidence), region: HomeworkOCRRegion(minX: Double(box.minX), minY: Double(box.minY), width: Double(box.width), height: Double(box.height)))
                 }
             } catch { return [HomeworkOCRLine]() }
         }.value
@@ -556,8 +566,8 @@ struct SchoolHomeworkView: View {
 
     private var rankedOCRMatches: [HomeworkOCRMatch] {
         let candidates = ocrLines.flatMap { line in
-            store.tasks.map { task -> HomeworkOCRMatch in
-                HomeworkOCRMatch(task: task, score: Self.textSimilarity(line.text, task.assignmentText), line: line)
+            store.tasks.filter { $0.reviewState == "confirmed" }.map { task -> HomeworkOCRMatch in
+                HomeworkOCRMatch(task: task, score: SchoolHomeworkTextMatcher.similarity(line.text, task.assignmentText), line: line)
             }
         }
         return candidates.sorted { $0.score > $1.score }
@@ -571,16 +581,6 @@ struct SchoolHomeworkView: View {
         if selectedOCRLineIDs.contains(line.id) { selectedOCRLineIDs.remove(line.id) }
         else { selectedOCRLineIDs.insert(line.id) }
         assignment = ocrLines.filter { selectedOCRLineIDs.contains($0.id) }.map(\.text).joined(separator: "\n")
-    }
-
-    private static func textSimilarity(_ lhs: String, _ rhs: String) -> Double {
-        func tokens(_ value: String) -> Set<String> {
-            Set(value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
-                .split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 1 })
-        }
-        let a = tokens(lhs), b = tokens(rhs)
-        guard !a.isEmpty, !b.isEmpty else { return 0 }
-        return Double(a.intersection(b).count) / Double(a.union(b).count)
     }
 
     private static func photoType(_ data: Data) -> String? {
