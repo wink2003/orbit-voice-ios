@@ -89,6 +89,15 @@ struct VoiceAgentApp: App {
                 // A voice call may have changed tasks on the server (complete / reopen / move the day): reload School data when it ends.
                 if was && !connected { NotificationCenter.default.post(name: .orbitSchoolMirrorApplied, object: nil) }
             }
+            .task(id: session.isConnected) {
+                // While a call is running the School lists may be on screen: a task changed by voice must show up within seconds, not only after hang-up.
+                guard session.isConnected else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 6_000_000_000)
+                    if Task.isCancelled { break }
+                    NotificationCenter.default.post(name: .orbitSchoolMirrorApplied, object: nil)
+                }
+            }
             .onChange(of: authentication.isPaired) { _, paired in
                 if !paired {
                     schoolWidgetDeepLink = nil
