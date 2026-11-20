@@ -456,7 +456,7 @@ struct SchoolCalendarView: View {
                     Button("Додати до календаря…") { Task { await propose(event) } }.buttonStyle(.borderedProminent).frame(minHeight: 44)
                 }
             }
-        }.navigationTitle("Календар школи").task { await load() }.onChange(of: scope) { _, _ in Task { await load() } }.alert("Календар школи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
+        }.navigationTitle("Календар школи").task { await load() }.refreshable { await load() }.onChange(of: scope) { _, _ in Task { await load() } }.alert("Календар школи", isPresented: .constant(error != nil)) { Button("Гаразд") { error = nil } } message: { Text(error ?? "") }
         .sheet(item: $pendingEvent) { event in
             SchoolCalendarChoiceSheet(schulmanagerEvent: event) { error = $0 }
         }

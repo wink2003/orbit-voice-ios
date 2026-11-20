@@ -85,6 +85,10 @@ struct VoiceAgentApp: App {
                 guard phase == .background || phase == .inactive else { return }
                 appLock.lockForBackground(isVoiceActive: session.isConnected)
             }
+            .onChange(of: session.isConnected) { was, connected in
+                // A voice call may have changed tasks on the server (complete / reopen / move the day): reload School data when it ends.
+                if was && !connected { NotificationCenter.default.post(name: .orbitSchoolMirrorApplied, object: nil) }
+            }
             .onChange(of: authentication.isPaired) { _, paired in
                 if !paired {
                     schoolWidgetDeepLink = nil
