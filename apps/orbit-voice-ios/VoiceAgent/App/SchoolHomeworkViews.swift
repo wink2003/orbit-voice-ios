@@ -128,7 +128,7 @@ struct SchoolHomeworkView: View {
     @State private var photoSnapshot: OrbitHomeworkSnapshot?
     @State private var localOCR = ""
     @State private var ocrLines: [HomeworkOCRLine] = []
-    @State private var matchedOCRLine: HomeworkOCRLine?
+    @State private var selectedOCRLineIDs = Set<Int>()
     @State private var subject = ""
     @State private var assignment = ""
     @State private var lessonDate = ""
@@ -187,7 +187,7 @@ struct SchoolHomeworkView: View {
             store.configure(profilePersonId: profilePersonId, isChild: isChild)
             selectedHomeworkDay = nil; selectedHomeworkSubject = nil; selectedProgressState = nil
             brainSelectedTaskId = nil; brainAnswer = nil
-            photoData = nil; photoSnapshot = nil; localOCR = ""; ocrLines = []; matchedOCRLine = nil
+            photoData = nil; photoSnapshot = nil; localOCR = ""; ocrLines = []; selectedOCRLineIDs = []
             await store.load()
         }
         .refreshable { await store.load() }
@@ -332,7 +332,7 @@ struct SchoolHomeworkView: View {
                     PhotosPicker(selection: $selectedPhoto, matching: .images) { Label("Вибрати з фототеки", systemImage: "photo") }
                     Button { cameraOpen = true } label: { Label("Зробити фото", systemImage: "camera") }
                     if let photoData {
-                        HStack { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green); Text("Фото підготовлено · \(ByteCountFormatter.string(fromByteCount: Int64(photoData.count), countStyle: .file))"); Spacer(); Button("Очистити") { self.photoData = nil; photoSnapshot = nil; localOCR = ""; ocrLines = []; matchedOCRLine = nil } }.font(.caption)
+                        HStack { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green); Text("Фото підготовлено · \(ByteCountFormatter.string(fromByteCount: Int64(photoData.count), countStyle: .file))"); Spacer(); Button("Очистити") { self.photoData = nil; photoSnapshot = nil; localOCR = ""; ocrLines = []; selectedOCRLineIDs = [] } }.font(.caption)
                         Button { Task { await uploadAndReview() } } label: { if store.saving { ProgressView() } else { Label("Зберегти фото й перевірити запис", systemImage: "lock.shield") } }.disabled(store.saving)
                     }
                     if !localOCR.isEmpty { Text("Розпізнано на пристрої; перевірте вручну").font(.caption.weight(.semibold)); Text(localOCR).font(.caption).textSelection(.enabled).lineLimit(8) }
@@ -446,6 +446,21 @@ struct SchoolHomeworkView: View {
     private var reviewSheet: some View {
         NavigationStack {
             Form {
+                if !ocrLines.isEmpty {
+                    Section("Виберіть рядки з потрібним завданням") {
+                        ForEach(ocrLines) { line in
+                            Button { toggleOCRLine(line) } label: {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: selectedOCRLineIDs.contains(line.id) ? "checkmark.circle.fill" : "circle")
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(line.text).textSelection(.enabled).foregroundStyle(.primary)
+                                        Text("OCR · \(Int(line.confidence * 100))% · фрагмент \(Int(line.normalizedRegion.minX * 100))%, \(Int(line.normalizedRegion.minY * 100))%").font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
                 Picker("Порівняння", selection: $changeKind) { Text("Нове завдання").tag("new"); Text("Зміна наявного").tag("update"); Text("Той самий запис").tag("same"); Text("Не впевнений").tag("uncertain") }
                 if changeKind != "new" {
                     Picker("Існуюче завдання", selection: $matchedTaskId) {
@@ -478,11 +493,18 @@ struct SchoolHomeworkView: View {
         guard let photoSnapshot else { return }
         let matched = matchedTaskId.flatMap { id in store.tasks.first { $0.id == id } }
         Task { do {
-            let region = matchedOCRLine.map { line in
-                String(format: "vision-unit-rect:%.4f,%.4f,%.4f,%.4f", line.normalizedRegion.minX, line.normalizedRegion.minY, line.normalizedRegion.width, line.normalizedRegion.height)
-            } ?? "parent-selected-photo-region"
-            try await store.propose(snapshot: photoSnapshot, subject: subject, text: assignment, lessonDate: lessonDate.nilIfEmpty, dueDate: dueDate.nilIfEmpty, changeKind: changeKind, matchedTaskId: matched?.id, expectedRevision: matched?.revision, sourceRegion: region, ocrConfidence: matchedOCRLine?.confidence, clientRequestId: proposalRequestId)
-            showReviewForm = false; photoData = nil; self.photoSnapshot = nil; changeKind = "new"; matchedTaskId = nil; photoUploadRequestId = UUID().uuidString; proposalRequestId = UUID().uuidString
+            let selectedLines = ocrLines.filter { selectedOCRLineIDs.contains($0.id) }
+            let region: String
+            if let first = selectedLines.first {
+                let minX = selectedLines.map { $0.normalizedRegion.minX }.min() ?? first.normalizedRegion.minX
+                let minY = selectedLines.map { $0.normalizedRegion.minY }.min() ?? first.normalizedRegion.minY
+                let maxX = selectedLines.map { $0.normalizedRegion.maxX }.max() ?? first.normalizedRegion.maxX
+                let maxY = selectedLines.map { $0.normalizedRegion.maxY }.max() ?? first.normalizedRegion.maxY
+                region = String(format: "vision-unit-rect:%.4f,%.4f,%.4f,%.4f", minX, minY, maxX - minX, maxY - minY)
+            } else { region = "parent-entered; source=full-page" }
+            let confidence = selectedLines.isEmpty ? nil : selectedLines.map(\.confidence).reduce(0, +) / Double(selectedLines.count)
+            try await store.propose(snapshot: photoSnapshot, subject: subject, text: assignment, lessonDate: lessonDate.nilIfEmpty, dueDate: dueDate.nilIfEmpty, changeKind: changeKind, matchedTaskId: matched?.id, expectedRevision: matched?.revision, sourceRegion: region, ocrConfidence: confidence, clientRequestId: proposalRequestId)
+            showReviewForm = false; photoData = nil; self.photoSnapshot = nil; selectedOCRLineIDs = []; changeKind = "new"; matchedTaskId = nil; photoUploadRequestId = UUID().uuidString; proposalRequestId = UUID().uuidString
         } catch { store.error = "Не вдалося надіслати запис на батьківське підтвердження." } }
     }
 
@@ -492,7 +514,7 @@ struct SchoolHomeworkView: View {
     }
 
     private func preparePhoto(_ data: Data, contentType: String) async {
-        photoData = data; photoContentType = contentType; photoSnapshot = nil; photoUploadRequestId = UUID().uuidString; proposalRequestId = UUID().uuidString; ocrLines = []; matchedOCRLine = nil
+        photoData = data; photoContentType = contentType; photoSnapshot = nil; photoUploadRequestId = UUID().uuidString; proposalRequestId = UUID().uuidString; ocrLines = []; selectedOCRLineIDs = []
         guard let image = UIImage(data: data), let cgImage = image.cgImage else { localOCR = "Не вдалося прочитати фото. Запис можна додати вручну."; return }
         let recognized = await Task.detached(priority: .userInitiated) {
             let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
@@ -511,11 +533,17 @@ struct SchoolHomeworkView: View {
         let matches = rankedOCRMatches
         if let match = matches.first, match.score >= 0.35 {
             let ambiguous = matches.dropFirst().first.map { match.score - $0.score < 0.12 && $0.score >= 0.4 } ?? false
-            matchedTaskId = ambiguous ? nil : match.task.id
-            changeKind = ambiguous || match.score < 0.9 && match.score >= 0.55 ? "uncertain" : (match.score >= 0.9 ? "same" : "new")
-            matchedOCRLine = match.line
+            if ambiguous {
+                matchedTaskId = nil; changeKind = "uncertain"
+            } else if match.score >= 0.9 {
+                matchedTaskId = match.task.id; changeKind = "same"
+            } else if match.score >= 0.55 {
+                matchedTaskId = match.task.id; changeKind = "uncertain"
+            } else {
+                matchedTaskId = nil; changeKind = "new"
+            }
         } else {
-            matchedTaskId = nil; changeKind = "uncertain"
+            matchedTaskId = nil; changeKind = "new"
         }
     }
 
@@ -530,6 +558,12 @@ struct SchoolHomeworkView: View {
 
     private var bestOCRMatch: HomeworkOCRMatch? {
         rankedOCRMatches.first.flatMap { $0.score >= 0.35 ? $0 : nil }
+    }
+
+    private func toggleOCRLine(_ line: HomeworkOCRLine) {
+        if selectedOCRLineIDs.contains(line.id) { selectedOCRLineIDs.remove(line.id) }
+        else { selectedOCRLineIDs.insert(line.id) }
+        assignment = ocrLines.filter { selectedOCRLineIDs.contains($0.id) }.map(\.text).joined(separator: "\n")
     }
 
     private static func textSimilarity(_ lhs: String, _ rhs: String) -> Double {
@@ -554,7 +588,13 @@ struct SchoolHomeworkView: View {
         guard let photoData else { return }
         do {
             photoSnapshot = try await store.uploadPhoto(photoData, contentType: photoContentType, schoolYear: diarySchoolYear.nilIfEmpty, calendarWeek: Int(diaryWeek), pageLabel: diaryPageLabel.nilIfEmpty, clientRequestId: photoUploadRequestId)
-            assignment = localOCR
+            if let match = bestOCRMatch, changeKind != "uncertain" {
+                assignment = match.line.text
+                selectedOCRLineIDs = [match.line.id]
+            } else {
+                assignment = ""
+                selectedOCRLineIDs = []
+            }
             subject = ""
             showReviewForm = true
         } catch { store.error = "Фото не збережено. Перевірте з’єднання та спробуйте ще раз." }
