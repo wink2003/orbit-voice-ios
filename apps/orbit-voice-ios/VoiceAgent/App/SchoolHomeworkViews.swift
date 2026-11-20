@@ -195,8 +195,11 @@ struct SchoolHomeworkView: View {
         .task(id: "\(profilePersonId ?? "")-\(permissionStore.permissions?.actorClass ?? "unknown")") {
             store.configure(profilePersonId: profilePersonId, isChild: isChild)
             selectedHomeworkDay = nil; selectedHomeworkSubject = nil; selectedProgressState = nil
-            brainSelectedTaskId = nil; brainAnswer = nil
-            photoData = nil; photoSnapshot = nil; localOCR = ""; ocrLines = []; selectedOCRLineIDs = []
+            brainSelectedTaskId = nil; brainQuestion = ""; brainAnswer = nil
+            photoData = nil; photoSnapshot = nil; selectedSnapshot = nil; localOCR = ""; ocrLines = []; selectedOCRLineIDs = []
+            subject = ""; assignment = ""; lessonDate = ""; dueDate = ""
+            noteDrafts = [:]; editingTask = nil; showManual = false; showReviewForm = false; cameraOpen = false
+            selectedPhoto = nil; showBrainSendConfirmation = false
             await store.load()
         }
         .refreshable { await store.load() }
