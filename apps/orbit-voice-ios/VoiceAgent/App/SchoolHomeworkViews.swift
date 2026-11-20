@@ -346,8 +346,15 @@ struct SchoolHomeworkView: View {
                     ForEach(store.proposals) { proposal in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(proposal.candidate.subject).font(.headline)
-                            Text(proposal.candidate.assignmentText).textSelection(.enabled)
+                            if proposal.changeKind == "update", let previous = proposal.currentAssignmentText {
+                                LabeledContent("Було", value: previous)
+                                LabeledContent("Нова пропозиція", value: proposal.candidate.assignmentText)
+                            } else {
+                                Text(proposal.candidate.assignmentText).textSelection(.enabled)
+                            }
                             Text(proposal.changeKind == "uncertain" ? "Неоднозначно — звірте з фото" : proposal.changeKind == "update" ? "Можлива зміна завдання" : proposal.changeKind == "same" ? "Можливий повтор" : "Нове завдання").font(.caption).foregroundStyle(.secondary)
+                            if let confidence = proposal.candidate.confidence?["assignmentText"] { Text("Впевненість OCR: \(Int(confidence * 100))%").font(.caption2).foregroundStyle(.secondary) }
+                            if let region = proposal.candidate.sourceRegion { Text("Фрагмент джерела: \(region)").font(.caption2).foregroundStyle(.secondary).textSelection(.enabled) }
                             if let source = store.snapshots.first(where: { $0.id == proposal.snapshotId }) { Button("Переглянути фото джерела") { selectedSnapshot = source }.font(.caption) }
                             HStack { Button("Відхилити") { Task { try? await store.resolve(proposal, accept: false) } }.buttonStyle(.bordered); Button("Підтвердити") { Task { try? await store.resolve(proposal, accept: true) } }.buttonStyle(.borderedProminent).disabled(proposal.changeKind == "uncertain") }
                         }.padding(.vertical, 5)
