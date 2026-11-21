@@ -578,6 +578,15 @@ struct SchoolHubLogicTests {
         precondition(SchoolHomeworkTextMatcher.similarity("Vokabeln lernen", "Mathematik Aufgaben rechnen") == 0, "unrelated homework does not match")
         precondition(SchoolHomeworkTextMatcher.similarity("", "Mathematik") == 0, "empty OCR never matches")
 
+        let handwritingRegion = SchoolHomeworkOCRRegion(minX: 0.2, minY: 0.3, width: 0.4, height: 0.03)
+        let rawHandwriting = SchoolHomeworkOCRLine(id: 1, text: "S.40/41 lesen", confidence: 0.72, region: handwritingRegion)
+        let correctedHandwriting = SchoolHomeworkOCRLine(id: 1, text: "S.40/41 lesen", confidence: 0.88, region: handwritingRegion)
+        let agreedHandwriting = SchoolHomeworkOCRCorroborator.merge([rawHandwriting], [correctedHandwriting])
+        precondition(agreedHandwriting.count == 1 && agreedHandwriting[0].confidence == 0.88, "matching local German OCR passes corroborate a handwriting line")
+        let disagreeingHandwriting = SchoolHomeworkOCRLine(id: 1, text: "S.40/41 leben", confidence: 0.93, region: handwritingRegion)
+        let cautiousHandwriting = SchoolHomeworkOCRCorroborator.merge([rawHandwriting], [disagreeingHandwriting])
+        precondition(cautiousHandwriting.count == 1 && cautiousHandwriting[0].confidence <= 0.54, "disagreeing handwriting passes always require parent review")
+
         // German diary layout: week/date headers partition the page, subject-column labels attach to nearby assignment rows.
         let diary = SchoolHomeworkDiaryAnalyzer.analyze([
             homeworkOCR(0, "47. Kalenderwoche", x: 0.12, y: 0.94),
@@ -621,6 +630,37 @@ struct SchoolHubLogicTests {
         precondition(poorOCR.entries.first?.needsReview == true, "low-confidence handwriting is held for review")
         precondition(poorOCR.entries.first?.subject == nil, "unrecognized abbreviation is not expanded or guessed")
         precondition(SchoolHomeworkDiaryAnalyzer.match(poorOCR.entries.first!, against: existing).kind == .uncertain, "poor OCR never auto-classifies")
+
+        // Sanitized regression based on the photographed KW 47 stacked-day page (no photo or
+        // school-specific wording is checked in). The following day's date is slightly nearer
+        // the assignment column in X, so vertical block ownership must win over X proximity.
+        let photographedPage = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(40, "KW 47", x: 0.12, y: 0.94),
+            homeworkOCR(41, "17.11.2026", x: 0.12, y: 0.58, width: 0.12),
+            homeworkOCR(42, "P", x: 0.27, y: 0.48, width: 0.04),
+            homeworkOCR(43, "Read chapter 3", x: 0.24, y: 0.48, width: 0.25),
+            homeworkOCR(44, "18.11.2026", x: 0.20, y: 0.31, width: 0.12),
+            homeworkOCR(45, "Mittwoch", x: 0.72, y: 0.31, width: 0.10),
+            homeworkOCR(46, "BI", x: 0.27, y: 0.265, width: 0.04),
+            homeworkOCR(47, "HA: Workbook pages 40 and 41", x: 0.24, y: 0.265, width: 0.46),
+            homeworkOCR(48, "bis 18.11.2026", x: 0.24, y: 0.235, width: 0.22),
+            homeworkOCR(49, "BI", x: 0.27, y: 0.235, width: 0.04)
+        ])
+        let mondayRegression = photographedPage.entries.first { $0.assignmentText.contains("chapter") }
+        precondition(mondayRegression?.lessonDate == "2026-11-17", "stacked day block cannot inherit the next date because its X is closer")
+        let diaryRegression = photographedPage.entries.first { $0.assignmentText.contains("Workbook") }
+        precondition(diaryRegression?.lessonDate == "2026-11-18" && diaryRegression?.subject == "Biologie", "short subject abbreviation stays metadata in the correct day block")
+        precondition(diaryRegression?.dueDate == "2026-11-18" && diaryRegression?.sourceLineIDs.count == 2, "explicit deadline line joins its task instead of becoming a second record")
+        precondition(photographedPage.entries.filter { $0.subject == "Biologie" }.count == 1, "repeated BI row label does not create a duplicate task")
+
+        let unreadableHeaderPage = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(50, "17.11.2026", x: 0.12, y: 0.58, width: 0.12),
+            homeworkOCR(51, "Mittwoch", x: 0.72, y: 0.31, width: 0.10),
+            homeworkOCR(52, "BI", x: 0.08, y: 0.265, width: 0.05),
+            homeworkOCR(53, "Prepare a short note", x: 0.24, y: 0.265, width: 0.32)
+        ])
+        precondition(unreadableHeaderPage.entries.first?.lessonDate == nil && unreadableHeaderPage.entries.first?.needsReview == true, "unreadable date block stops prior-day carryover and needs parent review")
+        precondition(unreadableHeaderPage.entries.first?.assignmentText.contains("BI") == false, "subject abbreviation alone is never an assignment")
 
         // A real weekly page places dates in horizontal columns and subjects in shared horizontal rows.
         let columnDiary = SchoolHomeworkDiaryAnalyzer.analyze([

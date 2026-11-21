@@ -44,6 +44,45 @@ nonisolated struct SchoolHomeworkOCRLine: Identifiable, Equatable, Sendable {
     let region: SchoolHomeworkOCRRegion
 }
 
+nonisolated enum SchoolHomeworkOCRCorroborator {
+    /// Merge an original and a locally enhanced Vision pass. Text disagreement always drops
+    /// confidence below the proposal auto-selection threshold; unmatched second-pass lines do too.
+    static func merge(_ primary: [SchoolHomeworkOCRLine], _ secondary: [SchoolHomeworkOCRLine]) -> [SchoolHomeworkOCRLine] {
+        func normalized(_ value: String) -> String {
+            value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                .filter { $0.isLetter || $0.isNumber }
+        }
+        func overlap(_ lhs: SchoolHomeworkOCRRegion, _ rhs: SchoolHomeworkOCRRegion) -> Double {
+            let width = max(0, min(lhs.maxX, rhs.maxX) - max(lhs.minX, rhs.minX))
+            let height = max(0, min(lhs.maxY, rhs.maxY) - max(lhs.minY, rhs.minY))
+            let intersection = width * height
+            let union = lhs.width * lhs.height + rhs.width * rhs.height - intersection
+            return union > 0 ? intersection / union : 0
+        }
+
+        var result = primary
+        var nextID = (primary.map(\.id).max() ?? -1) + 1
+        for alternate in secondary {
+            guard let index = result.indices.max(by: { overlap(result[$0].region, alternate.region) < overlap(result[$1].region, alternate.region) }),
+                  overlap(result[index].region, alternate.region) >= 0.35 else {
+                result.append(SchoolHomeworkOCRLine(id: nextID, text: alternate.text, confidence: min(alternate.confidence, 0.54), region: alternate.region))
+                nextID += 1
+                continue
+            }
+            let original = result[index]
+            if normalized(original.text) == normalized(alternate.text) {
+                if alternate.confidence > original.confidence {
+                    result[index] = SchoolHomeworkOCRLine(id: original.id, text: alternate.text, confidence: alternate.confidence, region: original.region)
+                }
+            } else {
+                let chosen = alternate.confidence > original.confidence ? alternate : original
+                result[index] = SchoolHomeworkOCRLine(id: original.id, text: chosen.text, confidence: min(chosen.confidence, 0.54), region: original.region)
+            }
+        }
+        return result
+    }
+}
+
 nonisolated struct SchoolHomeworkDiaryEntry: Identifiable, Equatable, Sendable {
     let id: Int
     let subject: String?
@@ -84,8 +123,9 @@ nonisolated struct SchoolHomeworkDiaryMatch: Equatable, Sendable {
 nonisolated enum SchoolHomeworkDiaryAnalyzer {
     private struct DayHeader {
         let line: SchoolHomeworkOCRLine
-        let dayKey: String
+        let dayKey: String?
         var y: Double { line.region.midY }
+        var x: Double { line.region.minX + line.region.width / 2 }
     }
 
     private struct SubjectRow {
@@ -105,11 +145,16 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
     static func analyze(_ lines: [SchoolHomeworkOCRLine]) -> SchoolHomeworkDiaryAnalysis {
         let nonempty = lines.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let week = nonempty.compactMap { calendarWeek(in: $0.text) }.first
-        let headers = nonempty.compactMap(dayHeader).sorted {
-            $0.line.region.minX + $0.line.region.width / 2 < $1.line.region.minX + $1.line.region.width / 2
+        let datedHeaders = nonempty.compactMap(dayHeader)
+        let weekdayHeaders = nonempty.compactMap(weekdayHeader).filter { weekday in
+            !datedHeaders.contains { abs($0.y - weekday.y) <= 0.025 }
         }
+        // A recognized weekday still marks a new physical block when the date text is unreadable.
+        // Its nil key intentionally prevents content below it inheriting the previous day's date.
+        let headers = (datedHeaders + weekdayHeaders).sorted { $0.y > $1.y }
+        let verticalDayBlocks = usesVerticalDayBlocks(datedHeaders)
         let headerIDs = Set(headers.map { $0.line.id })
-        let schoolDate = headers.first?.dayKey
+        let schoolDate = datedHeaders.sorted { $0.y > $1.y }.first?.dayKey
         let schoolYear = schoolDate.flatMap(schoolYear(containing:))
         let inferredWeek = week ?? schoolDate.flatMap(isoWeek(of:))
         let subjectRows = nonempty.compactMap(subjectRow)
@@ -118,7 +163,7 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
             guard !headerIDs.contains(line.id), !isPageMetadata(text), subjectRow(for: line) == nil else { return nil }
             // The first column is narrow. Header dates and subject labels have already been removed.
             guard line.region.minX >= 0.16, text.count > 1 else { return nil }
-            let day = headerKey(for: line, headers: headers)
+            let day = headerKey(for: line, headers: headers, verticalDayBlocks: verticalDayBlocks)
             let nearest = subjectRows.min { abs($0.y - line.region.midY) < abs($1.y - line.region.midY) }
             let row = nearest.flatMap { abs($0.y - line.region.midY) <= 0.075 ? $0 : nil }
             let due = explicitDueDate(in: text)
@@ -126,9 +171,12 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
             return ContentLine(line: line, dayKey: day, subjectRow: row, explicitDueDate: due, text: assignment)
         }
 
-        let groups = Dictionary(grouping: content) { item in
-            "\(item.dayKey ?? "undated")|\(item.subjectRow?.line.id.description ?? "unmatched-\(item.line.id)")"
-        }
+        // A line containing only an explicit “bis …” date belongs with the nearest task
+        // in the same day/subject row. It often lands on the second repeated subject slot.
+        let groupKeys = Dictionary(uniqueKeysWithValues: content.map { item in
+            (item.line.id, groupingKey(for: item, among: content))
+        })
+        let groups = Dictionary(grouping: content) { groupKeys[$0.line.id]! }
         var entries = groups.values.compactMap { items -> SchoolHomeworkDiaryEntry? in
             let ordered = items.sorted { $0.line.region.midY > $1.line.region.midY }
             let text = ordered.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -137,7 +185,7 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
             let dateHeader = ordered.compactMap(\.dayKey).first
             let assignmentConfidence = ordered.map { $0.line.confidence }.min() ?? 0
             let subjectConfidence = subjectRow?.line.confidence
-            let dateConfidence = headers.first(where: { $0.dayKey == dateHeader })?.line.confidence
+            let dateConfidence = dateHeader.flatMap { date in headers.first(where: { $0.dayKey == date })?.line.confidence }
             var confidence: [String: Double] = ["assignmentText": assignmentConfidence]
             if let subjectConfidence { confidence["subject"] = subjectConfidence }
             if let dateConfidence { confidence["lessonDate"] = dateConfidence }
@@ -210,7 +258,7 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
     }
 
     private static func subjectRow(for line: SchoolHomeworkOCRLine) -> SubjectRow? {
-        guard line.region.minX < 0.25 else { return nil }
+        guard line.region.minX < 0.30 else { return nil }
         let value = normalize(line.text).trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         guard !value.isEmpty, value.count <= 12 else { return nil }
         guard let subject = subjectName(value) else { return nil }
@@ -241,6 +289,23 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
         guard isDateHeaderText(text),
               let date = explicitDate(in: text), text.count < 32 else { return nil }
         return DayHeader(line: line, dayKey: date)
+    }
+
+    private static func weekdayHeader(_ line: SchoolHomeworkOCRLine) -> DayHeader? {
+        guard line.region.minX >= 0.52, line.text.count < 16,
+              isWeekday(normalize(line.text)) else { return nil }
+        return DayHeader(line: line, dayKey: nil)
+    }
+
+    private static func isWeekday(_ value: String) -> Bool {
+        ["mo", "mo.", "montag", "di", "di.", "dienstag", "mi", "mi.", "mittwoch",
+         "do", "do.", "donnerstag", "fr", "fr.", "freitag", "sa", "sa.", "samstag", "so", "so.", "sonntag"].contains(value)
+    }
+
+    private static func usesVerticalDayBlocks(_ headers: [DayHeader]) -> Bool {
+        guard headers.count > 1 else { return true }
+        guard let top = headers.map(\.y).max(), let bottom = headers.map(\.y).min() else { return true }
+        return top - bottom > 0.08
     }
 
     private static func isDateHeaderText(_ text: String) -> Bool {
@@ -284,17 +349,28 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
         return value.flatMap { (1...53).contains($0) ? $0 : nil }
     }
 
-    private static func headerKey(for line: SchoolHomeworkOCRLine, headers: [DayHeader]) -> String? {
+    private static func headerKey(for line: SchoolHomeworkOCRLine, headers: [DayHeader], verticalDayBlocks: Bool) -> String? {
         let lineY = line.region.midY
         let eligible = headers.filter { $0.y > lineY }
         guard !eligible.isEmpty else { return nil }
+        if verticalDayBlocks {
+            return eligible.min { abs($0.y - lineY) < abs($1.y - lineY) }?.dayKey
+        }
         let lineX = line.region.minX + line.region.width / 2
-        return eligible.min { left, right in
-            let leftDistance = abs((left.line.region.minX + left.line.region.width / 2) - lineX)
-            let rightDistance = abs((right.line.region.minX + right.line.region.width / 2) - lineX)
-            if abs(leftDistance - rightDistance) < 0.015 { return left.y < right.y }
-            return leftDistance < rightDistance
-        }?.dayKey
+        return eligible.min { abs($0.x - lineX) < abs($1.x - lineX) }?.dayKey
+    }
+
+    private static func groupingKey(for item: ContentLine, among content: [ContentLine]) -> String {
+        let ownRowID = item.subjectRow?.line.id
+        if item.text.isEmpty, item.explicitDueDate != nil, let subject = item.subjectRow?.label,
+           let parent = content.filter({ candidate in
+               !candidate.text.isEmpty && candidate.dayKey == item.dayKey &&
+               candidate.subjectRow?.label == subject && candidate.subjectRow?.line.id != ownRowID &&
+               abs(candidate.line.region.midY - item.line.region.midY) <= 0.075
+           }).min(by: { abs($0.line.region.midY - item.line.region.midY) < abs($1.line.region.midY - item.line.region.midY) }) {
+            return "\(item.dayKey ?? "undated")|\(parent.subjectRow?.line.id.description ?? "unmatched-\(parent.line.id)")"
+        }
+        return "\(item.dayKey ?? "undated")|\(ownRowID?.description ?? "unmatched-\(item.line.id)")"
     }
 
     private static func isPageMetadata(_ text: String) -> Bool {
