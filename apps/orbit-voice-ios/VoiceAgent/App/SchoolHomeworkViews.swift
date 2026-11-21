@@ -13,12 +13,12 @@ private func uprightCGImage(from image: UIImage) -> CGImage? {
     let format = UIGraphicsImageRendererFormat()
     format.scale = image.scale
     let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
-    return renderer.image { image.draw(in: CGRect(origin: .zero, size: image.size)) }.cgImage
+    return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: image.size)) }.cgImage
 }
 
 /// Vision OCR stays on-device. A second contrast-enhanced/German-corrected pass is used as
 /// corroboration; disagreement lowers confidence so it cannot become an auto-selected proposal.
-private func recognizeHomeworkLines(
+nonisolated private func recognizeHomeworkLines(
     _ cgImage: CGImage,
     orientation: CGImagePropertyOrientation,
     languageCorrection: Bool
@@ -43,10 +43,6 @@ private func recognizeHomeworkLines(
     } catch {
         return []
     }
-}
-
-private func corroborateHomeworkOCR(_ primary: [HomeworkOCRLine], _ secondary: [HomeworkOCRLine]) -> [HomeworkOCRLine] {
-    SchoolHomeworkOCRCorroborator.merge(primary, secondary)
 }
 
 private struct HomeworkReviewCandidate: Identifiable, Equatable {
@@ -933,7 +929,7 @@ struct SchoolHomeworkView: View {
             ])
             guard let enhancedCG = CIContext(options: [.cacheIntermediates: false]).createCGImage(adjusted, from: adjusted.extent) else { return original }
             let corrected = recognizeHomeworkLines(enhancedCG, orientation: orientation, languageCorrection: true)
-            return corroborateHomeworkOCR(original, corrected)
+            return SchoolHomeworkOCRCorroborator.merge(original, corrected)
         }.value
         diaryAnalysis = SchoolHomeworkDiaryAnalyzer.analyze(recognized)
         diarySchoolYear = diaryAnalysis.schoolYear ?? ""
