@@ -2,9 +2,52 @@ import PhotosUI
 import SwiftUI
 import UIKit
 import Vision
+import CoreImage
+import ImageIO
 
 private typealias HomeworkOCRLine = SchoolHomeworkOCRLine
 private typealias HomeworkOCRRegion = SchoolHomeworkOCRRegion
+
+private func uprightCGImage(from image: UIImage) -> CGImage? {
+    guard image.imageOrientation != .up else { return image.cgImage }
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = image.scale
+    let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+    return renderer.image { image.draw(in: CGRect(origin: .zero, size: image.size)) }.cgImage
+}
+
+/// Vision OCR stays on-device. A second contrast-enhanced/German-corrected pass is used as
+/// corroboration; disagreement lowers confidence so it cannot become an auto-selected proposal.
+private func recognizeHomeworkLines(
+    _ cgImage: CGImage,
+    orientation: CGImagePropertyOrientation,
+    languageCorrection: Bool
+) -> [HomeworkOCRLine] {
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = languageCorrection
+    request.recognitionLanguages = ["de-DE", "en-US"]
+    request.customWords = ["Hausaufgabe", "Hausaufgaben", "Kalenderwoche", "Vokabeln", "Arbeitsheft", "WPK", "PHIL", "USV", "BI", "HA"]
+    do {
+        try VNImageRequestHandler(cgImage: cgImage, orientation: orientation).perform([request])
+        return (request.results ?? []).enumerated().compactMap { index, observation in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            let box = observation.boundingBox
+            return HomeworkOCRLine(
+                id: index,
+                text: candidate.string,
+                confidence: Double(candidate.confidence),
+                region: HomeworkOCRRegion(minX: Double(box.minX), minY: Double(box.minY), width: Double(box.width), height: Double(box.height))
+            )
+        }
+    } catch {
+        return []
+    }
+}
+
+private func corroborateHomeworkOCR(_ primary: [HomeworkOCRLine], _ secondary: [HomeworkOCRLine]) -> [HomeworkOCRLine] {
+    SchoolHomeworkOCRCorroborator.merge(primary, secondary)
+}
 
 private struct HomeworkReviewCandidate: Identifiable, Equatable {
     let id: Int
@@ -130,6 +173,7 @@ struct SchoolHomeworkView: View {
     @State private var cameraOpen = false
     @State private var photoData: Data?
     @State private var photoContentType = "image/jpeg"
+    @State private var uprightPhotoImage: UIImage?
     @State private var photoUploadRequestId = UUID().uuidString
     @State private var manualRequestId = UUID().uuidString
     @State private var photoSnapshot: OrbitHomeworkSnapshot?
@@ -144,6 +188,7 @@ struct SchoolHomeworkView: View {
     @State private var diaryPageLabel = ""
     @State private var showManual = false
     @State private var showReviewForm = false
+    @State private var showOriginalDiaryPage = false
     @State private var submittingPhotoReview = false
     @State private var confirmObviousProposals = false
     @State private var showAllHomeworkMatches = false
@@ -673,12 +718,17 @@ struct SchoolHomeworkView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let photoData, let image = UIImage(data: photoData) {
-                        Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 14))
-                            .accessibilityLabel("Оригінал сторінки щоденника")
-                    }
-                    Text("Перевірте записи за датою й предметом. Дедлайн показано окремо лише коли його явно написано.")
+                    Label("З фото — у перевірені завдання", systemImage: "checkmark.seal")
+                        .font(.title3.weight(.bold))
+                    Text("Перевірте дати й предмети. Термін здачі з’являється лише коли він явно записаний.")
                         .font(.subheadline).foregroundStyle(.secondary)
+                    if photoData != nil, let image = uprightPhotoImage {
+                        DisclosureGroup("Переглянути всю сторінку щоденника", isExpanded: $showOriginalDiaryPage) {
+                            Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 14))
+                                .accessibilityLabel("Оригінал сторінки щоденника")
+                                .padding(.top, 8)
+                        }
+                    }
                     if reviewEntries.isEmpty {
                         ContentUnavailableView("Записів не розпізнано", systemImage: "text.viewfinder", description: Text("Можна зробити чіткіше фото або додати завдання вручну."))
                     }
@@ -691,7 +741,7 @@ struct SchoolHomeworkView: View {
                     Button { Task { await uploadAndReview() } } label: {
                         if store.saving || submittingPhotoReview { ProgressView().frame(maxWidth: .infinity) }
                         else { Label("Зберегти фото й надіслати вибрані на перевірку", systemImage: "lock.shield").frame(maxWidth: .infinity) }
-                    }.buttonStyle(.borderedProminent).disabled(store.saving || submittingPhotoReview || !reviewEntries.contains(where: { $0.selected && !$0.assignmentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }))
+                    }.buttonStyle(.borderedProminent).disabled(store.saving || submittingPhotoReview || !reviewEntries.contains(where: { $0.selected && !$0.assignmentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) || reviewEntries.filter(\.selected).contains { !Self.reviewDateIsValid($0.lessonDate) || !Self.reviewDateIsValid($0.dueDate) })
                     Text("Канонічні завдання не зміняться, доки батько не підтвердить пропозиції окремо.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(16)
@@ -704,11 +754,6 @@ struct SchoolHomeworkView: View {
 
     private func reviewEntryCard(_ entry: HomeworkReviewCandidate) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let crop = sourceCrop(for: entry) {
-                Image(uiImage: crop).resizable().scaledToFit().frame(maxHeight: 120)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .accessibilityLabel("Фрагмент щоденника для цього завдання")
-            }
             HStack {
                 Text(entry.lessonDate.map(homeworkDayTitle) ?? "Дату уроку уточнити").font(.headline)
                 Spacer()
@@ -716,10 +761,25 @@ struct SchoolHomeworkView: View {
                     Image(systemName: entry.selected ? "checkmark.circle.fill" : "circle")
                 }.accessibilityLabel(entry.selected ? "Не надсилати цей запис" : "Надіслати цей запис на перевірку")
             }
-            TextField("Предмет", text: reviewBinding(entry.id, \.subject)).font(.subheadline.weight(.semibold)).textFieldStyle(.roundedBorder)
-            TextField("Завдання", text: reviewBinding(entry.id, \.assignmentText), axis: .vertical).lineLimit(2...5).textFieldStyle(.roundedBorder)
-            TextField("Дата уроку · РРРР-ММ-ДД", text: reviewOptionalBinding(entry.id, \.lessonDate)).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
-            TextField("Дедлайн лише якщо вказаний · РРРР-ММ-ДД", text: reviewOptionalBinding(entry.id, \.dueDate)).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
+            HStack(alignment: .top, spacing: 12) {
+                if let crop = sourceCrop(for: entry) {
+                    Image(uiImage: crop).resizable().scaledToFill().frame(width: 92, height: 112)
+                        .clipped().clipShape(RoundedRectangle(cornerRadius: 10))
+                        .accessibilityLabel("Фрагмент оригіналу, пов’язаний із записом")
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Предмет", text: reviewBinding(entry.id, \.subject))
+                        .font(.subheadline.weight(.semibold)).textFieldStyle(.roundedBorder)
+                    TextField("Текст завдання", text: reviewBinding(entry.id, \.assignmentText), axis: .vertical)
+                        .lineLimit(3...5).textFieldStyle(.roundedBorder)
+                }
+            }
+            HStack(spacing: 8) {
+            TextField("Дата уроку · ДД.ММ.РРРР", text: reviewDateBinding(entry.id, \.lessonDate))
+                    .keyboardType(.numbersAndPunctuation).textFieldStyle(.roundedBorder)
+                TextField("Термін · ДД.ММ.РРРР", text: reviewDateBinding(entry.id, \.dueDate))
+                    .keyboardType(.numbersAndPunctuation).textFieldStyle(.roundedBorder)
+            }
             HStack {
                 Text("Дедлайн: \(entry.dueDate.map(homeworkDayTitle) ?? "не вказано")").font(.caption).foregroundStyle(.secondary)
                 Spacer()
@@ -754,13 +814,15 @@ struct SchoolHomeworkView: View {
                     Toggle("Шукати в усіх завданнях", isOn: $showAllHomeworkMatches).font(.caption)
                 }
             }
-            Text("OCR \(Int((entry.confidence["assignmentText"] ?? 0) * 100))% · фрагмент фото \(Int(entry.sourceRegion.minX * 100))%, \(Int(entry.sourceRegion.minY * 100))%")
-                .font(.caption2).foregroundStyle(.tertiary)
+            if entry.needsReview {
+                Label(entry.reviewReason ?? "Звірте рукопис з оригіналом", systemImage: "eye")
+                    .font(.caption.weight(.medium)).foregroundStyle(.orange)
+            }
         }.padding(14).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func sourceCrop(for entry: HomeworkReviewCandidate) -> UIImage? {
-        guard let photoData, let image = UIImage(data: photoData), let cgImage = image.cgImage else { return nil }
+        guard let image = uprightPhotoImage, let cgImage = image.cgImage else { return nil }
         let width = CGFloat(cgImage.width), height = CGFloat(cgImage.height)
         let region = entry.sourceRegion
         let rect = CGRect(x: CGFloat(region.minX) * width, y: (1 - CGFloat(region.maxY)) * height, width: CGFloat(region.width) * width, height: CGFloat(region.height) * height)
@@ -780,10 +842,50 @@ struct SchoolHomeworkView: View {
         })
     }
 
-    private func reviewOptionalBinding(_ id: Int, _ keyPath: WritableKeyPath<HomeworkReviewCandidate, String?>) -> Binding<String> {
-        Binding(get: { reviewEntries.first(where: { $0.id == id })![keyPath: keyPath] ?? "" }, set: { value in
-            updateReviewEntry(id) { $0[keyPath: keyPath] = value.nilIfEmpty; $0.changeKind = "uncertain"; $0.matchedTaskId = nil; $0.pendingDuplicate = false; $0.needsReview = true; $0.selected = false }
+    private func reviewDateBinding(_ id: Int, _ keyPath: WritableKeyPath<HomeworkReviewCandidate, String?>) -> Binding<String> {
+        Binding(get: {
+            guard let value = reviewEntries.first(where: { $0.id == id })?[keyPath: keyPath] else { return "" }
+            return Self.displayHomeworkDate(value)
+        }, set: { value in
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalized = Self.normalizedHomeworkDate(trimmed)
+            updateReviewEntry(id) { $0[keyPath: keyPath] = trimmed.isEmpty ? nil : (normalized ?? trimmed); $0.changeKind = "uncertain"; $0.matchedTaskId = nil; $0.pendingDuplicate = false; $0.needsReview = true; $0.selected = false }
         })
+    }
+
+    private static func normalizedHomeworkDate(_ value: String) -> String? {
+        let prefix = String(value.prefix(10))
+        let input = value.count > 10 && prefix.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil ? prefix : value
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.isLenient = false
+        for pattern in ["dd.MM.yyyy", "d.M.yyyy", "yyyy-MM-dd"] {
+            formatter.dateFormat = pattern
+            if let date = formatter.date(from: input) {
+                formatter.dateFormat = "yyyy-MM-dd"
+                return formatter.string(from: date)
+            }
+        }
+        return nil
+    }
+
+    private static func displayHomeworkDate(_ value: String) -> String {
+        guard let dayKey = normalizedHomeworkDate(value) else { return value }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let date = formatter.date(from: dayKey) else { return value }
+        formatter.dateFormat = "dd.MM.yyyy"
+        return formatter.string(from: date)
+    }
+
+    private static func reviewDateIsValid(_ value: String?) -> Bool {
+        guard let value, !value.isEmpty else { return true }
+        return normalizedHomeworkDate(value) != nil
     }
 
     private func reviewKindBinding(_ id: Int) -> Binding<String> {
@@ -818,19 +920,20 @@ struct SchoolHomeworkView: View {
     }
 
     private func preparePhoto(_ data: Data, contentType: String) async {
-        photoData = data; photoContentType = contentType; photoSnapshot = nil; photoUploadRequestId = UUID().uuidString; reviewEntries = []
-        guard let image = UIImage(data: data), let cgImage = image.cgImage else { return }
+        photoData = data; photoContentType = contentType; photoSnapshot = nil; uprightPhotoImage = nil; photoUploadRequestId = UUID().uuidString; reviewEntries = []
+        guard let image = UIImage(data: data), let cgImage = uprightCGImage(from: image) else { return }
+        uprightPhotoImage = UIImage(cgImage: cgImage, scale: image.scale, orientation: .up)
+        let orientation = CGImagePropertyOrientation.up
         let recognized = await Task.detached(priority: .userInitiated) {
-            let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
-            request.recognitionLanguages = ["de-DE", "uk-UA"]
-            do {
-                try VNImageRequestHandler(cgImage: cgImage).perform([request])
-                return (request.results ?? []).enumerated().compactMap { index, observation -> HomeworkOCRLine? in
-                    guard let candidate = observation.topCandidates(1).first else { return nil }
-                    let box = observation.boundingBox
-                    return HomeworkOCRLine(id: index, text: candidate.string, confidence: Double(candidate.confidence), region: HomeworkOCRRegion(minX: Double(box.minX), minY: Double(box.minY), width: Double(box.width), height: Double(box.height)))
-                }
-            } catch { return [HomeworkOCRLine]() }
+            let original = recognizeHomeworkLines(cgImage, orientation: orientation, languageCorrection: false)
+            let adjusted = CIImage(cgImage: cgImage).applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0.0,
+                kCIInputContrastKey: 1.22,
+                kCIInputBrightnessKey: 0.01
+            ])
+            guard let enhancedCG = CIContext(options: [.cacheIntermediates: false]).createCGImage(adjusted, from: adjusted.extent) else { return original }
+            let corrected = recognizeHomeworkLines(enhancedCG, orientation: orientation, languageCorrection: true)
+            return corroborateHomeworkOCR(original, corrected)
         }.value
         diaryAnalysis = SchoolHomeworkDiaryAnalyzer.analyze(recognized)
         diarySchoolYear = diaryAnalysis.schoolYear ?? ""
@@ -867,7 +970,7 @@ struct SchoolHomeworkView: View {
     }
 
     private func clearPhotoDraft() {
-        photoData = nil; photoSnapshot = nil; reviewEntries = []; selectedPhoto = nil
+        photoData = nil; photoSnapshot = nil; uprightPhotoImage = nil; reviewEntries = []; selectedPhoto = nil
         diaryAnalysis = SchoolHomeworkDiaryAnalysis(schoolYear: nil, calendarWeek: nil, pageLabel: nil, entries: [])
         photoUploadRequestId = UUID().uuidString
     }
@@ -889,7 +992,7 @@ struct SchoolHomeworkView: View {
                 let region = String(format: "vision-unit-rect:%.4f,%.4f,%.4f,%.4f", entry.sourceRegion.minX, entry.sourceRegion.minY, entry.sourceRegion.width, entry.sourceRegion.height)
                 try await store.propose(snapshot: photoSnapshot, subject: cleanSubject, text: cleanText, lessonDate: entry.lessonDate, dueDate: entry.dueDate, changeKind: entry.changeKind, matchedTaskId: matched?.id, expectedRevision: matched?.revision, sourceRegion: region, confidence: entry.confidence, clientRequestId: entry.clientRequestId)
             }
-            self.photoData = nil; self.photoSnapshot = nil; reviewEntries = []; selectedPhoto = nil; showReviewForm = false
+            self.photoData = nil; self.photoSnapshot = nil; self.uprightPhotoImage = nil; reviewEntries = []; selectedPhoto = nil; showReviewForm = false
             photoUploadRequestId = UUID().uuidString
             await store.load()
         } catch { store.error = "Фото збережене, але не всі записи вдалося надіслати. Оновіть список і перевірте пропозиції." }
