@@ -12,6 +12,9 @@ private func inboxItem(_ id: String, type: String = "letter", unread: Bool = fal
 private func inboxTask(_ source: String, status: String = "open") -> SchoolInboxTaskSnapshot {
     SchoolInboxTaskSnapshot(sourceItemId: source, status: status)
 }
+private func homeworkOCR(_ id: Int, _ text: String, x: Double, y: Double, confidence: Double = 0.94, width: Double = 0.20) -> SchoolHomeworkOCRLine {
+    SchoolHomeworkOCRLine(id: id, text: text, confidence: confidence, region: SchoolHomeworkOCRRegion(minX: x, minY: y, width: width, height: 0.018))
+}
 
 @main
 struct SchoolHubLogicTests {
@@ -574,6 +577,63 @@ struct SchoolHubLogicTests {
         precondition(SchoolHomeworkTextMatcher.similarity("Mathe Buch Seite 10", "Seite 10 · Mathe Buch") == 1, "word order and punctuation do not change identity")
         precondition(SchoolHomeworkTextMatcher.similarity("Vokabeln lernen", "Mathematik Aufgaben rechnen") == 0, "unrelated homework does not match")
         precondition(SchoolHomeworkTextMatcher.similarity("", "Mathematik") == 0, "empty OCR never matches")
+
+        // German diary layout: week/date headers partition the page, subject-column labels attach to nearby assignment rows.
+        let diary = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(0, "47. Kalenderwoche", x: 0.12, y: 0.94),
+            homeworkOCR(1, "16.11.26", x: 0.17, y: 0.82, width: 0.12),
+            homeworkOCR(2, "M", x: 0.08, y: 0.74, width: 0.05),
+            homeworkOCR(3, "HA: Wochenplan BN 2–4 (5)", x: 0.22, y: 0.74, width: 0.44),
+            homeworkOCR(4, "18.11.26", x: 0.17, y: 0.59, width: 0.12),
+            homeworkOCR(5, "BI", x: 0.08, y: 0.50, width: 0.06),
+            homeworkOCR(6, "HA S. 40/41 lesen", x: 0.22, y: 0.50, width: 0.30),
+            homeworkOCR(7, "bis 20.11.2026", x: 0.22, y: 0.474, width: 0.24),
+            homeworkOCR(8, "D", x: 0.08, y: 0.41, width: 0.05),
+            homeworkOCR(9, "Vokabeln üben", x: 0.22, y: 0.41, width: 0.26)
+        ])
+        precondition(diary.calendarWeek == 47 && diary.schoolYear == "2026/2027", "week and German school year are derived from the page")
+        precondition(diary.entries.count == 3, "multiple dated subject rows become individual candidates")
+        let mathEntry = diary.entries.first { $0.subject == "Mathematik" }
+        precondition(mathEntry?.lessonDate == "2026-11-16" && mathEntry?.assignmentText.contains("Wochenplan") == true, "date and subject-column match the assignment")
+        let biologyEntry = diary.entries.first { $0.subject == "Biologie" }
+        precondition(biologyEntry?.lessonDate == "2026-11-18" && biologyEntry?.dueDate == "2026-11-20", "explicit bis date is separate from lesson date")
+        precondition(diary.entries.first { $0.subject == "Deutsch" }?.dueDate == nil, "no deadline is invented when the text has none")
+
+        // Re-photographing the same page links an exact same-day/same-subject task; date or subject mismatch cannot win on text alone.
+        let existing = [
+            SchoolHomeworkMatchRecord(id: "previous-photo", subject: "Mathematik", assignmentText: "Wochenplan BN 2–4 (5)", lessonDate: "2026-11-16", sourcePageKey: "2026/2027|47|h30"),
+            SchoolHomeworkMatchRecord(id: "other-day", subject: "Mathematik", assignmentText: "Wochenplan BN 2–4 (5)", lessonDate: "2026-11-17", sourcePageKey: "2026/2027|47|h30")
+        ]
+        let repeated = SchoolHomeworkDiaryAnalyzer.match(mathEntry!, against: existing, pageKey: "2026/2027|47|h30")
+        precondition(repeated.kind == .same && repeated.matchedRecordID == "previous-photo", "repeat from the same page is not duplicated")
+        var differentDay = mathEntry!
+        differentDay = SchoolHomeworkDiaryEntry(id: differentDay.id, subject: differentDay.subject, assignmentText: differentDay.assignmentText, lessonDate: "2026-11-18", dueDate: nil, sourceLineIDs: differentDay.sourceLineIDs, sourceRegion: differentDay.sourceRegion, confidence: differentDay.confidence, needsReview: false, reviewReason: nil)
+        precondition(SchoolHomeworkDiaryAnalyzer.match(differentDay, against: existing, pageKey: "2026/2027|47|h30").kind == .new, "same text on a different date remains a new candidate")
+        let supplemental = SchoolHomeworkDiaryEntry(id: 99, subject: "Biologie", assignmentText: "Vokabeln lernen Seite 12", lessonDate: "2026-11-18", dueDate: nil, sourceLineIDs: [99], sourceRegion: SchoolHomeworkOCRRegion(minX: 0.2, minY: 0.3, width: 0.3, height: 0.02), confidence: ["assignmentText": 0.95, "subject": 0.9, "lessonDate": 0.9], needsReview: false, reviewReason: nil)
+        precondition(SchoolHomeworkDiaryAnalyzer.match(supplemental, against: existing).kind == .new, "new addition on a previously photographed date is preserved")
+
+        let poorOCR = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(20, "Kalenderwoche 47", x: 0.1, y: 0.9),
+            homeworkOCR(21, "16.11.26", x: 0.17, y: 0.8, width: 0.12),
+            homeworkOCR(22, "?", x: 0.08, y: 0.7, width: 0.04, confidence: 0.2),
+            homeworkOCR(23, "??? 2?4", x: 0.22, y: 0.7, width: 0.2, confidence: 0.22)
+        ])
+        precondition(poorOCR.entries.first?.needsReview == true, "low-confidence handwriting is held for review")
+        precondition(poorOCR.entries.first?.subject == nil, "unrecognized abbreviation is not expanded or guessed")
+        precondition(SchoolHomeworkDiaryAnalyzer.match(poorOCR.entries.first!, against: existing).kind == .uncertain, "poor OCR never auto-classifies")
+
+        // A real weekly page places dates in horizontal columns and subjects in shared horizontal rows.
+        let columnDiary = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(30, "KW 47", x: 0.1, y: 0.94),
+            homeworkOCR(31, "16.11.2026", x: 0.34, y: 0.88, width: 0.12),
+            homeworkOCR(32, "17.11.2026", x: 0.69, y: 0.88, width: 0.12),
+            homeworkOCR(33, "D", x: 0.07, y: 0.70, width: 0.05),
+            homeworkOCR(34, "Lesen Seite 12", x: 0.34, y: 0.70, width: 0.20),
+            homeworkOCR(35, "Vokabeln üben", x: 0.69, y: 0.70, width: 0.20)
+        ])
+        precondition(columnDiary.entries.count == 2, "two date columns yield separate entries in one subject row")
+        precondition(columnDiary.entries.first(where: { $0.assignmentText.contains("Lesen") })?.lessonDate == "2026-11-16")
+        precondition(columnDiary.entries.first(where: { $0.assignmentText.contains("Vokabeln") })?.lessonDate == "2026-11-17")
 
         print("school hub logic tests passed")
     }
