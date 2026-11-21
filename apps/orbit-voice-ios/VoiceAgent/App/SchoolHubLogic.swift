@@ -18,11 +18,318 @@ nonisolated enum SchoolHomeworkTextMatcher {
             Set(value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
                 .split { !$0.isLetter && !$0.isNumber }
                 .map(String.init)
-                .filter { $0.count > 1 })
+                .filter { $0.count > 1 && $0 != "ha" && $0 != "hausaufgabe" })
         }
         let left = tokens(lhs), right = tokens(rhs)
         guard !left.isEmpty, !right.isEmpty else { return 0 }
         return Double(left.intersection(right).count) / Double(left.union(right).count)
+    }
+}
+
+nonisolated struct SchoolHomeworkOCRRegion: Equatable, Sendable {
+    let minX: Double
+    let minY: Double
+    let width: Double
+    let height: Double
+
+    var maxX: Double { minX + width }
+    var maxY: Double { minY + height }
+    var midY: Double { minY + height / 2 }
+}
+
+nonisolated struct SchoolHomeworkOCRLine: Identifiable, Equatable, Sendable {
+    let id: Int
+    let text: String
+    let confidence: Double
+    let region: SchoolHomeworkOCRRegion
+}
+
+nonisolated struct SchoolHomeworkDiaryEntry: Identifiable, Equatable, Sendable {
+    let id: Int
+    let subject: String?
+    let assignmentText: String
+    let lessonDate: String?
+    let dueDate: String?
+    let sourceLineIDs: [Int]
+    let sourceRegion: SchoolHomeworkOCRRegion
+    let confidence: [String: Double]
+    let needsReview: Bool
+    let reviewReason: String?
+}
+
+nonisolated struct SchoolHomeworkDiaryAnalysis: Equatable, Sendable {
+    let schoolYear: String?
+    let calendarWeek: Int?
+    let pageLabel: String?
+    let entries: [SchoolHomeworkDiaryEntry]
+}
+
+nonisolated struct SchoolHomeworkMatchRecord: Equatable, Sendable {
+    let id: String
+    let subject: String
+    let assignmentText: String
+    let lessonDate: String?
+    let sourcePageKey: String?
+}
+
+nonisolated struct SchoolHomeworkDiaryMatch: Equatable, Sendable {
+    enum Kind: String, Equatable, Sendable { case new, update, same, uncertain }
+    let kind: Kind
+    let matchedRecordID: String?
+    let score: Double
+}
+
+/// Conservative, on-device structure extraction for German school diary pages.
+/// It uses Vision geometry and explicit printed/date text; it never sends OCR elsewhere.
+nonisolated enum SchoolHomeworkDiaryAnalyzer {
+    private struct DayHeader {
+        let line: SchoolHomeworkOCRLine
+        let dayKey: String
+        var y: Double { line.region.midY }
+    }
+
+    private struct SubjectRow {
+        let line: SchoolHomeworkOCRLine
+        let label: String
+        var y: Double { line.region.midY }
+    }
+
+    private struct ContentLine {
+        let line: SchoolHomeworkOCRLine
+        let dayKey: String?
+        let subjectRow: SubjectRow?
+        let explicitDueDate: String?
+        let text: String
+    }
+
+    static func analyze(_ lines: [SchoolHomeworkOCRLine]) -> SchoolHomeworkDiaryAnalysis {
+        let nonempty = lines.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let week = nonempty.compactMap { calendarWeek(in: $0.text) }.first
+        let headers = nonempty.compactMap(dayHeader).sorted {
+            $0.line.region.minX + $0.line.region.width / 2 < $1.line.region.minX + $1.line.region.width / 2
+        }
+        let headerIDs = Set(headers.map { $0.line.id })
+        let schoolDate = headers.first?.dayKey
+        let schoolYear = schoolDate.flatMap(schoolYear(containing:))
+        let inferredWeek = week ?? schoolDate.flatMap(isoWeek(of:))
+        let subjectRows = nonempty.compactMap(subjectRow)
+        let content = nonempty.compactMap { line -> ContentLine? in
+            let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !headerIDs.contains(line.id), !isPageMetadata(text), subjectRow(for: line) == nil else { return nil }
+            // The first column is narrow. Header dates and subject labels have already been removed.
+            guard line.region.minX >= 0.16, text.count > 1 else { return nil }
+            let day = headerKey(for: line, headers: headers)
+            let nearest = subjectRows.min { abs($0.y - line.region.midY) < abs($1.y - line.region.midY) }
+            let row = nearest.flatMap { abs($0.y - line.region.midY) <= 0.075 ? $0 : nil }
+            let due = explicitDueDate(in: text)
+            let assignment = removingExplicitDuePhrase(text)
+            return ContentLine(line: line, dayKey: day, subjectRow: row, explicitDueDate: due, text: assignment)
+        }
+
+        let groups = Dictionary(grouping: content) { item in
+            "\(item.dayKey ?? "undated")|\(item.subjectRow?.line.id.description ?? "unmatched-\(item.line.id)")"
+        }
+        var entries = groups.values.compactMap { items -> SchoolHomeworkDiaryEntry? in
+            let ordered = items.sorted { $0.line.region.midY > $1.line.region.midY }
+            let text = ordered.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            let subjectRow = ordered.compactMap(\.subjectRow).first
+            let dateHeader = ordered.compactMap(\.dayKey).first
+            let assignmentConfidence = ordered.map { $0.line.confidence }.min() ?? 0
+            let subjectConfidence = subjectRow?.line.confidence
+            let dateConfidence = headers.first(where: { $0.dayKey == dateHeader })?.line.confidence
+            var confidence: [String: Double] = ["assignmentText": assignmentConfidence]
+            if let subjectConfidence { confidence["subject"] = subjectConfidence }
+            if let dateConfidence { confidence["lessonDate"] = dateConfidence }
+            let minX = ordered.map { $0.line.region.minX }.min() ?? 0
+            let minY = ordered.map { $0.line.region.minY }.min() ?? 0
+            let maxX = ordered.map { $0.line.region.maxX }.max() ?? minX
+            let maxY = ordered.map { $0.line.region.maxY }.max() ?? minY
+            let explicitDue = ordered.compactMap(\.explicitDueDate).first
+            let needsReview = assignmentConfidence < 0.55 || subjectRow == nil || dateHeader == nil
+            let reason: String?
+            if assignmentConfidence < 0.55 { reason = "Нечіткий текст" }
+            else if subjectRow == nil { reason = "Не вдалося надійно визначити предмет" }
+            else if dateHeader == nil { reason = "Не вдалося надійно визначити дату уроку" }
+            else { reason = nil }
+            return SchoolHomeworkDiaryEntry(
+                id: ordered.first?.line.id ?? 0,
+                subject: subjectRow?.label,
+                assignmentText: text,
+                lessonDate: dateHeader,
+                dueDate: explicitDue,
+                sourceLineIDs: ordered.map { $0.line.id },
+                sourceRegion: SchoolHomeworkOCRRegion(minX: minX, minY: minY, width: max(0, maxX - minX), height: max(0, maxY - minY)),
+                confidence: confidence,
+                needsReview: needsReview,
+                reviewReason: reason
+            )
+        }
+        entries.sort {
+            if $0.lessonDate != $1.lessonDate { return ($0.lessonDate ?? "9999") < ($1.lessonDate ?? "9999") }
+            return $0.sourceRegion.midY > $1.sourceRegion.midY
+        }
+        let label: String? = inferredWeek.map { "KW \($0)" }
+        return SchoolHomeworkDiaryAnalysis(schoolYear: schoolYear, calendarWeek: inferredWeek, pageLabel: label, entries: entries)
+    }
+
+    static func match(_ entry: SchoolHomeworkDiaryEntry, against records: [SchoolHomeworkMatchRecord], pageKey: String? = nil) -> SchoolHomeworkDiaryMatch {
+        guard let date = entry.lessonDate, let subject = entry.subject, !entry.needsReview else {
+            return SchoolHomeworkDiaryMatch(kind: .uncertain, matchedRecordID: nil, score: 0)
+        }
+        let normalizedSubject = normalizeSubject(subject)
+        let contextual = records.filter {
+            $0.lessonDate == date && normalizeSubject($0.subject) == normalizedSubject
+        }
+        guard !contextual.isEmpty else {
+            return SchoolHomeworkDiaryMatch(kind: .new, matchedRecordID: nil, score: 0)
+        }
+        let ranked = contextual.map { record in
+            (record, SchoolHomeworkTextMatcher.similarity(entry.assignmentText, record.assignmentText), record.sourcePageKey == pageKey && pageKey != nil)
+        }.sorted {
+            if $0.2 != $1.2 { return $0.2 }
+            return $0.1 > $1.1
+        }
+        let best = ranked[0]
+        if ranked.count > 1, abs(best.1 - ranked[1].1) < 0.08, best.1 < 0.92 {
+            return SchoolHomeworkDiaryMatch(kind: .uncertain, matchedRecordID: nil, score: best.1)
+        }
+        if best.2, best.1 >= 0.75 {
+            return SchoolHomeworkDiaryMatch(kind: .same, matchedRecordID: best.0.id, score: best.1)
+        }
+        if best.1 >= 0.92 { return SchoolHomeworkDiaryMatch(kind: .same, matchedRecordID: best.0.id, score: best.1) }
+        if best.1 >= 0.48 { return SchoolHomeworkDiaryMatch(kind: .update, matchedRecordID: best.0.id, score: best.1) }
+        if best.1 <= 0.22 { return SchoolHomeworkDiaryMatch(kind: .new, matchedRecordID: nil, score: best.1) }
+        return SchoolHomeworkDiaryMatch(kind: .uncertain, matchedRecordID: best.0.id, score: best.1)
+    }
+
+    static func pageKey(schoolYear: String?, calendarWeek: Int?, pageLabel: String?) -> String? {
+        guard let schoolYear, let calendarWeek else { return nil }
+        let page = pageLabel?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return "\(schoolYear)|\(calendarWeek)|\(page)"
+    }
+
+    private static func subjectRow(for line: SchoolHomeworkOCRLine) -> SubjectRow? {
+        guard line.region.minX < 0.25 else { return nil }
+        let value = normalize(line.text).trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        guard !value.isEmpty, value.count <= 12 else { return nil }
+        guard let subject = subjectName(value) else { return nil }
+        return SubjectRow(line: line, label: subject)
+    }
+
+    private static func subjectName(_ value: String) -> String? {
+        switch value {
+        case "m", "ma", "mathe", "mathematik": "Mathematik"
+        case "d", "de", "deutsch": "Deutsch"
+        case "e", "eng", "englisch": "Englisch"
+        case "bi", "bio", "biologie": "Biologie"
+        case "ku", "kunst": "Kunst"
+        case "ph", "philo", "philosophie": "Philosophie"
+        case "wpk": "WPK"
+        case "p": "P"
+        case "usv": "USV"
+        default: nil
+        }
+    }
+
+    private static func normalizeSubject(_ value: String) -> String {
+        subjectName(normalize(value).trimmingCharacters(in: CharacterSet.alphanumerics.inverted)) ?? normalize(value)
+    }
+
+    private static func dayHeader(_ line: SchoolHomeworkOCRLine) -> DayHeader? {
+        let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isDateHeaderText(text),
+              let date = explicitDate(in: text), text.count < 32 else { return nil }
+        return DayHeader(line: line, dayKey: date)
+    }
+
+    private static func isDateHeaderText(_ text: String) -> Bool {
+        let normalized = normalize(text)
+        let withoutWeekday = normalized.replacingOccurrences(
+            of: #"^(mo|montag|di|dienstag|mi|mittwoch|do|donnerstag|fr|freitag|sa|samstag|so|sonntag)\.?[,]?\s+"#,
+            with: "", options: .regularExpression
+        )
+        return withoutWeekday.range(of: #"^\d{1,2}[./]\d{1,2}[./]\d{2,4}$"#, options: .regularExpression) != nil
+    }
+
+    private static func explicitDate(in text: String) -> String? {
+        guard let match = firstMatch(#"(?<!\d)(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?(?!\d)"#, in: text),
+              match.count >= 3,
+              let day = Int(match[1]), let month = Int(match[2]), match.count >= 4, !match[3].isEmpty else { return nil }
+        var year = Int(match[3]) ?? 0
+        if year < 100 { year += 2000 }
+        guard (1...31).contains(day), (1...12).contains(month), (2000...2099).contains(year) else { return nil }
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var components = DateComponents(); components.year = year; components.month = month; components.day = day
+        guard let date = calendar.date(from: components), calendar.component(.day, from: date) == day,
+              calendar.component(.month, from: date) == month else { return nil }
+        return String(format: "%04d-%02d-%02d", year, month, day)
+    }
+
+    private static func explicitDueDate(in text: String) -> String? {
+        guard normalize(text).range(of: #"\b(bis|abgabe\s+bis|abgeben\s+bis|fallig\s+am)\b"#, options: .regularExpression) != nil else { return nil }
+        return explicitDate(in: text)
+    }
+
+    private static func removingExplicitDuePhrase(_ text: String) -> String {
+        guard let range = text.range(of: #"(?i)\b(bis|abgabe\s+bis|abgeben\s+bis|fällig\s+am)\s+(?:den\s+)?\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?"#, options: .regularExpression) else { return text }
+        return (String(text[..<range.lowerBound]) + " " + String(text[range.upperBound...]))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func calendarWeek(in text: String) -> Int? {
+        guard let match = firstMatch(#"(?i)(?:kalenderwoche|\bkw)\s*(\d{1,2})|(\d{1,2})\s*\.?\s*kalenderwoche"#, in: text),
+              match.count >= 2 else { return nil }
+        let value = Int(match[1].isEmpty ? match[2] : match[1])
+        return value.flatMap { (1...53).contains($0) ? $0 : nil }
+    }
+
+    private static func headerKey(for line: SchoolHomeworkOCRLine, headers: [DayHeader]) -> String? {
+        let lineY = line.region.midY
+        let eligible = headers.filter { $0.y > lineY }
+        guard !eligible.isEmpty else { return nil }
+        let lineX = line.region.minX + line.region.width / 2
+        return eligible.min { left, right in
+            let leftDistance = abs((left.line.region.minX + left.line.region.width / 2) - lineX)
+            let rightDistance = abs((right.line.region.minX + right.line.region.width / 2) - lineX)
+            if abs(leftDistance - rightDistance) < 0.015 { return left.y < right.y }
+            return leftDistance < rightDistance
+        }?.dayKey
+    }
+
+    private static func isPageMetadata(_ text: String) -> Bool {
+        let lower = normalize(text)
+        return calendarWeek(in: text) != nil || lower == "fach" || ["mo", "mo.", "montag", "di", "di.", "dienstag", "mi", "mi.", "mittwoch", "do", "do.", "donnerstag", "fr", "fr.", "freitag", "sa", "sa.", "samstag", "so", "so.", "sonntag"].contains(lower)
+    }
+
+    private static func schoolYear(containing dayKey: String) -> String? {
+        let parts = dayKey.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        let start = parts[1] >= 8 ? parts[0] : parts[0] - 1
+        return "\(start)/\(start + 1)"
+    }
+
+    private static func isoWeek(of dayKey: String) -> Int? {
+        let parts = dayKey.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var calendar = Calendar(identifier: .iso8601); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var components = DateComponents(); components.year = parts[0]; components.month = parts[1]; components.day = parts[2]
+        return calendar.date(from: components).map { calendar.component(.weekOfYear, from: $0) }
+    }
+
+    private static func normalize(_ value: String) -> String {
+        value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+            .replacingOccurrences(of: "ß", with: "ss")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> [String]? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
+        return (0..<match.numberOfRanges).map { index in
+            guard let range = Range(match.range(at: index), in: text) else { return "" }
+            return String(text[range])
+        }
     }
 }
 

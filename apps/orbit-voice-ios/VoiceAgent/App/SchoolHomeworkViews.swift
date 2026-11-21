@@ -3,26 +3,26 @@ import SwiftUI
 import UIKit
 import Vision
 
-private struct HomeworkOCRLine: Identifiable, Sendable {
+private typealias HomeworkOCRLine = SchoolHomeworkOCRLine
+private typealias HomeworkOCRRegion = SchoolHomeworkOCRRegion
+
+private struct HomeworkReviewCandidate: Identifiable, Equatable {
     let id: Int
-    let text: String
-    let confidence: Double
-    let region: HomeworkOCRRegion
-}
-
-private struct HomeworkOCRRegion: Sendable {
-    let minX: Double
-    let minY: Double
-    let width: Double
-    let height: Double
-    var maxX: Double { minX + width }
-    var maxY: Double { minY + height }
-}
-
-private struct HomeworkOCRMatch {
-    let task: OrbitHomeworkTask
-    let score: Double
-    let line: HomeworkOCRLine
+    var subject: String
+    var assignmentText: String
+    var lessonDate: String?
+    var dueDate: String?
+    var sourceLineIDs: [Int]
+    var sourceRegion: HomeworkOCRRegion
+    var confidence: [String: Double]
+    var needsReview: Bool
+    var reviewReason: String?
+    var changeKind: String
+    var matchedTaskId: String?
+    var matchScore: Double
+    var pendingDuplicate: Bool
+    var selected: Bool
+    var clientRequestId: String
 }
 
 private struct HomeworkCalendarDay: Identifiable {
@@ -89,13 +89,12 @@ private final class SchoolHomeworkStore {
         return response.snapshot
     }
 
-    func propose(snapshot: OrbitHomeworkSnapshot, subject: String, text: String, lessonDate: String?, dueDate: String?, changeKind: String = "new", matchedTaskId: String? = nil, expectedRevision: Int? = nil, sourceRegion: String, ocrConfidence: Double?, clientRequestId: String) async throws {
+    func propose(snapshot: OrbitHomeworkSnapshot, subject: String, text: String, lessonDate: String?, dueDate: String?, changeKind: String = "new", matchedTaskId: String? = nil, expectedRevision: Int? = nil, sourceRegion: String, confidence: [String: Double], clientRequestId: String) async throws {
         guard let childPersonId else { throw OrbitChatAPIError.invalidResponse }
-        var candidate: [String: Any] = ["subject": subject, "assignmentText": text, "sourceRegion": sourceRegion, "confidence": ["assignmentText": ocrConfidence ?? 0] as [String: Double]]
+        var candidate: [String: Any] = ["subject": subject, "assignmentText": text, "sourceRegion": sourceRegion, "confidence": confidence]
         candidate["lessonDate"] = lessonDate as Any? ?? NSNull(); candidate["dueDate"] = dueDate as Any? ?? NSNull()
         if let expectedRevision { candidate["expectedRevision"] = expectedRevision }
         try await MainProductAPI.shared.createHomeworkProposal(childPersonId: childPersonId, snapshotId: snapshot.id, changeKind: changeKind, matchedHomeworkId: matchedTaskId, candidate: candidate, clientRequestId: clientRequestId)
-        await load()
     }
 
     func manual(subject: String, text: String, lessonDate: String?, dueDate: String?, clientRequestId: String) async throws {
@@ -132,12 +131,10 @@ struct SchoolHomeworkView: View {
     @State private var photoData: Data?
     @State private var photoContentType = "image/jpeg"
     @State private var photoUploadRequestId = UUID().uuidString
-    @State private var proposalRequestId = UUID().uuidString
     @State private var manualRequestId = UUID().uuidString
     @State private var photoSnapshot: OrbitHomeworkSnapshot?
-    @State private var localOCR = ""
-    @State private var ocrLines: [HomeworkOCRLine] = []
-    @State private var selectedOCRLineIDs = Set<Int>()
+    @State private var diaryAnalysis = SchoolHomeworkDiaryAnalysis(schoolYear: nil, calendarWeek: nil, pageLabel: nil, entries: [])
+    @State private var reviewEntries: [HomeworkReviewCandidate] = []
     @State private var subject = ""
     @State private var assignment = ""
     @State private var lessonDate = ""
@@ -145,10 +142,11 @@ struct SchoolHomeworkView: View {
     @State private var diarySchoolYear = ""
     @State private var diaryWeek = ""
     @State private var diaryPageLabel = ""
-    @State private var changeKind = "new"
-    @State private var matchedTaskId: String?
     @State private var showManual = false
     @State private var showReviewForm = false
+    @State private var submittingPhotoReview = false
+    @State private var confirmObviousProposals = false
+    @State private var showAllHomeworkMatches = false
     @State private var editingTask: OrbitHomeworkTask?
     @State private var searchText = ""
     @State private var noteDrafts: [String: String] = [:]
@@ -196,7 +194,7 @@ struct SchoolHomeworkView: View {
             store.configure(profilePersonId: profilePersonId, isChild: isChild)
             selectedHomeworkDay = nil; selectedHomeworkSubject = nil; selectedProgressState = nil
             brainSelectedTaskId = nil; brainQuestion = ""; brainAnswer = nil
-            photoData = nil; photoSnapshot = nil; selectedSnapshot = nil; localOCR = ""; ocrLines = []; selectedOCRLineIDs = []
+            photoData = nil; photoSnapshot = nil; selectedSnapshot = nil
             subject = ""; assignment = ""; lessonDate = ""; dueDate = ""
             noteDrafts = [:]; editingTask = nil; showManual = false; showReviewForm = false; cameraOpen = false
             selectedPhoto = nil; showBrainSendConfirmation = false
@@ -207,10 +205,10 @@ struct SchoolHomeworkView: View {
             guard let photo else { return }
             Task { await loadPhoto(photo) }
         }
-        .onChange(of: subject) { _, _ in if showReviewForm { proposalRequestId = UUID().uuidString }; if showManual && editingTask == nil { manualRequestId = UUID().uuidString } }
-        .onChange(of: assignment) { _, _ in if showReviewForm { proposalRequestId = UUID().uuidString }; if showManual && editingTask == nil { manualRequestId = UUID().uuidString } }
-        .onChange(of: lessonDate) { _, _ in if showReviewForm { proposalRequestId = UUID().uuidString }; if showManual && editingTask == nil { manualRequestId = UUID().uuidString } }
-        .onChange(of: dueDate) { _, _ in if showReviewForm { proposalRequestId = UUID().uuidString }; if showManual && editingTask == nil { manualRequestId = UUID().uuidString } }
+        .onChange(of: subject) { _, _ in if showManual && editingTask == nil { manualRequestId = UUID().uuidString } }
+        .onChange(of: assignment) { _, _ in if showManual && editingTask == nil { manualRequestId = UUID().uuidString } }
+        .onChange(of: lessonDate) { _, _ in if showManual && editingTask == nil { manualRequestId = UUID().uuidString } }
+        .onChange(of: dueDate) { _, _ in if showManual && editingTask == nil { manualRequestId = UUID().uuidString } }
         .sheet(isPresented: $cameraOpen) {
             HomeworkCameraPicker { image in
                 guard let image, let data = image.jpegData(compressionQuality: 0.88) else { return }
@@ -233,58 +231,154 @@ struct SchoolHomeworkView: View {
     }
 
     private var tasksSurface: some View {
-        List {
-            Section { childPicker }
-            Section("Календар") {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        dayChip(title: "Усі дні", value: nil)
-                        ForEach(homeworkCalendarDays) { day in dayChip(title: day.title, value: day.key) }
-                        dayChip(title: "Без дати", value: "undated")
-                    }.padding(.vertical, 2)
-                }
-                .accessibilityLabel("Вибір дня домашніх завдань")
-            }
-            Section("Фільтри") {
-                Picker("Предмет", selection: $selectedHomeworkSubject) {
-                    Text("Усі предмети").tag(String?.none)
-                    ForEach(homeworkSubjects, id: \.self) { Text($0).tag(Optional($0)) }
-                }
-                Picker("Прогрес", selection: $selectedProgressState) {
-                    Text("Будь-який").tag(String?.none)
-                    Text("Не почато").tag(Optional("not_started"))
-                    Text("Виконую").tag(Optional("in_progress"))
-                    Text("Виконано").tag(Optional("completed"))
-                    Text("Потрібна допомога").tag(Optional("needs_help"))
-                }
-            }
-            if store.tasks.isEmpty {
-                ContentUnavailableView("Завдань поки немає", systemImage: "books.vertical", description: Text("Порожній список не означає, що в щоденнику немає домашньої роботи."))
-            }
-            ForEach(filteredTasks) { task in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack { Text(task.subject).font(.headline); Spacer(); if task.reviewState == "needs_review" { Label("Уточнити", systemImage: "questionmark.circle").font(.caption).foregroundStyle(.orange) } }
-                    Text(task.assignmentText).textSelection(.enabled)
-                    HStack(spacing: 12) {
-                        if let date = task.lessonDate { Label("Урок \(date)", systemImage: "calendar") }
-                        if let date = task.dueDate { Label("Термін \(date)", systemImage: "clock") } else { Label("Термін невідомий", systemImage: "clock") }
-                    }.font(.caption).foregroundStyle(.secondary)
-                    if !canWriteProgress { Text(progressLabel(task.progress.status)).font(.caption.weight(.semibold)).foregroundStyle(task.progress.status == "needs_help" ? .orange : .secondary) }
-                    if canWriteProgress {
-                        Picker("Мій поступ", selection: Binding(get: { task.progress.status }, set: { value in Task { try? await store.setProgress(task, status: value, help: value == "needs_help") } })) {
-                            Text("Не почато").tag("not_started"); Text("Виконую").tag("in_progress"); Text("Виконано").tag("completed"); Text("Потрібна допомога").tag("needs_help")
-                        }.pickerStyle(.menu)
-                        TextField("Моя нотатка", text: Binding(get: { noteDrafts[task.id] ?? task.progress.note }, set: { noteDrafts[task.id] = $0 }), axis: .vertical).lineLimit(1...3)
-                        Button("Зберегти нотатку") { Task { do { try await store.setProgress(task, status: task.progress.status, help: task.progress.helpRequested, note: noteDrafts[task.id] ?? task.progress.note) } catch { store.error = "Не вдалося зберегти особисту нотатку." } } }.font(.caption)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                childPicker.padding(.horizontal, 4)
+                progressSummary
+                VStack(alignment: .leading, spacing: 9) {
+                    Label("План за днями", systemImage: "calendar").font(.headline)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            dayChip(title: "Усі дні", value: nil)
+                            ForEach(homeworkCalendarDays) { day in dayChip(title: day.title, value: day.key) }
+                            dayChip(title: "Без дати", value: "undated")
+                        }
                     }
-                    if canReview { Button("Редагувати") { editingTask = task; subject = task.subject; assignment = task.assignmentText; lessonDate = task.lessonDate ?? ""; dueDate = task.dueDate ?? ""; showManual = true }.font(.caption) }
-                }.padding(.vertical, 5)
+                    .accessibilityLabel("Вибір дня домашніх завдань")
+                }
+                HStack(spacing: 12) {
+                    Picker("Предмет", selection: $selectedHomeworkSubject) {
+                        Text("Усі предмети").tag(String?.none)
+                        ForEach(homeworkSubjects, id: \.self) { Text($0).tag(Optional($0)) }
+                    }.pickerStyle(.menu)
+                    Picker("Прогрес", selection: $selectedProgressState) {
+                        Text("Будь-який статус").tag(String?.none)
+                        Text("Не почато").tag(Optional("not_started"))
+                        Text("Виконую").tag(Optional("in_progress"))
+                        Text("Виконано").tag(Optional("completed"))
+                        Text("Потрібна допомога").tag(Optional("needs_help"))
+                    }.pickerStyle(.menu)
+                    Spacer(minLength: 0)
+                }
+                if filteredTasks.isEmpty {
+                    ContentUnavailableView {
+                        Label(store.tasks.isEmpty ? "Домашніх завдань ще немає" : "За цим фільтром порожньо", systemImage: "books.vertical")
+                    } description: {
+                        Text("Порожній список не означає, що в щоденнику немає домашньої роботи.")
+                    } actions: {
+                        if canReview { Button("Сфотографувати щоденник") { tab = 1 }.buttonStyle(.borderedProminent) }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 220)
+                } else {
+                    ForEach(homeworkTaskDayKeys, id: \.self) { day in
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(day == "undated" ? "Дату ще не визначено" : homeworkDayTitle(day))
+                                .font(.headline)
+                            ForEach(filteredTasks.filter { homeworkGroupKey(for: $0) == day }) { task in homeworkTaskCard(task) }
+                        }
+                    }
+                }
+                if canReview {
+                    Button { editingTask = nil; subject = ""; assignment = ""; lessonDate = ""; dueDate = ""; manualRequestId = UUID().uuidString; showManual = true } label: {
+                        Label("Додати завдання вручну", systemImage: "plus")
+                            .frame(maxWidth: .infinity)
+                    }.buttonStyle(.bordered)
+                }
             }
-            if canReview { Section { Button { editingTask = nil; subject = ""; assignment = ""; lessonDate = ""; dueDate = ""; manualRequestId = UUID().uuidString; showManual = true } label: { Label("Додати завдання вручну", systemImage: "plus") } } }
+            .padding(16)
         }
-        .listStyle(.insetGrouped)
         .searchable(text: $searchText, prompt: "Предмет або завдання")
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { Task { await store.load() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Оновити завдання") } }
+    }
+
+    private var progressSummary: some View {
+        let relevant = filteredTasks
+        let done = relevant.filter { $0.progress.status == "completed" }.count
+        return HStack(spacing: 16) {
+            ZStack {
+                Circle().stroke(Color.accentColor.opacity(0.16), lineWidth: 8)
+                Circle().trim(from: 0, to: relevant.isEmpty ? 0 : CGFloat(done) / CGFloat(relevant.count))
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                VStack(spacing: 1) {
+                    Text("\(done)/\(relevant.count)").font(.headline.monospacedDigit())
+                    Text("готово").font(.caption2).foregroundStyle(.secondary)
+                }
+            }.frame(width: 72, height: 72)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(selectedHomeworkDay.map { homeworkDayTitle($0) } ?? "План домашніх завдань")
+                    .font(.headline)
+                Text(relevant.isEmpty ? "Нові записи з’являться тут після перевірки батьками." : "Щоденник, прогрес і джерела — в одному місці.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                Label("Прогрес учня окремо від запису в щоденнику", systemImage: "checkmark.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func homeworkTaskCard(_ task: OrbitHomeworkTask) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Text(SchoolHubLogic.subjectAbbreviation(task.subject))
+                    .font(.caption.weight(.bold)).frame(minWidth: 38, minHeight: 34)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack { Text(task.subject).font(.subheadline.weight(.semibold)); Spacer(); if task.reviewState == "needs_review" { Label("Уточнити", systemImage: "questionmark.circle").font(.caption).foregroundStyle(.orange) } }
+                    Text(task.assignmentText).textSelection(.enabled)
+                    HStack(spacing: 12) {
+                        if let due = task.dueDate { Label("Здати до \(homeworkDayTitle(due))", systemImage: "clock") }
+                        else { Label("Термін не вказаний", systemImage: "clock") }
+                    }.font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if canWriteProgress {
+                HStack {
+                    Picker("Мій прогрес", selection: Binding(get: { task.progress.status }, set: { value in Task { try? await store.setProgress(task, status: value, help: value == "needs_help") } })) {
+                        Text("Не почато").tag("not_started"); Text("Виконую").tag("in_progress"); Text("Виконано").tag("completed"); Text("Потрібна допомога").tag("needs_help")
+                    }.pickerStyle(.menu)
+                    Spacer()
+                    if canReview { Button("Змінити") { beginEdit(task) }.font(.caption) }
+                }
+                TextField("Особиста нотатка", text: Binding(get: { noteDrafts[task.id] ?? task.progress.note }, set: { noteDrafts[task.id] = $0 }), axis: .vertical).lineLimit(1...3)
+                Button("Зберегти нотатку") { Task { do { try await store.setProgress(task, status: task.progress.status, help: task.progress.helpRequested, note: noteDrafts[task.id] ?? task.progress.note) } catch { store.error = "Не вдалося зберегти особисту нотатку." } } }.font(.caption)
+            } else {
+                HStack {
+                    Label(progressLabel(task.progress.status), systemImage: task.progress.status == "completed" ? "checkmark.circle.fill" : "circle")
+                        .font(.caption.weight(.semibold)).foregroundStyle(task.progress.status == "needs_help" ? .orange : .secondary)
+                    Spacer()
+                    if canReview { Button("Редагувати") { beginEdit(task) }.font(.caption) }
+                }
+            }
+        }
+        .padding(14)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func beginEdit(_ task: OrbitHomeworkTask) {
+        editingTask = task; subject = task.subject; assignment = task.assignmentText
+        lessonDate = task.lessonDate ?? ""; dueDate = task.dueDate ?? ""; showManual = true
+    }
+
+    private var homeworkTaskDayKeys: [String] {
+        Array(Set(filteredTasks.map(homeworkGroupKey(for:)))).sorted { left, right in
+            if left == "undated" { return false }
+            if right == "undated" { return true }
+            return left < right
+        }
+    }
+
+    private func homeworkGroupKey(for task: OrbitHomeworkTask) -> String {
+        if selectedHomeworkDay == "undated" { return "undated" }
+        return task.lessonDate ?? task.dueDate ?? "undated"
+    }
+
+    private func homeworkDayTitle(_ value: String) -> String {
+        guard let date = Self.parseHomeworkDay(value) else { return value }
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "uk_UA"); formatter.dateFormat = "EEEE, d MMMM"
+        return formatter.string(from: date).capitalized
     }
 
     private var filteredTasks: [OrbitHomeworkTask] {
@@ -334,52 +428,165 @@ struct SchoolHomeworkView: View {
     }
 
     private var diarySurface: some View {
-        List {
-            if canReview {
-                Section("Додати фото щоденника") {
-                    Text("Оригінал зберігається зашифрованим. OCR працює лише на цьому iPhone; перед підтвердженням перевірте текст і дати.").font(.footnote).foregroundStyle(.secondary)
-                    TextField("Навчальний рік · напр. 2026/2027", text: $diarySchoolYear).textInputAutocapitalization(.never)
-                    TextField("Тиждень щоденника · 1–53", text: $diaryWeek).keyboardType(.numberPad)
-                    TextField("Позначка сторінки · необов’язково", text: $diaryPageLabel)
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) { Label("Вибрати з фототеки", systemImage: "photo") }
-                    Button { cameraOpen = true } label: { Label("Зробити фото", systemImage: "camera") }
-                    if let photoData {
-                        HStack { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green); Text("Фото підготовлено · \(ByteCountFormatter.string(fromByteCount: Int64(photoData.count), countStyle: .file))"); Spacer(); Button("Очистити") { self.photoData = nil; photoSnapshot = nil; localOCR = ""; ocrLines = []; selectedOCRLineIDs = [] } }.font(.caption)
-                        Button { Task { await uploadAndReview() } } label: { if store.saving { ProgressView() } else { Label("Зберегти фото й перевірити запис", systemImage: "lock.shield") } }.disabled(store.saving)
-                    }
-                    if !localOCR.isEmpty { Text("Розпізнано на пристрої; перевірте вручну").font(.caption.weight(.semibold)); Text(localOCR).font(.caption).textSelection(.enabled).lineLimit(8) }
-                    if let match = bestOCRMatch {
-                        Label("Можливо, це \(match.task.subject) · схожість \(Int(match.score * 100))%", systemImage: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(.secondary)
-                        Text("Це лише підказка за текстом. Перевірте сторінку та виберіть нове, змінене, повторне або неоднозначне вручну.").font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-                Section("Потребують перевірки") {
-                    if store.proposals.isEmpty { Text("Немає записів для перевірки.").foregroundStyle(.secondary) }
-                    ForEach(store.proposals) { proposal in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(proposal.candidate.subject).font(.headline)
-                            if proposal.changeKind == "update", let previous = proposal.currentAssignmentText {
-                                LabeledContent("Було", value: previous)
-                                LabeledContent("Нова пропозиція", value: proposal.candidate.assignmentText)
-                            } else {
-                                Text(proposal.candidate.assignmentText).textSelection(.enabled)
-                            }
-                            Text(proposal.changeKind == "uncertain" ? "Неоднозначно — звірте з фото" : proposal.changeKind == "update" ? "Можлива зміна завдання" : proposal.changeKind == "same" ? "Можливий повтор" : "Нове завдання").font(.caption).foregroundStyle(.secondary)
-                            if let confidence = proposal.candidate.confidence?["assignmentText"] { Text("Впевненість OCR: \(Int(confidence * 100))%").font(.caption2).foregroundStyle(.secondary) }
-                            if let region = proposal.candidate.sourceRegion { Text("Фрагмент джерела: \(region)").font(.caption2).foregroundStyle(.secondary).textSelection(.enabled) }
-                            if let source = store.snapshots.first(where: { $0.id == proposal.snapshotId }) { Button("Переглянути фото джерела") { selectedSnapshot = source }.font(.caption) }
-                            HStack { Button("Відхилити") { Task { try? await store.resolve(proposal, accept: false) } }.buttonStyle(.bordered); Button("Підтвердити") { Task { try? await store.resolve(proposal, accept: true) } }.buttonStyle(.borderedProminent).disabled(proposal.changeKind == "uncertain") }
-                        }.padding(.vertical, 5)
-                    }
-                }
-                Section("Збережені сторінки") {
-                    if store.snapshots.isEmpty { Text("Фото ще не додавали.").foregroundStyle(.secondary) }
-                    ForEach(store.snapshots) { item in Button { selectedSnapshot = item } label: { Label("\(item.pageLabel ?? "Сторінка") · \(item.capturedAt.formatted(date: .abbreviated, time: .shortened))", systemImage: "doc.text.image") } }
-                }
-            } else {
+        Group {
+            if !canReview {
                 ContentUnavailableView("Джерела щоденника доступні батькам", systemImage: "lock", description: Text("Тут відображаються підтверджені домашні завдання."))
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Фото → завдання → ваша перевірка").font(.title3.weight(.bold))
+                            Text("Orbit читає дати й предмети на цьому iPhone. Фото та невпевнений текст не надсилаються до School Brain.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 12) {
+                                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                                    Label("Вибрати фото", systemImage: "photo.on.rectangle.angled").frame(maxWidth: .infinity)
+                                }.buttonStyle(.borderedProminent)
+                                Button { cameraOpen = true } label: {
+                                    Label("Камера", systemImage: "camera").frame(maxWidth: .infinity)
+                                }.buttonStyle(.bordered)
+                            }
+                            if let photoData, let image = UIImage(data: photoData) {
+                                HStack(alignment: .top, spacing: 13) {
+                                    Image(uiImage: image).resizable().scaledToFill().frame(width: 86, height: 116).clipped().clipShape(RoundedRectangle(cornerRadius: 12))
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        Label("Розпізнано на пристрої", systemImage: "text.viewfinder").font(.subheadline.weight(.semibold))
+                                        Text(recognitionSummary).font(.caption).foregroundStyle(.secondary)
+                                        Button("Зняти це фото") { clearPhotoDraft() }.font(.caption)
+                                    }
+                                }
+                                HStack(spacing: 10) {
+                                    TextField("Навчальний рік", text: $diarySchoolYear).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
+                                    TextField("KW", text: $diaryWeek).keyboardType(.numberPad).textFieldStyle(.roundedBorder).frame(width: 74)
+                                }
+                                TextField("Сторінка (можна виправити)", text: $diaryPageLabel).textFieldStyle(.roundedBorder)
+                                Button { showReviewForm = true } label: {
+                                    Label("Перевірити розпізнані записи", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity)
+                                }.buttonStyle(.borderedProminent).disabled(reviewEntries.isEmpty)
+                                if reviewEntries.isEmpty {
+                                    Button("Додати завдання вручну") { subject = ""; assignment = ""; lessonDate = ""; dueDate = ""; editingTask = nil; manualRequestId = UUID().uuidString; showManual = true }
+                                        .buttonStyle(.bordered)
+                                }
+                                Text("Лише після цієї дії фото буде збережене у приватному зашифрованому щоденнику Orbit. Канонічні завдання зміняться тільки після вашого підтвердження.")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(15)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+
+                        if !pendingProposals.isEmpty {
+                            HStack(alignment: .firstTextBaseline) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Перевірка батьків").font(.headline)
+                                    Text("Очікують рішення: \(pendingProposals.count)").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if !obviousPendingProposals.isEmpty {
+                                    Button("Підтвердити очевидні · \(obviousPendingProposals.count)") { confirmObviousProposals = true }
+                                        .font(.caption.weight(.semibold))
+                                }
+                            }
+                            ForEach(pendingProposals) { proposal in homeworkProposalCard(proposal) }
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Збережені сторінки").font(.headline)
+                            if store.snapshots.isEmpty {
+                                Text("Після першого фото тут з’явиться історія сторінок.").font(.subheadline).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(15)
+                                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+                            } else {
+                                ForEach(store.snapshots) { item in
+                                    Button { selectedSnapshot = item } label: {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "book.closed").font(.title3).foregroundStyle(.tint).frame(width: 42, height: 46).background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 11))
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(item.pageLabel ?? "Щоденник · KW \(item.calendarWeek.map(String.init) ?? "—")").font(.subheadline.weight(.semibold))
+                                                Text([item.schoolYear, item.calendarWeek.map { "KW \($0)" }, item.capturedAt.formatted(date: .abbreviated, time: .shortened)].compactMap { $0 }.joined(separator: " · "))
+                                                    .font(.caption).foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                                        }
+                                        .padding(12).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 15))
+                                    }.buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        Label("Приватність: фото зашифроване; OCR локальний; School Brain бачить лише текст, який ви виберете й підтвердите окремо.", systemImage: "lock.shield")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                }
+                .confirmationDialog("Підтвердити очевидні записи?", isPresented: $confirmObviousProposals, titleVisibility: .visible) {
+                    Button("Підтвердити \(obviousPendingProposals.count) записів") { Task { await confirmObvious() } }
+                    Button("Скасувати", role: .cancel) {}
+                } message: {
+                    Text("Це змінить канонічні завдання для вибраного учня. Неоднозначні записи залишаться для окремої перевірки.")
+                }
             }
-        }.listStyle(.insetGrouped)
+        }
+    }
+
+    private var pendingProposals: [OrbitHomeworkProposal] {
+        store.proposals.filter { $0.decision == "pending" }.sorted { ($0.candidate.lessonDate ?? "9999") < ($1.candidate.lessonDate ?? "9999") }
+    }
+
+    private var obviousPendingProposals: [OrbitHomeworkProposal] {
+        pendingProposals.filter { proposal in
+            proposal.changeKind != "uncertain" && proposal.candidate.lessonDate != nil &&
+            (proposal.candidate.confidence?["assignmentText"] ?? 0) >= 0.85 &&
+            (proposal.candidate.confidence?["subject"] ?? 0) >= 0.85
+        }
+    }
+
+    private var recognitionSummary: String {
+        let dates = Set(reviewEntries.compactMap(\.lessonDate))
+        let days = dates.count
+        let entries = reviewEntries.count
+        return entries == 0 ? "Не вдалося скласти записи. Можна додати вручну або сфотографувати сторінку ще раз." :
+            "Знайдено \(entries) \(entries == 1 ? "запис" : "записи") за \(days) \(days == 1 ? "датою" : "датами"). Перевірте картки поруч з фото."
+    }
+
+    private func homeworkProposalCard(_ proposal: OrbitHomeworkProposal) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(proposal.candidate.subject).font(.subheadline.weight(.bold))
+                Spacer()
+                Text(proposal.changeKind == "uncertain" ? "Уточнити" : proposal.changeKind == "update" ? "Зміна" : proposal.changeKind == "same" ? "Повтор" : "Нове")
+                    .font(.caption.weight(.semibold)).padding(.horizontal, 9).padding(.vertical, 5)
+                    .background(proposal.changeKind == "uncertain" ? Color.orange.opacity(0.14) : Color.accentColor.opacity(0.12), in: Capsule())
+            }
+            if let date = proposal.candidate.lessonDate { Label("Урок · \(homeworkDayTitle(date))", systemImage: "calendar") .font(.caption).foregroundStyle(.secondary) }
+            if let due = proposal.candidate.dueDate { Label("Здати до · \(homeworkDayTitle(due))", systemImage: "clock") .font(.caption).foregroundStyle(.secondary) }
+            if proposal.changeKind == "update", let previous = proposal.currentAssignmentText {
+                LabeledContent("Було", value: previous)
+                LabeledContent("Нове розпізнавання", value: proposal.candidate.assignmentText)
+            } else { Text(proposal.candidate.assignmentText).textSelection(.enabled) }
+            if let confidence = proposal.candidate.confidence?["assignmentText"] {
+                Text("Точність тексту OCR · \(Int(confidence * 100))%").font(.caption2).foregroundStyle(.secondary)
+            }
+            if let source = store.snapshots.first(where: { $0.id == proposal.snapshotId }) {
+                Button("Показати сторінку поруч") { selectedSnapshot = source }.font(.caption.weight(.semibold))
+            }
+            HStack {
+                Button("Відхилити") { Task { try? await store.resolve(proposal, accept: false) } }.buttonStyle(.bordered)
+                Spacer()
+                Button("Підтвердити") { Task { try? await store.resolve(proposal, accept: true) } }
+                    .buttonStyle(.borderedProminent).disabled(proposal.changeKind == "uncertain")
+            }
+        }
+        .padding(14)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func confirmObvious() async {
+        for proposal in obviousPendingProposals {
+            do { try await store.resolve(proposal, accept: true) }
+            catch { store.error = "Не всі очевидні записи вдалося підтвердити. Оновіть список перед повтором."; return }
+        }
     }
 
     private var brainSurface: some View {
@@ -464,67 +671,145 @@ struct SchoolHomeworkView: View {
 
     private var reviewSheet: some View {
         NavigationStack {
-            Form {
-                if !ocrLines.isEmpty {
-                    Section("Виберіть рядки з потрібним завданням") {
-                        ForEach(ocrLines) { line in
-                            Button { toggleOCRLine(line) } label: {
-                                HStack(alignment: .top, spacing: 10) {
-                                    Image(systemName: selectedOCRLineIDs.contains(line.id) ? "checkmark.circle.fill" : "circle")
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(line.text).textSelection(.enabled).foregroundStyle(.primary)
-                                        Text("OCR · \(Int(line.confidence * 100))% · фрагмент \(Int(line.region.minX * 100))%, \(Int(line.region.minY * 100))%").font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }.buttonStyle(.plain)
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let photoData, let image = UIImage(data: photoData) {
+                        Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 14))
+                            .accessibilityLabel("Оригінал сторінки щоденника")
                     }
-                }
-                Picker("Порівняння", selection: $changeKind) { Text("Нове завдання").tag("new"); Text("Зміна наявного").tag("update"); Text("Той самий запис").tag("same"); Text("Не впевнений").tag("uncertain") }
-                if changeKind != "new" {
-                    Picker("Існуюче завдання", selection: $matchedTaskId) {
-                        Text("Виберіть завдання").tag(String?.none)
-                        ForEach(store.tasks) { task in Text("\(task.subject): \(task.assignmentText.prefix(50))").tag(Optional(task.id)) }
+                    Text("Перевірте записи за датою й предметом. Дедлайн показано окремо лише коли його явно написано.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    if reviewEntries.isEmpty {
+                        ContentUnavailableView("Записів не розпізнано", systemImage: "text.viewfinder", description: Text("Можна зробити чіткіше фото або додати завдання вручну."))
                     }
-                }
-                if let matchedTask = matchedTaskId.flatMap({ id in store.tasks.first { $0.id == id } }) {
-                    Section("Порівняння з підтвердженим записом") {
-                        LabeledContent("Було", value: matchedTask.assignmentText)
-                        LabeledContent("Зараз розпізнано", value: assignment)
-                        Text("Перевірте обидва тексти за фото. Зміна буде лише пропозицією до підтвердження.").font(.footnote).foregroundStyle(.secondary)
+                    ForEach(reviewEntries) { entry in reviewEntryCard(entry) }
+                    HStack(spacing: 10) {
+                        TextField("Навчальний рік", text: $diarySchoolYear).textFieldStyle(.roundedBorder)
+                        TextField("KW", text: $diaryWeek).keyboardType(.numberPad).textFieldStyle(.roundedBorder).frame(width: 72)
                     }
-                }
-                TextField("Предмет", text: $subject)
-                TextField("Завдання з фото", text: $assignment, axis: .vertical).lineLimit(3...8).textSelection(.enabled)
-                TextField("Дата уроку · РРРР-ММ-ДД", text: $lessonDate).textInputAutocapitalization(.never)
-                TextField("Підтверджений термін · РРРР-ММ-ДД", text: $dueDate).textInputAutocapitalization(.never)
-                Text("OCR — лише підказка. Перевірте оригінал і не вводьте паролі або коди доступу.").font(.footnote).foregroundStyle(.secondary)
-            }.navigationTitle("Перевірити запис").navigationBarTitleDisplayMode(.inline).toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Скасувати") { showReviewForm = false } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("На перевірку") { submitPhotoProposal() }.disabled(store.saving || subject.isEmpty || assignment.isEmpty || (changeKind != "new" && matchedTaskId == nil))
-                }
+                    TextField("Позначка сторінки", text: $diaryPageLabel).textFieldStyle(.roundedBorder)
+                    Button { Task { await uploadAndReview() } } label: {
+                        if store.saving || submittingPhotoReview { ProgressView().frame(maxWidth: .infinity) }
+                        else { Label("Зберегти фото й надіслати вибрані на перевірку", systemImage: "lock.shield").frame(maxWidth: .infinity) }
+                    }.buttonStyle(.borderedProminent).disabled(store.saving || submittingPhotoReview || !reviewEntries.contains(where: { $0.selected && !$0.assignmentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }))
+                    Text("Канонічні завдання не зміняться, доки батько не підтвердить пропозиції окремо.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(16)
             }
-        }.presentationDetents([.medium, .large])
+            .navigationTitle("Перевірка щоденника")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Готово") { showReviewForm = false } } }
+        }.presentationDetents([.large])
     }
 
-    private func submitPhotoProposal() {
-        guard let photoSnapshot else { return }
-        let matched = matchedTaskId.flatMap { id in store.tasks.first { $0.id == id } }
-        Task { do {
-            let selectedLines = ocrLines.filter { selectedOCRLineIDs.contains($0.id) }
-            let region: String
-            if let first = selectedLines.first {
-                let minX = selectedLines.map { $0.region.minX }.min() ?? first.region.minX
-                let minY = selectedLines.map { $0.region.minY }.min() ?? first.region.minY
-                let maxX = selectedLines.map { $0.region.maxX }.max() ?? first.region.maxX
-                let maxY = selectedLines.map { $0.region.maxY }.max() ?? first.region.maxY
-                region = String(format: "vision-unit-rect:%.4f,%.4f,%.4f,%.4f", minX, minY, maxX - minX, maxY - minY)
-            } else { region = "parent-entered; source=full-page" }
-            let confidence = selectedLines.isEmpty ? nil : selectedLines.map(\.confidence).reduce(0, +) / Double(selectedLines.count)
-            try await store.propose(snapshot: photoSnapshot, subject: subject, text: assignment, lessonDate: lessonDate.nilIfEmpty, dueDate: dueDate.nilIfEmpty, changeKind: changeKind, matchedTaskId: matched?.id, expectedRevision: matched?.revision, sourceRegion: region, ocrConfidence: confidence, clientRequestId: proposalRequestId)
-            showReviewForm = false; photoData = nil; self.photoSnapshot = nil; selectedOCRLineIDs = []; changeKind = "new"; matchedTaskId = nil; photoUploadRequestId = UUID().uuidString; proposalRequestId = UUID().uuidString
-        } catch { store.error = "Не вдалося надіслати запис на батьківське підтвердження." } }
+    private func reviewEntryCard(_ entry: HomeworkReviewCandidate) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let crop = sourceCrop(for: entry) {
+                Image(uiImage: crop).resizable().scaledToFit().frame(maxHeight: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .accessibilityLabel("Фрагмент щоденника для цього завдання")
+            }
+            HStack {
+                Text(entry.lessonDate.map(homeworkDayTitle) ?? "Дату уроку уточнити").font(.headline)
+                Spacer()
+                Button { updateReviewEntry(entry.id) { $0.selected.toggle() } } label: {
+                    Image(systemName: entry.selected ? "checkmark.circle.fill" : "circle")
+                }.accessibilityLabel(entry.selected ? "Не надсилати цей запис" : "Надіслати цей запис на перевірку")
+            }
+            TextField("Предмет", text: reviewBinding(entry.id, \.subject)).font(.subheadline.weight(.semibold)).textFieldStyle(.roundedBorder)
+            TextField("Завдання", text: reviewBinding(entry.id, \.assignmentText), axis: .vertical).lineLimit(2...5).textFieldStyle(.roundedBorder)
+            TextField("Дата уроку · РРРР-ММ-ДД", text: reviewOptionalBinding(entry.id, \.lessonDate)).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
+            TextField("Дедлайн лише якщо вказаний · РРРР-ММ-ДД", text: reviewOptionalBinding(entry.id, \.dueDate)).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
+            HStack {
+                Text("Дедлайн: \(entry.dueDate.map(homeworkDayTitle) ?? "не вказано")").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if entry.needsReview { Label(entry.reviewReason ?? "Перевірте", systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange) }
+            }
+            if let match = store.tasks.first(where: { $0.id == entry.matchedTaskId }) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.changeKind == "same" ? "Схоже на повтор" : entry.changeKind == "update" ? "Можливе доповнення" : "Схожий запис")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Раніше: \(match.assignmentText)").font(.caption).foregroundStyle(.secondary)
+                }
+            } else if entry.pendingDuplicate {
+                Label("Цей запис уже очікує батьківського рішення", systemImage: "clock.badge.checkmark")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            } else {
+                Text(entry.changeKind == "new" ? "Нове завдання" : "Потрібна перевірка збігу")
+                    .font(.caption.weight(.semibold)).foregroundStyle(entry.needsReview ? .orange : .secondary)
+            }
+            if entry.needsReview {
+                Picker("Рішення", selection: reviewKindBinding(entry.id)) {
+                    Text("Уточнити пізніше").tag("uncertain")
+                    Text("Нове завдання").tag("new")
+                    Text("Доповнити наявне").tag("update")
+                    Text("Це той самий запис").tag("same")
+                }.pickerStyle(.menu)
+                if entry.changeKind == "update" || entry.changeKind == "same" {
+                    let matches = homeworkMatches(for: entry)
+                    Picker("Збіг за датою й предметом", selection: reviewMatchBinding(entry.id)) {
+                        Text("Виберіть завдання").tag(String?.none)
+                        ForEach(matches) { task in Text("\(task.subject): \(task.assignmentText.prefix(42))").tag(Optional(task.id)) }
+                    }.pickerStyle(.menu)
+                    Toggle("Шукати в усіх завданнях", isOn: $showAllHomeworkMatches).font(.caption)
+                }
+            }
+            Text("OCR \(Int((entry.confidence["assignmentText"] ?? 0) * 100))% · фрагмент фото \(Int(entry.sourceRegion.minX * 100))%, \(Int(entry.sourceRegion.minY * 100))%")
+                .font(.caption2).foregroundStyle(.tertiary)
+        }.padding(14).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func sourceCrop(for entry: HomeworkReviewCandidate) -> UIImage? {
+        guard let photoData, let image = UIImage(data: photoData), let cgImage = image.cgImage else { return nil }
+        let width = CGFloat(cgImage.width), height = CGFloat(cgImage.height)
+        let region = entry.sourceRegion
+        let rect = CGRect(x: CGFloat(region.minX) * width, y: (1 - CGFloat(region.maxY)) * height, width: CGFloat(region.width) * width, height: CGFloat(region.height) * height)
+            .integral.intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        guard rect.width > 1, rect.height > 1, let crop = cgImage.cropping(to: rect) else { return nil }
+        return UIImage(cgImage: crop, scale: image.scale, orientation: image.imageOrientation)
+    }
+
+    private func updateReviewEntry(_ id: Int, _ update: (inout HomeworkReviewCandidate) -> Void) {
+        guard let index = reviewEntries.firstIndex(where: { $0.id == id }) else { return }
+        update(&reviewEntries[index])
+    }
+
+    private func reviewBinding<Value>(_ id: Int, _ keyPath: WritableKeyPath<HomeworkReviewCandidate, Value>) -> Binding<Value> {
+        Binding(get: { reviewEntries.first(where: { $0.id == id })![keyPath: keyPath] }, set: { value in
+            updateReviewEntry(id) { $0[keyPath: keyPath] = value; $0.changeKind = "uncertain"; $0.matchedTaskId = nil; $0.pendingDuplicate = false; $0.needsReview = true; $0.selected = false }
+        })
+    }
+
+    private func reviewOptionalBinding(_ id: Int, _ keyPath: WritableKeyPath<HomeworkReviewCandidate, String?>) -> Binding<String> {
+        Binding(get: { reviewEntries.first(where: { $0.id == id })![keyPath: keyPath] ?? "" }, set: { value in
+            updateReviewEntry(id) { $0[keyPath: keyPath] = value.nilIfEmpty; $0.changeKind = "uncertain"; $0.matchedTaskId = nil; $0.pendingDuplicate = false; $0.needsReview = true; $0.selected = false }
+        })
+    }
+
+    private func reviewKindBinding(_ id: Int) -> Binding<String> {
+        Binding(get: { reviewEntries.first(where: { $0.id == id })?.changeKind ?? "uncertain" }, set: { value in
+            updateReviewEntry(id) { $0.changeKind = value; if value == "new" { $0.matchedTaskId = nil }; $0.needsReview = value == "uncertain"; $0.selected = value == "new" || ((value == "update" || value == "same") && $0.matchedTaskId != nil) }
+        })
+    }
+
+    private func reviewMatchBinding(_ id: Int) -> Binding<String?> {
+        Binding(get: { reviewEntries.first(where: { $0.id == id })?.matchedTaskId }, set: { value in
+            updateReviewEntry(id) { $0.matchedTaskId = value; $0.selected = value != nil }
+        })
+    }
+
+    private func homeworkMatches(for entry: HomeworkReviewCandidate) -> [OrbitHomeworkTask] {
+        let confirmed = store.tasks.filter { $0.reviewState == "confirmed" }
+        guard !showAllHomeworkMatches else { return confirmed }
+        return confirmed.filter { $0.lessonDate == entry.lessonDate && $0.subject.localizedCaseInsensitiveCompare(entry.subject) == .orderedSame }
+    }
+
+    private static func photoType(_ data: Data) -> String? {
+        let bytes = [UInt8](data.prefix(12))
+        if bytes.count >= 3 && bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff { return "image/jpeg" }
+        if bytes.count >= 8 && Array(bytes.prefix(8)) == [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a] { return "image/png" }
+        if bytes.count >= 12 && String(bytes: bytes[4..<8], encoding: .ascii) == "ftyp", let brand = String(bytes: bytes[8..<12], encoding: .ascii), ["heic","heix","mif1","heif"].contains(brand) { return "image/heic" }
+        return nil
     }
 
     private func loadPhoto(_ item: PhotosPickerItem) async {
@@ -533,8 +818,8 @@ struct SchoolHomeworkView: View {
     }
 
     private func preparePhoto(_ data: Data, contentType: String) async {
-        photoData = data; photoContentType = contentType; photoSnapshot = nil; photoUploadRequestId = UUID().uuidString; proposalRequestId = UUID().uuidString; ocrLines = []; selectedOCRLineIDs = []
-        guard let image = UIImage(data: data), let cgImage = image.cgImage else { localOCR = "Не вдалося прочитати фото. Запис можна додати вручну."; return }
+        photoData = data; photoContentType = contentType; photoSnapshot = nil; photoUploadRequestId = UUID().uuidString; reviewEntries = []
+        guard let image = UIImage(data: data), let cgImage = image.cgImage else { return }
         let recognized = await Task.detached(priority: .userInitiated) {
             let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
             request.recognitionLanguages = ["de-DE", "uk-UA"]
@@ -547,68 +832,69 @@ struct SchoolHomeworkView: View {
                 }
             } catch { return [HomeworkOCRLine]() }
         }.value
-        ocrLines = recognized
-        localOCR = recognized.map(\.text).joined(separator: "\n")
-        if recognized.isEmpty { localOCR = "Не вдалося розпізнати текст. Запис можна додати вручну." }
-        let matches = rankedOCRMatches
-        if let match = matches.first, match.score >= 0.35 {
-            let ambiguous = matches.dropFirst().first.map { match.score - $0.score < 0.12 && $0.score >= 0.4 } ?? false
-            if ambiguous {
-                matchedTaskId = nil; changeKind = "uncertain"
-            } else if match.score >= 0.9 {
-                matchedTaskId = match.task.id; changeKind = "same"
-            } else if match.score >= 0.55 {
-                matchedTaskId = match.task.id; changeKind = "uncertain"
-            } else {
-                matchedTaskId = nil; changeKind = "new"
-            }
-        } else {
-            matchedTaskId = nil; changeKind = "new"
+        diaryAnalysis = SchoolHomeworkDiaryAnalyzer.analyze(recognized)
+        diarySchoolYear = diaryAnalysis.schoolYear ?? ""
+        diaryWeek = diaryAnalysis.calendarWeek.map(String.init) ?? ""
+        diaryPageLabel = diaryAnalysis.pageLabel ?? ""
+        let pageKey = SchoolHomeworkDiaryAnalyzer.pageKey(schoolYear: diarySchoolYear.nilIfEmpty, calendarWeek: Int(diaryWeek), pageLabel: diaryPageLabel.nilIfEmpty)
+        let taskRecords = store.tasks.filter { $0.reviewState == "confirmed" }.map { task in
+            let linkedSnapshots = task.sources.compactMap(\.snapshotId).compactMap { id in store.snapshots.first(where: { $0.id == id }) }
+            let keys = linkedSnapshots.compactMap { SchoolHomeworkDiaryAnalyzer.pageKey(schoolYear: $0.schoolYear, calendarWeek: $0.calendarWeek, pageLabel: $0.pageLabel) }
+            let key = keys.first(where: { $0 == pageKey }) ?? keys.first
+            return SchoolHomeworkMatchRecord(id: task.id, subject: task.subject, assignmentText: task.assignmentText, lessonDate: task.lessonDate, sourcePageKey: key)
+        }
+        let pendingRecords = store.proposals.filter { $0.decision == "pending" }.map { proposal in
+            SchoolHomeworkMatchRecord(
+                id: "proposal:\(proposal.id)", subject: proposal.candidate.subject,
+                assignmentText: proposal.candidate.assignmentText, lessonDate: proposal.candidate.lessonDate,
+                sourcePageKey: SchoolHomeworkDiaryAnalyzer.pageKey(schoolYear: proposal.schoolYear, calendarWeek: proposal.calendarWeek, pageLabel: proposal.pageLabel)
+            )
+        }
+        let records = taskRecords + pendingRecords
+        reviewEntries = diaryAnalysis.entries.map { entry in
+            let match = SchoolHomeworkDiaryAnalyzer.match(entry, against: records, pageKey: pageKey)
+            let pendingDuplicate = match.matchedRecordID?.hasPrefix("proposal:") == true
+            return HomeworkReviewCandidate(
+                id: entry.id, subject: entry.subject ?? "", assignmentText: entry.assignmentText,
+                lessonDate: entry.lessonDate, dueDate: entry.dueDate, sourceLineIDs: entry.sourceLineIDs,
+                sourceRegion: entry.sourceRegion, confidence: entry.confidence, needsReview: entry.needsReview || match.kind == .uncertain,
+                reviewReason: entry.reviewReason ?? (match.kind == .uncertain ? "Збіг неоднозначний" : nil),
+                changeKind: match.kind.rawValue, matchedTaskId: pendingDuplicate ? nil : match.matchedRecordID, matchScore: match.score,
+                pendingDuplicate: pendingDuplicate, selected: match.kind != .uncertain && !entry.needsReview && !pendingDuplicate,
+                clientRequestId: UUID().uuidString
+            )
         }
     }
 
-    private var rankedOCRMatches: [HomeworkOCRMatch] {
-        let candidates = ocrLines.flatMap { line in
-            store.tasks.filter { $0.reviewState == "confirmed" }.map { task -> HomeworkOCRMatch in
-                HomeworkOCRMatch(task: task, score: SchoolHomeworkTextMatcher.similarity(line.text, task.assignmentText), line: line)
-            }
-        }
-        return candidates.sorted { $0.score > $1.score }
-    }
-
-    private var bestOCRMatch: HomeworkOCRMatch? {
-        rankedOCRMatches.first.flatMap { $0.score >= 0.35 ? $0 : nil }
-    }
-
-    private func toggleOCRLine(_ line: HomeworkOCRLine) {
-        if selectedOCRLineIDs.contains(line.id) { selectedOCRLineIDs.remove(line.id) }
-        else { selectedOCRLineIDs.insert(line.id) }
-        assignment = ocrLines.filter { selectedOCRLineIDs.contains($0.id) }.map(\.text).joined(separator: "\n")
-    }
-
-    private static func photoType(_ data: Data) -> String? {
-        let bytes = [UInt8](data.prefix(12))
-        if bytes.count >= 3 && bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff { return "image/jpeg" }
-        if bytes.count >= 8 && Array(bytes.prefix(8)) == [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a] { return "image/png" }
-        if bytes.count >= 12 && String(bytes: bytes[4..<8], encoding: .ascii) == "ftyp", let brand = String(bytes: bytes[8..<12], encoding: .ascii), ["heic","heix","mif1","heif"].contains(brand) { return "image/heic" }
-        return nil
+    private func clearPhotoDraft() {
+        photoData = nil; photoSnapshot = nil; reviewEntries = []; selectedPhoto = nil
+        diaryAnalysis = SchoolHomeworkDiaryAnalysis(schoolYear: nil, calendarWeek: nil, pageLabel: nil, entries: [])
+        photoUploadRequestId = UUID().uuidString
     }
 
     private func uploadAndReview() async {
-        guard let photoData else { return }
+        guard let photoData, !submittingPhotoReview else { return }
+        submittingPhotoReview = true
+        defer { submittingPhotoReview = false }
         do {
-            photoSnapshot = try await store.uploadPhoto(photoData, contentType: photoContentType, schoolYear: diarySchoolYear.nilIfEmpty, calendarWeek: Int(diaryWeek), pageLabel: diaryPageLabel.nilIfEmpty, clientRequestId: photoUploadRequestId)
-            if let match = bestOCRMatch, changeKind != "uncertain" {
-                assignment = match.line.text
-                selectedOCRLineIDs = [match.line.id]
-            } else {
-                assignment = ""
-                selectedOCRLineIDs = []
+            if photoSnapshot == nil {
+                photoSnapshot = try await store.uploadPhoto(photoData, contentType: photoContentType, schoolYear: diarySchoolYear.nilIfEmpty, calendarWeek: Int(diaryWeek), pageLabel: diaryPageLabel.nilIfEmpty, clientRequestId: photoUploadRequestId)
             }
-            subject = ""
-            showReviewForm = true
-        } catch { store.error = "Фото не збережено. Перевірте з’єднання та спробуйте ще раз." }
+            guard let photoSnapshot else { return }
+            for entry in reviewEntries.filter(\.selected) {
+                let cleanSubject = entry.subject.trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanText = entry.assignmentText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !cleanSubject.isEmpty, !cleanText.isEmpty else { continue }
+                let matched = entry.matchedTaskId.flatMap { id in store.tasks.first { $0.id == id } }
+                let region = String(format: "vision-unit-rect:%.4f,%.4f,%.4f,%.4f", entry.sourceRegion.minX, entry.sourceRegion.minY, entry.sourceRegion.width, entry.sourceRegion.height)
+                try await store.propose(snapshot: photoSnapshot, subject: cleanSubject, text: cleanText, lessonDate: entry.lessonDate, dueDate: entry.dueDate, changeKind: entry.changeKind, matchedTaskId: matched?.id, expectedRevision: matched?.revision, sourceRegion: region, confidence: entry.confidence, clientRequestId: entry.clientRequestId)
+            }
+            self.photoData = nil; self.photoSnapshot = nil; reviewEntries = []; selectedPhoto = nil; showReviewForm = false
+            photoUploadRequestId = UUID().uuidString
+            await store.load()
+        } catch { store.error = "Фото збережене, але не всі записи вдалося надіслати. Оновіть список і перевірте пропозиції." }
     }
+
 }
 
 private struct HomeworkSnapshotPreview: View {
