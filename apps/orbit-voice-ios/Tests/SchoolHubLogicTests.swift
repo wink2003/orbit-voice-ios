@@ -615,8 +615,8 @@ struct SchoolHubLogicTests {
         let poorOCR = SchoolHomeworkDiaryAnalyzer.analyze([
             homeworkOCR(20, "Kalenderwoche 47", x: 0.1, y: 0.9),
             homeworkOCR(21, "16.11.26", x: 0.17, y: 0.8, width: 0.12),
-            homeworkOCR(22, "?", x: 0.08, y: 0.7, width: 0.04, confidence: 0.2),
-            homeworkOCR(23, "??? 2?4", x: 0.22, y: 0.7, width: 0.2, confidence: 0.22)
+            homeworkOCR(22, "?", x: 0.08, y: 0.7, confidence: 0.2, width: 0.04),
+            homeworkOCR(23, "??? 2?4", x: 0.22, y: 0.7, confidence: 0.22, width: 0.2)
         ])
         precondition(poorOCR.entries.first?.needsReview == true, "low-confidence handwriting is held for review")
         precondition(poorOCR.entries.first?.subject == nil, "unrecognized abbreviation is not expanded or guessed")
