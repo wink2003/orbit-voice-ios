@@ -18,7 +18,7 @@ nonisolated enum SchoolHomeworkTextMatcher {
             Set(value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
                 .split { !$0.isLetter && !$0.isNumber }
                 .map(String.init)
-                .filter { $0.count > 1 })
+                .filter { $0.count > 1 && $0 != "ha" && $0 != "hausaufgabe" })
         }
         let left = tokens(lhs), right = tokens(rhs)
         guard !left.isEmpty, !right.isEmpty else { return 0 }
