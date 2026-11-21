@@ -306,7 +306,7 @@ struct SchoolHomeworkView: View {
                 }
             }.frame(width: 72, height: 72)
             VStack(alignment: .leading, spacing: 5) {
-                Text(selectedHomeworkDay.flatMap(Self.parseHomeworkDay).map(homeworkDayTitle) ?? "План домашніх завдань")
+                Text(selectedHomeworkDay.map { homeworkDayTitle($0) } ?? "План домашніх завдань")
                     .font(.headline)
                 Text(relevant.isEmpty ? "Нові записи з’являться тут після перевірки батьками." : "Щоденник, прогрес і джерела — в одному місці.")
                     .font(.subheadline).foregroundStyle(.secondary)
