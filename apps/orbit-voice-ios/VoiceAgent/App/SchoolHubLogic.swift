@@ -303,6 +303,7 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
     }
 
     private static func usesVerticalDayBlocks(_ headers: [DayHeader]) -> Bool {
+        guard headers.count > 1 else { return true }
         guard let top = headers.map(\.y).max(), let bottom = headers.map(\.y).min() else { return true }
         return top - bottom > 0.08
     }
