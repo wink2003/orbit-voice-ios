@@ -9,6 +9,23 @@ nonisolated enum SchoolTranslatedBody {
     }
 }
 
+nonisolated enum SchoolHomeworkTextMatcher {
+    /// A conservative token-overlap hint for matching on-device OCR lines to
+    /// confirmed assignments. It deliberately does not use image hashes or
+    /// make the parent review decision.
+    static func similarity(_ lhs: String, _ rhs: String) -> Double {
+        func tokens(_ value: String) -> Set<String> {
+            Set(value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+                .filter { $0.count > 1 })
+        }
+        let left = tokens(lhs), right = tokens(rhs)
+        guard !left.isEmpty, !right.isEmpty else { return 0 }
+        return Double(left.intersection(right).count) / Double(left.union(right).count)
+    }
+}
+
 nonisolated enum SchoolTaskStatusConfirmation: Equatable {
     case complete, reopen
 

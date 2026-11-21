@@ -1281,7 +1281,7 @@ final class SchoolHubV2Store {
 }
 
 struct SchoolHubView: View {
-    fileprivate enum Route: Hashable { case inbox, tasks, calendar, timeline, search, briefing, brain, teams, history, email, notes(String, String), v2(SchoolV2Section), letter(String), task(String), event(String) }
+    fileprivate enum Route: Hashable { case inbox, tasks, homework, calendar, timeline, search, briefing, brain, teams, history, email, notes(String, String), v2(SchoolV2Section), letter(String), task(String), event(String) }
 
     @Binding private var widgetDeepLink: SchoolTasksWidgetDeepLink?
     @State private var store = SchoolHubStore()
@@ -1364,6 +1364,7 @@ struct SchoolHubView: View {
                     SchoolInboxView(embeddedInNavigation: true, hubMode: true).routes05ContextSurface()
                     #endif
                 case .tasks: Routes05SchoolTasksProductionView(store: store).routes05ContextSurface()
+                case .homework: SchoolHomeworkView(profilePersonId: authentication.personId, openBrain: { path.append(.brain) }).routes05ContextSurface()
                 case .calendar: SchoolWeekCalendarView(store: store).routes05ContextSurface()
                 case .timeline: SchoolTimelineView(store: store).routes05ContextSurface()
                 case .search: SchoolUnifiedSearchView(store: store).routes05ContextSurface()
@@ -1529,6 +1530,7 @@ private struct SchoolCommandCenter: View {
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)], spacing: 9) {
             Routes05FilledTile(title: "Вхідні", detail: unread == 0 ? "Усе прочитано" : "\(unread) нові", icon: "arrow.down.left", tint: Routes05Tokens.blue) { open(.inbox) }
             Routes05FilledTile(title: "Справи", detail: tasksQuickDetail, icon: "square", tint: Routes05Tokens.orange) { open(.tasks) }
+            Routes05FilledTile(title: "Домашні завдання", detail: "Щоденник і поступ учня", icon: "books.vertical", tint: Routes05Tokens.mint) { open(.homework) }
             Routes05FilledTile(title: "Розклад", detail: "Відкрити огляд", icon: "list.bullet.rectangle", tint: Routes05Tokens.mint) { open(.v2(.timetable)) }
             Routes05FilledTile(title: "Іспити", detail: "Відкрити огляд", icon: "circle", tint: Routes05Tokens.lilac) { open(.v2(.exams)) }
         }

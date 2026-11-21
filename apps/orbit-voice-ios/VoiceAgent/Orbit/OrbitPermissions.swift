@@ -5,7 +5,8 @@ import Foundation
 /// is never a security boundary. Missing/unknown data fails closed for a child and keeps today's behaviour for an adult.
 struct OrbitEffectivePermissions: Decodable, Equatable, Sendable {
     struct Resource: Decodable, Equatable, Sendable { let read: Bool; let write: Bool }
-    struct Resources: Decodable, Equatable, Sendable { let calendar: Resource; let contacts: Resource; let school: Resource; let tasks: Resource }
+    struct Homework: Decodable, Equatable, Sendable { let read: Bool; let progressWrite: Bool; let review: Bool? }
+    struct Resources: Decodable, Equatable, Sendable { let calendar: Resource; let contacts: Resource; let school: Resource; let tasks: Resource; let homework: Homework? }
     struct Memory: Decodable, Equatable, Sendable {
         let readOwnPrivate: Bool
         let readSharedFamily: Bool
@@ -26,12 +27,12 @@ struct OrbitEffectivePermissions: Decodable, Equatable, Sendable {
         let adult = !isMinor
         return OrbitEffectivePermissions(
             version: "fallback", actorClass: adult ? "adult" : "child",
-            resources: Resources(calendar: .init(read: true, write: adult), contacts: .init(read: true, write: adult), school: .init(read: true, write: adult), tasks: .init(read: true, write: adult)),
+            resources: Resources(calendar: .init(read: true, write: adult), contacts: .init(read: true, write: adult), school: .init(read: true, write: adult), tasks: .init(read: true, write: adult), homework: .init(read: true, progressWrite: false, review: false)),
             memory: Memory(readOwnPrivate: true, readSharedFamily: true, proposeSharedFact: false, proposeSharedFactCorrection: false, reviewProposals: adult, mutateApprovedSharedFact: adult))
     }
 }
 
-enum OrbitWritePermission: Sendable { case calendarWrite, calendarProviderWrite, contactsWrite, schoolWrite, proposeSharedFact, reviewProposals }
+enum OrbitWritePermission: Sendable { case calendarWrite, calendarProviderWrite, contactsWrite, schoolWrite, homeworkProgress, homeworkReview, proposeSharedFact, reviewProposals }
 
 extension OrbitEffectivePermissions {
     func allows(_ permission: OrbitWritePermission) -> Bool {
@@ -41,6 +42,8 @@ extension OrbitEffectivePermissions {
         case .calendarProviderWrite: return true
         case .contactsWrite: return resources.contacts.write
         case .schoolWrite: return resources.school.write
+        case .homeworkProgress: return resources.homework?.progressWrite ?? false
+        case .homeworkReview: return resources.homework?.review ?? false
         case .proposeSharedFact: return memory.proposeSharedFactCorrection
         case .reviewProposals: return memory.reviewProposals
         }

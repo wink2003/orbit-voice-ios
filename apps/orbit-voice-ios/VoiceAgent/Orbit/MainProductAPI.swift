@@ -373,6 +373,42 @@ struct OrbitSchoolActionHistoryEntry: Decodable, Identifiable, Hashable {
 }
 struct OrbitSchoolActionHistoryResponse: Decodable { let history: [OrbitSchoolActionHistoryEntry] }
 
+struct OrbitHomeworkProgress: Decodable, Hashable {
+    let status: String
+    let helpRequested: Bool
+    let note: String
+    let revision: Int
+    let updatedAt: Date?
+}
+struct OrbitHomeworkTask: Decodable, Identifiable, Hashable {
+    let id: String
+    let childPersonId: String
+    let subject: String
+    let assignmentText: String
+    let workKind: String?
+    let lessonDate: String?
+    let dueDate: String?
+    let reviewState: String
+    let sources: [OrbitHomeworkSource]
+    let revision: Int
+    let progress: OrbitHomeworkProgress
+    let createdAt: Date?
+    let updatedAt: Date?
+}
+struct OrbitHomeworkSource: Decodable, Hashable { let snapshotId: String?; let sourceRegion: String?; let confidence: [String: Double]?; let kind: String? }
+struct OrbitHomeworkTasksResponse: Decodable { let tasks: [OrbitHomeworkTask] }
+struct OrbitHomeworkSnapshot: Decodable, Identifiable, Hashable {
+    let id: String; let childPersonId: String; let capturedAt: Date; let schoolYear: String?; let calendarWeek: Int?; let pageLabel: String?; let contentType: String; let sizeBytes: Int; let sha256: String; let createdAt: Date
+}
+struct OrbitHomeworkSnapshotResponse: Decodable { let snapshot: OrbitHomeworkSnapshot; let replayed: Bool? }
+struct OrbitHomeworkSnapshotsResponse: Decodable { let snapshots: [OrbitHomeworkSnapshot] }
+struct OrbitHomeworkProposal: Decodable, Identifiable, Hashable {
+    let id: String; let childPersonId: String; let snapshotId: String; let matchedHomeworkId: String?; let changeKind: String; let candidate: Candidate; let decision: String; let capturedAt: Date?; let schoolYear: String?; let calendarWeek: Int?; let pageLabel: String?; let currentSubject: String?; let currentAssignmentText: String?; let currentRevision: Int?
+    struct Candidate: Decodable, Hashable { let subject: String; let assignmentText: String; let workKind: String?; let lessonDate: String?; let dueDate: String?; let sourceRegion: String?; let confidence: [String: Double]?; let expectedRevision: Int? }
+}
+struct OrbitHomeworkProposalsResponse: Decodable { let proposals: [OrbitHomeworkProposal] }
+private struct OrbitHomeworkResolveResponse: Decodable { let decision: String; let task: OrbitHomeworkTask? }
+
 // School email channel (web: /api/school/email/*; adults only). Quarantined senders are shown for approval; nothing from them is processed before that.
 struct OrbitSchoolEmailStatus: Decodable, Hashable { let enabled: Bool; let configured: Bool; let forwardersEnforced: Bool; let lastPollAt: Date?; let lastError: String?; let counts: [String: Int] }
 struct OrbitSchoolEmailQuarantineSender: Decodable, Identifiable, Hashable { let address: String; let name: String?; let messages: Int; let latestAt: Date?; let latestSubject: String; let latestPreview: String; var id: String { address } }
@@ -771,6 +807,65 @@ final class MainProductAPI {
         let f = ISO8601DateFormatter(); let path = "/api/school/calendar?scope=\(scope)&from=\(f.string(from: from).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&to=\(f.string(from: to).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"; return try await request(path: path, as: OrbitSchulmanagerCalendarResponse.self).events
     }
     func schoolTasks(coverage: String = "window") async throws -> OrbitSchoolTasksResponse { try await request(path: "/api/school/tasks?coverage=\(coverage)", as: OrbitSchoolTasksResponse.self) }
+    func schoolHomework(childPersonId: String? = nil) async throws -> OrbitHomeworkTasksResponse {
+        try await request(path: "/api/school/homework\(childPersonId.map { "?childPersonId=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)" } ?? "")", cachePolicy: .reloadIgnoringLocalCacheData)
+    }
+    func schoolHomeworkSnapshots(childPersonId: String) async throws -> OrbitHomeworkSnapshotsResponse {
+        try await request(path: "/api/school/homework/snapshots?childPersonId=\(childPersonId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? childPersonId)", cachePolicy: .reloadIgnoringLocalCacheData)
+    }
+    func schoolHomeworkProposals(childPersonId: String) async throws -> OrbitHomeworkProposalsResponse {
+        try await request(path: "/api/school/homework/proposals?childPersonId=\(childPersonId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? childPersonId)", cachePolicy: .reloadIgnoringLocalCacheData)
+    }
+    func downloadHomeworkPhoto(id: String, childPersonId: String) async throws -> Data {
+        guard let token = KeychainStore.readMainBearerToken(), let url = URL(string: "/api/school/homework/snapshots/\(id)/photo?childPersonId=\(childPersonId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? childPersonId)", relativeTo: baseURL) else { throw OrbitChatAPIError.notPaired }
+        var request = URLRequest(url: url); request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let code = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
+            throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
+        }
+        return data
+    }
+    func uploadHomeworkPhoto(_ data: Data, contentType: String, childPersonId: String, capturedAt: Date = .now, schoolYear: String? = nil, calendarWeek: Int? = nil, pageLabel: String? = nil, clientRequestId: String) async throws -> OrbitHomeworkSnapshotResponse {
+        guard let token = KeychainStore.readMainBearerToken(), let url = URL(string: "/api/school/homework/snapshots", relativeTo: baseURL) else { throw OrbitChatAPIError.notPaired }
+        let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let metadata: [String: Any] = ["childPersonId": childPersonId, "capturedAt": formatter.string(from: capturedAt), "schoolYear": schoolYear as Any? ?? NSNull(), "calendarWeek": calendarWeek as Any? ?? NSNull(), "pageLabel": pageLabel as Any? ?? NSNull(), "clientRequestId": clientRequestId]
+        let metadataData = try JSONSerialization.data(withJSONObject: metadata)
+        var request = URLRequest(url: url); request.httpMethod = "POST"; request.cachePolicy = .reloadIgnoringLocalCacheData; request.httpBody = data
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization"); request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue(metadataData.base64EncodedString(), forHTTPHeaderField: "X-Orbit-Diary-Meta"); request.setValue(clientRequestId, forHTTPHeaderField: "Idempotency-Key")
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let code = (try? JSONSerialization.jsonObject(with: responseData) as? [String: Any])?["error"] as? String
+            throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
+        }
+        return try decoder.decode(OrbitHomeworkSnapshotResponse.self, from: responseData)
+    }
+    func createHomeworkProposal(childPersonId: String, snapshotId: String, changeKind: String, matchedHomeworkId: String? = nil, candidate: [String: Any], clientRequestId: String) async throws {
+        let body: [String: Any] = ["childPersonId": childPersonId, "snapshotId": snapshotId, "changeKind": changeKind, "matchedHomeworkId": matchedHomeworkId as Any? ?? NSNull(), "candidate": candidate, "clientRequestId": clientRequestId]
+        let _: [String: OrbitHomeworkProposal] = try await request(path: "/api/school/homework/proposals", method: "POST", body: JSONSerialization.data(withJSONObject: body))
+    }
+    func resolveHomeworkProposal(id: String, decision: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["decision": decision])
+        let _: OrbitHomeworkResolveResponse = try await request(path: "/api/school/homework/proposals/\(id)/resolve", method: "POST", body: body)
+    }
+    func updateHomeworkProgress(id: String, status: String, helpRequested: Bool, note: String, revision: Int, clientRequestId: String = UUID().uuidString) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["status": status, "helpRequested": helpRequested, "note": note, "revision": revision, "clientRequestId": clientRequestId])
+        let _: [String: OrbitHomeworkProgress] = try await request(path: "/api/school/homework/\(id)/progress", method: "PATCH", body: body)
+    }
+    func createManualHomework(childPersonId: String, subject: String, assignmentText: String, workKind: String?, lessonDate: String?, dueDate: String?, clientRequestId: String) async throws {
+        var body: [String: Any] = ["childPersonId": childPersonId, "subject": subject, "assignmentText": assignmentText, "clientRequestId": clientRequestId]
+        body["workKind"] = workKind as Any? ?? NSNull(); body["lessonDate"] = lessonDate as Any? ?? NSNull(); body["dueDate"] = dueDate as Any? ?? NSNull()
+        let _: [String: OrbitHomeworkTask] = try await request(path: "/api/school/homework", method: "POST", body: JSONSerialization.data(withJSONObject: body))
+    }
+    func editHomework(id: String, childPersonId: String, subject: String, assignmentText: String, workKind: String?, lessonDate: String?, dueDate: String?, revision: Int, clientRequestId: String = UUID().uuidString) async throws {
+        var body: [String: Any] = ["childPersonId": childPersonId, "subject": subject, "assignmentText": assignmentText, "revision": revision, "clientRequestId": clientRequestId]
+        body["workKind"] = workKind as Any? ?? NSNull(); body["lessonDate"] = lessonDate as Any? ?? NSNull(); body["dueDate"] = dueDate as Any? ?? NSNull()
+        let _: [String: OrbitHomeworkTask] = try await request(path: "/api/school/homework/\(id)", method: "PATCH", body: JSONSerialization.data(withJSONObject: body))
+    }
     func schoolOverview(start: String? = nil, end: String? = nil) async throws -> OrbitSchoolHubV2OverviewResponse {
         try await request(path: schoolV2Path("/api/school/overview", start: start, end: end), cachePolicy: .reloadIgnoringLocalCacheData, preserveHTTPStatus: true)
     }

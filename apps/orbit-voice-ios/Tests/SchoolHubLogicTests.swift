@@ -569,6 +569,12 @@ struct SchoolHubLogicTests {
         precondition(SchoolHubLogic.schoolYearWindow(containing: "2027-08-02")?.from == "2027-08-01")
         precondition(SchoolHubLogic.schoolYearWindow(containing: "garbage") == nil)
 
+        // Homework OCR matching is a text-only hint; ambiguity stays with parent review.
+        precondition(SchoolHomeworkTextMatcher.similarity("Mathematik: Bücher S. 10", "mathematik bucher s 10") == 1, "case and diacritics normalize")
+        precondition(SchoolHomeworkTextMatcher.similarity("Mathe Buch Seite 10", "Seite 10 · Mathe Buch") == 1, "word order and punctuation do not change identity")
+        precondition(SchoolHomeworkTextMatcher.similarity("Vokabeln lernen", "Mathematik Aufgaben rechnen") == 0, "unrelated homework does not match")
+        precondition(SchoolHomeworkTextMatcher.similarity("", "Mathematik") == 0, "empty OCR never matches")
+
         print("school hub logic tests passed")
     }
 }
