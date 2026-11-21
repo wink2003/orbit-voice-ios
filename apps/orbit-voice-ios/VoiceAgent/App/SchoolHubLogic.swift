@@ -194,6 +194,9 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
         if ranked.count > 1, abs(best.1 - ranked[1].1) < 0.08, best.1 < 0.92 {
             return SchoolHomeworkDiaryMatch(kind: .uncertain, matchedRecordID: nil, score: best.1)
         }
+        if best.2, best.1 >= 0.75 {
+            return SchoolHomeworkDiaryMatch(kind: .same, matchedRecordID: best.0.id, score: best.1)
+        }
         if best.1 >= 0.92 { return SchoolHomeworkDiaryMatch(kind: .same, matchedRecordID: best.0.id, score: best.1) }
         if best.1 >= 0.48 { return SchoolHomeworkDiaryMatch(kind: .update, matchedRecordID: best.0.id, score: best.1) }
         if best.1 <= 0.22 { return SchoolHomeworkDiaryMatch(kind: .new, matchedRecordID: nil, score: best.1) }
