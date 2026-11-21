@@ -17,6 +17,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch makes an older macOS build pointless: cancel it (Codex IPA session 2026-11-21: four superseded builds, 15 min of runner time).
+# NEVER cancel a run on the release branch: its artifact is the release candidate and is bound to that exact commit.
+concurrency:
+  group: build-orbit-voice-ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/release/main-orbit' }}
+
 jobs:
   # Build-number scripts: hermetic python tests (cheap, ubuntu).  The release-branch build number is DERIVED in the build job
   # (published SideStore build + 1; owner decision 2026-11-12, replaces the manual bump PR); the canonical ipa-plan stays the authority.
