@@ -212,7 +212,7 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
             let row = nearest.flatMap { abs($0.y - line.region.midY) <= tolerance ? $0 : nil }
             let due = explicitDueDate(in: text)
             let assignment = removingExplicitDuePhrase(text)
-            let correctedDueCue = normalize(text).range(of: #"\b3ib\b"#, options: .regularExpression) != nil && due != nil
+            let correctedDueCue = normalize(text).range(of: #"\b3ib\b"#, options: .regularExpression) != nil
             return ContentLine(line: line, dayKey: day, dayBlockIndex: dayBlock, subjectRow: row, explicitDueDate: due, correctedDueCue: correctedDueCue, text: assignment, sourceText: line.sourceText)
         }
 
@@ -263,7 +263,7 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
                 reviewReason: reason,
                 dueCueNeedsReview: dueCueNeedsReview,
                 originalOCRText: ordered.map(\.sourceText).joined(separator: " "),
-                ocrAlternatives: Array(Set(ordered.compactMap { $0.line.alternateText }.filter { !$0.isEmpty })).sorted()
+                ocrAlternatives: Array(Set(ordered.compactMap { $0.line.alternateText }.filter { !$0.isEmpty } + ordered.flatMap { germanReadingSuggestions(for: $0.text) })).sorted()
             )
         }
         entries.sort {
@@ -371,7 +371,10 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
     }
 
     private static func explicitDate(in text: String) -> String? {
-        let dateOCR = text.replacingOccurrences(of: #"(?<=\d):(?=\d)"#, with: ".", options: .regularExpression)
+        // Vision can insert spaces around punctuation or split the final year digit (e.g. `18.11 :202 6`).
+        let dateOCR = text
+            .replacingOccurrences(of: #"(?<=\d)\s*[:/]\s*(?=\d)"#, with: ".", options: .regularExpression)
+            .replacingOccurrences(of: #"(?<=\d)\s+([0-9])\b"#, with: "$1", options: .regularExpression)
         guard let match = firstMatch(#"(?<!\d)(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?(?!\d)"#, in: dateOCR),
               match.count >= 3,
               let day = Int(match[1]), let month = Int(match[2]), match.count >= 4, !match[3].isEmpty else { return nil }
@@ -391,8 +394,14 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
         return explicitDate(in: text)
     }
 
+    private static func germanReadingSuggestions(for text: String) -> [String] {
+        // Preserve the OCR result verbatim; this dictionary-backed guess is only a review suggestion.
+        let normalized = normalize(text)
+        return normalized.range(of: #"\btesemn\b"#, options: .regularExpression) == nil ? [] : ["Можливе прочитання: lesen"]
+    }
+
     private static func removingExplicitDuePhrase(_ text: String) -> String {
-        guard let range = text.range(of: #"(?i)\b(bis|3ib|abgabe\s+bis|abgeben\s+bis|fällig\s+am)\s+(?:den\s+)?\d{1,2}[./:]\d{1,2}(?:[./:]\d{2,4})?"#, options: .regularExpression) else { return text }
+        guard let range = text.range(of: #"(?i)\b(bis|3ib|abgabe\s+bis|abgeben\s+bis|fällig\s+am)\s+(?:den\s+)?\d{1,2}\s*[./:]\s*\d{1,2}(?:\s*[./:]\s*\d{2,4}(?:\s+\d)?|\s+\d{2,4})?"#, options: .regularExpression) else { return text }
         return (String(text[..<range.lowerBound]) + " " + String(text[range.upperBound...]))
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -430,14 +439,19 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
 
     private static func groupingKey(for item: ContentLine, among content: [ContentLine]) -> String {
         let ownRowID = item.subjectRow?.line.id
-        if item.text.isEmpty, item.explicitDueDate != nil, let subject = item.subjectRow?.label,
+        // Resolve physical continuation before interpreting OCR content. Repeated
+        // same-subject slots within one day can be crossed by a handwritten entry.
+        if let subject = item.subjectRow?.label,
            let parent = content.filter({ candidate in
-               !candidate.text.isEmpty && candidate.dayKey == item.dayKey &&
+               candidate.line.id != item.line.id && candidate.dayKey == item.dayKey &&
                candidate.dayBlockIndex == item.dayBlockIndex &&
                candidate.subjectRow?.label == subject && candidate.subjectRow?.line.id != ownRowID &&
-               abs(candidate.line.region.midY - item.line.region.midY) <= 0.075
+               abs(candidate.line.region.midY - item.line.region.midY) <= 0.075 &&
+               abs((candidate.subjectRow?.y ?? candidate.line.region.midY) - (item.subjectRow?.y ?? item.line.region.midY)) <= 0.075
            }).min(by: { abs($0.line.region.midY - item.line.region.midY) < abs($1.line.region.midY - item.line.region.midY) }) {
-            return "\(item.dayKey ?? "undated")|\(parent.subjectRow?.line.id.description ?? "unmatched-\(parent.line.id)")"
+            let physicalRows = [item.subjectRow, parent.subjectRow].compactMap { $0 }
+            let stableRowID = physicalRows.min { $0.y > $1.y }?.line.id
+            return "\(item.dayKey ?? "undated")|\(stableRowID?.description ?? "unmatched-\(parent.line.id)")"
         }
         return "\(item.dayKey ?? "undated")|\(ownRowID?.description ?? "unmatched-\(item.line.id)")"
     }
