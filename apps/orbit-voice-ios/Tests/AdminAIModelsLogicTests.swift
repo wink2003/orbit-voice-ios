@@ -32,6 +32,10 @@ struct AdminAIModelsLogicTests {
         precondition(AdminAIModelsLogic.chainText(primary: overview.tasks[0].primary, fallbacks: overview.tasks[0].fallbacks) == "z-ai/glm-5.3-flash → particle-ai/particle-1:free")
         precondition(AdminAIModelsLogic.usageText(overview.tasks[0].usage7d) == "100 викликів · 57% успішно · $0.123 · p95 18 с")
         precondition(AdminAIModelsLogic.usageText(AIModelUsage(calls: 0, ok: 0, cost: 0, p95: nil)) == "за 7 днів викликів не було")
+        // Fact vs estimate: an estimate is labelled; a verified free tier shows the list-price equivalent, never an invoice.
+        precondition(AdminAIModelsLogic.usageText(AIModelUsage(calls: 100, ok: 57, cost: 0.123, p95: 18000, costKind: "estimate")) == "100 викликів · 57% успішно · ≈$0.123 (оцінка) · p95 18 с")
+        precondition(AdminAIModelsLogic.usageText(AIModelUsage(calls: 10, ok: 10, cost: 5.41, p95: nil, costKind: "free_tier")) == "10 викликів · 100% успішно · free tier · за прайсом ≈$5.41")
+        precondition(AdminAIModelsLogic.costText(AIModelUsage(calls: 1, ok: 1, cost: 0.5, p95: nil)) == "$0.500", "old servers send no costKind: unchanged formatting")
         precondition(AdminAIModelsLogic.passingModels(overview.lastJob) == ["z-ai/glm-5.3-flash"])
         precondition(AdminAIModelsLogic.passingModels(nil).isEmpty)
         precondition(AdminAIModelsLogic.resultText(overview.lastJob!.results[0]) == "проходить · події 22/24 · листи 3/3 · 49 с · $0.0198 за 1000 викликів")
