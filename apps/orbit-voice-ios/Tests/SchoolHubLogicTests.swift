@@ -586,6 +586,13 @@ struct SchoolHubLogicTests {
         let disagreeingHandwriting = SchoolHomeworkOCRLine(id: 1, text: "S.40/41 leben", confidence: 0.93, region: handwritingRegion)
         let cautiousHandwriting = SchoolHomeworkOCRCorroborator.merge([rawHandwriting], [disagreeingHandwriting])
         precondition(cautiousHandwriting.count == 1 && cautiousHandwriting[0].confidence <= 0.54, "disagreeing handwriting passes always require parent review")
+        precondition(cautiousHandwriting[0].sourceText == "S.40/41 lesen" && cautiousHandwriting[0].alternateText == "S.40/41 leben", "the primary local OCR and alternate reading stay separate for parent review")
+        let alternateTextPage = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(2, "18.11.2026", x: 0.12, y: 0.40, width: 0.12),
+            homeworkOCR(3, "BI", x: 0.08, y: 0.30, width: 0.06),
+            cautiousHandwriting[0]
+        ])
+        precondition(alternateTextPage.entries.first?.originalOCRText == "S.40/41 lesen" && alternateTextPage.entries.first?.ocrAlternatives == ["S.40/41 leben"] && alternateTextPage.entries.first?.needsReview == true, "review card keeps the source transcript separate from the uncertain local correction")
 
         // German diary layout: week/date headers partition the page, subject-column labels attach to nearby assignment rows.
         let diary = SchoolHomeworkDiaryAnalyzer.analyze([
@@ -641,17 +648,28 @@ struct SchoolHubLogicTests {
             homeworkOCR(43, "Read chapter 3", x: 0.24, y: 0.48, width: 0.25),
             homeworkOCR(44, "18.11.2026", x: 0.20, y: 0.31, width: 0.12),
             homeworkOCR(45, "Mittwoch", x: 0.72, y: 0.31, width: 0.10),
-            homeworkOCR(46, "BI", x: 0.27, y: 0.265, width: 0.04),
-            homeworkOCR(47, "HA: Workbook pages 40 and 41", x: 0.24, y: 0.265, width: 0.46),
-            homeworkOCR(48, "bis 18.11.2026", x: 0.24, y: 0.235, width: 0.22),
-            homeworkOCR(49, "BI", x: 0.27, y: 0.235, width: 0.04)
+            homeworkOCR(46, "BI", x: 0.08, y: 0.265, width: 0.06),
+            homeworkOCR(47, "HA: S. 40/41 lesen", x: 0.17, y: 0.265, width: 0.40),
+            homeworkOCR(48, "3ib 18.11:2026", x: 0.17, y: 0.235, width: 0.22),
+            homeworkOCR(49, "BI", x: 0.08, y: 0.235, width: 0.06),
+            homeworkOCR(54, "D", x: 0.08, y: 0.20, width: 0.05),
+            homeworkOCR(55, "Read the next chapter", x: 0.17, y: 0.20, width: 0.32)
         ])
         let mondayRegression = photographedPage.entries.first { $0.assignmentText.contains("chapter") }
         precondition(mondayRegression?.lessonDate == "2026-11-17", "stacked day block cannot inherit the next date because its X is closer")
-        let diaryRegression = photographedPage.entries.first { $0.assignmentText.contains("Workbook") }
+        let diaryRegression = photographedPage.entries.first { $0.assignmentText.contains("S. 40/41") }
         precondition(diaryRegression?.lessonDate == "2026-11-18" && diaryRegression?.subject == "Biologie", "short subject abbreviation stays metadata in the correct day block")
-        precondition(diaryRegression?.dueDate == "2026-11-18" && diaryRegression?.sourceLineIDs.count == 2, "explicit deadline line joins its task instead of becoming a second record")
+        precondition(diaryRegression?.dueDate == "2026-11-18" && diaryRegression?.sourceLineIDs.count == 2, "OCR-confused Bis plus colon date joins as an explicit deadline without entering assignment text")
+        precondition(diaryRegression?.assignmentText.contains("18.11") == false && diaryRegression?.originalOCRText.contains("3ib 18.11:2026") == true, "clean task text and source OCR remain distinguishable")
+        precondition(diaryRegression?.dueCueNeedsReview == true && diaryRegression?.needsReview == false, "corrected deadline cue is proposed separately and held for parent review without disabling duplicate matching")
+        precondition((diaryRegression?.sourceRegion.minX ?? 1) < 0.1, "the review source region includes the subject column with both handwriting rows")
         precondition(photographedPage.entries.filter { $0.subject == "Biologie" }.count == 1, "repeated BI row label does not create a duplicate task")
+        let nearbyDeutsch = photographedPage.entries.first { $0.assignmentText.contains("next chapter") }
+        precondition(nearbyDeutsch?.subject == "Deutsch" && nearbyDeutsch?.lessonDate == "2026-11-18", "a distinct adjacent subject row keeps its own assignment")
+        let repeatedBiology = SchoolHomeworkDiaryAnalyzer.match(diaryRegression!, against: [
+            SchoolHomeworkMatchRecord(id: "biology-from-first-photo", subject: "Biologie", assignmentText: "HA S. 40/41 lesen", lessonDate: "2026-11-18", sourcePageKey: "2026/2027|47|h30")
+        ], pageKey: "2026/2027|47|h30")
+        precondition(repeatedBiology.kind == .same && repeatedBiology.matchedRecordID == "biology-from-first-photo", "repeat photo of the corrected subject/date remains a match")
 
         let unreadableHeaderPage = SchoolHomeworkDiaryAnalyzer.analyze([
             homeworkOCR(50, "17.11.2026", x: 0.12, y: 0.58, width: 0.12),

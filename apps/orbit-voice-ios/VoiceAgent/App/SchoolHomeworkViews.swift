@@ -27,7 +27,7 @@ nonisolated private func recognizeHomeworkLines(
     request.recognitionLevel = .accurate
     request.usesLanguageCorrection = languageCorrection
     request.recognitionLanguages = ["de-DE", "en-US"]
-    request.customWords = ["Hausaufgabe", "Hausaufgaben", "Kalenderwoche", "Vokabeln", "Arbeitsheft", "WPK", "PHIL", "USV", "BI", "HA"]
+    request.customWords = ["Hausaufgabe", "Hausaufgaben", "Kalenderwoche", "Vokabeln", "Arbeitsheft", "Wochenplan", "Biologie", "Mathematik", "Deutsch", "lesen", "Nr.", "WB", "AB", "WPK", "PHIL", "USV", "BI", "HA", "Bis", "S."]
     do {
         try VNImageRequestHandler(cgImage: cgImage, orientation: orientation).perform([request])
         return (request.results ?? []).enumerated().compactMap { index, observation in
@@ -37,7 +37,8 @@ nonisolated private func recognizeHomeworkLines(
                 id: index,
                 text: candidate.string,
                 confidence: Double(candidate.confidence),
-                region: HomeworkOCRRegion(minX: Double(box.minX), minY: Double(box.minY), width: Double(box.width), height: Double(box.height))
+                region: HomeworkOCRRegion(minX: Double(box.minX), minY: Double(box.minY), width: Double(box.width), height: Double(box.height)),
+                sourceText: candidate.string
             )
         }
     } catch {
@@ -49,6 +50,8 @@ private struct HomeworkReviewCandidate: Identifiable, Equatable {
     let id: Int
     var subject: String
     var assignmentText: String
+    var originalOCRText: String
+    var ocrAlternatives: [String]
     var lessonDate: String?
     var dueDate: String?
     var sourceLineIDs: [Int]
@@ -757,16 +760,28 @@ struct SchoolHomeworkView: View {
                     Image(systemName: entry.selected ? "checkmark.circle.fill" : "circle")
                 }.accessibilityLabel(entry.selected ? "Не надсилати цей запис" : "Надіслати цей запис на перевірку")
             }
-            HStack(alignment: .top, spacing: 12) {
-                if let crop = sourceCrop(for: entry) {
-                    Image(uiImage: crop).resizable().scaledToFill().frame(width: 92, height: 112)
-                        .clipped().clipShape(RoundedRectangle(cornerRadius: 10))
-                        .accessibilityLabel("Фрагмент оригіналу, пов’язаний із записом")
+            if let crop = sourceCrop(for: entry) {
+                Image(uiImage: crop).resizable().scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: 120)
+                    .background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .accessibilityLabel("Оригінал: предметна колонка та пов’язані рукописні рядки")
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Оригінал локального OCR", systemImage: "text.viewfinder")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(entry.originalOCRText.isEmpty ? "Текст не розпізнано" : entry.originalOCRText)
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                if !entry.ocrAlternatives.isEmpty {
+                    Text("Інше локальне прочитання: \(entry.ocrAlternatives.joined(separator: " · "))")
+                        .font(.caption).foregroundStyle(.orange)
                 }
+            }
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
-                    TextField("Предмет", text: reviewBinding(entry.id, \.subject))
+                    TextField("Запропонований предмет", text: reviewBinding(entry.id, \.subject))
                         .font(.subheadline.weight(.semibold)).textFieldStyle(.roundedBorder)
-                    TextField("Текст завдання", text: reviewBinding(entry.id, \.assignmentText), axis: .vertical)
+                    TextField("Завдання · без дедлайну", text: reviewBinding(entry.id, \.assignmentText), axis: .vertical)
                         .lineLimit(3...5).textFieldStyle(.roundedBorder)
                 }
             }
@@ -821,7 +836,11 @@ struct SchoolHomeworkView: View {
         guard let image = uprightPhotoImage, let cgImage = image.cgImage else { return nil }
         let width = CGFloat(cgImage.width), height = CGFloat(cgImage.height)
         let region = entry.sourceRegion
-        let rect = CGRect(x: CGFloat(region.minX) * width, y: (1 - CGFloat(region.maxY)) * height, width: CGFloat(region.width) * width, height: CGFloat(region.height) * height)
+        let left = max(0, region.minX - 0.015)
+        let bottom = max(0, region.minY - max(0.025, region.height * 0.25))
+        let right = min(1, region.maxX + 0.015)
+        let top = min(1, region.maxY + max(0.025, region.height * 0.25))
+        let rect = CGRect(x: left * width, y: (1 - top) * height, width: (right - left) * width, height: (top - bottom) * height)
             .integral.intersection(CGRect(x: 0, y: 0, width: width, height: height))
         guard rect.width > 1, rect.height > 1, let crop = cgImage.cropping(to: rect) else { return nil }
         return UIImage(cgImage: crop, scale: image.scale, orientation: image.imageOrientation)
@@ -955,11 +974,12 @@ struct SchoolHomeworkView: View {
             let pendingDuplicate = match.matchedRecordID?.hasPrefix("proposal:") == true
             return HomeworkReviewCandidate(
                 id: entry.id, subject: entry.subject ?? "", assignmentText: entry.assignmentText,
+                originalOCRText: entry.originalOCRText, ocrAlternatives: entry.ocrAlternatives,
                 lessonDate: entry.lessonDate, dueDate: entry.dueDate, sourceLineIDs: entry.sourceLineIDs,
-                sourceRegion: entry.sourceRegion, confidence: entry.confidence, needsReview: entry.needsReview || match.kind == .uncertain,
+                sourceRegion: entry.sourceRegion, confidence: entry.confidence, needsReview: entry.needsReview || entry.dueCueNeedsReview || match.kind == .uncertain,
                 reviewReason: entry.reviewReason ?? (match.kind == .uncertain ? "Збіг неоднозначний" : nil),
                 changeKind: match.kind.rawValue, matchedTaskId: pendingDuplicate ? nil : match.matchedRecordID, matchScore: match.score,
-                pendingDuplicate: pendingDuplicate, selected: match.kind != .uncertain && !entry.needsReview && !pendingDuplicate,
+                pendingDuplicate: pendingDuplicate, selected: match.kind != .uncertain && !entry.needsReview && !entry.dueCueNeedsReview && !pendingDuplicate,
                 clientRequestId: UUID().uuidString
             )
         }
