@@ -677,9 +677,9 @@ struct SchoolHubLogicTests {
             homeworkOCR(70, "17.11.2026", x: 0.12, y: 0.72, width: 0.12),
             homeworkOCR(71, "18.11.2026", x: 0.12, y: 0.52, width: 0.12),
             homeworkOCR(72, "BI", x: 0.08, y: 0.46, width: 0.06),
-            homeworkOCR(73, "tesemn", x: 0.22, y: 0.46, width: 0.24, confidence: 0.50),
+            homeworkOCR(73, "tesemn", x: 0.22, y: 0.46, confidence: 0.50, width: 0.24),
             homeworkOCR(74, "BI", x: 0.08, y: 0.43, width: 0.06),
-            homeworkOCR(75, "3ib 18.11 :202 6", x: 0.22, y: 0.43, width: 0.26, confidence: 0.50)
+            homeworkOCR(75, "3ib 18.11 :202 6", x: 0.22, y: 0.43, confidence: 0.50, width: 0.26)
         ])
         let rawBiology = rawDiaryFailure.entries.first
         precondition(rawDiaryFailure.entries.count == 1 && rawBiology?.subject == "Biologie", "raw repeated BI labels resolve to one Biology assignment")
