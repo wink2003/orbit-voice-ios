@@ -12,8 +12,8 @@ private func inboxItem(_ id: String, type: String = "letter", unread: Bool = fal
 private func inboxTask(_ source: String, status: String = "open") -> SchoolInboxTaskSnapshot {
     SchoolInboxTaskSnapshot(sourceItemId: source, status: status)
 }
-private func homeworkOCR(_ id: Int, _ text: String, x: Double, y: Double, confidence: Double = 0.94, width: Double = 0.20) -> SchoolHomeworkOCRLine {
-    SchoolHomeworkOCRLine(id: id, text: text, confidence: confidence, region: SchoolHomeworkOCRRegion(minX: x, minY: y, width: width, height: 0.018))
+private func homeworkOCR(_ id: Int, _ text: String, x: Double, y: Double, confidence: Double = 0.94, width: Double = 0.20, height: Double = 0.018) -> SchoolHomeworkOCRLine {
+    SchoolHomeworkOCRLine(id: id, text: text, confidence: confidence, region: SchoolHomeworkOCRRegion(minX: x, minY: y, width: width, height: height))
 }
 
 @main
@@ -697,7 +697,7 @@ struct SchoolHubLogicTests {
             homeworkOCR(80, "17.11.2026", x: 0.12, y: 0.72, width: 0.12),
             homeworkOCR(81, "18.11.2026", x: 0.12, y: 0.52, width: 0.12),
             homeworkOCR(82, "BI", x: 0.08, y: 0.46, width: 0.06),
-            homeworkOCR(83, "tesemn\n3ib 18.11 :202 6", x: 0.22, y: 0.445, confidence: 0.50, width: 0.46),
+            homeworkOCR(83, "tesemn\n3ib 18.11 :202 6", x: 0.22, y: 0.43, confidence: 0.50, width: 0.46, height: 0.055),
             homeworkOCR(84, "BI", x: 0.08, y: 0.43, width: 0.06)
         ])
         let mergedBiology = mergedVisionRow.entries.first
