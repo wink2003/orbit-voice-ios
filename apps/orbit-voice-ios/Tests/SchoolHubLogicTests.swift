@@ -689,6 +689,33 @@ struct SchoolHubLogicTests {
         precondition(rawBiology?.ocrAlternatives.contains("Можливе прочитання: lesen") == true, "German dictionary reading is suggested without replacing the raw text")
         precondition(rawBiology?.sourceLineIDs == [73, 75] && (rawBiology?.sourceRegion.minX ?? 1) < 0.1, "review crop includes both handwriting rows and the Fach column")
 
+        // Vision may return both physical handwriting rows as one tall box on
+        // a full-page pass. Focused cell OCR should normally separate them;
+        // this fallback regression ensures one merged observation still cannot
+        // create two tasks or lose an explicit due date.
+        let mergedVisionRow = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(80, "17.11.2026", x: 0.12, y: 0.72, width: 0.12),
+            homeworkOCR(81, "18.11.2026", x: 0.12, y: 0.52, width: 0.12),
+            homeworkOCR(82, "BI", x: 0.08, y: 0.46, width: 0.06),
+            homeworkOCR(83, "tesemn\n3ib 18.11 :202 6", x: 0.22, y: 0.445, confidence: 0.50, width: 0.46),
+            homeworkOCR(84, "BI", x: 0.08, y: 0.43, width: 0.06)
+        ])
+        let mergedBiology = mergedVisionRow.entries.first
+        precondition(mergedVisionRow.entries.count == 1 && mergedBiology?.subject == "Biologie", "a merged full-page Vision box stays one Biology assignment when Fach rows are available")
+        precondition(mergedBiology?.lessonDate == "2026-11-18" && mergedBiology?.dueDate == "2026-11-18", "a merged box preserves lesson and explicit due date as separate fields")
+        precondition(mergedBiology?.assignmentText == "tesemn" && mergedBiology?.needsReview == true, "merged raw German handwriting remains unchanged and requires parent review")
+
+        let unreadableContinuationLabel = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(90, "17.11.2026", x: 0.12, y: 0.72, width: 0.12),
+            homeworkOCR(91, "18.11.2026", x: 0.12, y: 0.52, width: 0.12),
+            homeworkOCR(92, "BI", x: 0.08, y: 0.46, width: 0.06),
+            homeworkOCR(93, "HA: S. 40/41 tesemn", x: 0.22, y: 0.46, confidence: 0.50, width: 0.34),
+            homeworkOCR(94, "3ib 18.11 :202 6", x: 0.22, y: 0.43, confidence: 0.50, width: 0.26)
+        ])
+        let unreadableLabelBiology = unreadableContinuationLabel.entries.first
+        precondition(unreadableContinuationLabel.entries.count == 1 && unreadableLabelBiology?.subject == "Biologie", "a missed repeated BI label does not split a continuation from the detected Biology row")
+        precondition(unreadableLabelBiology?.dueDate == "2026-11-18" && unreadableLabelBiology?.needsReview == true, "deadline extraction is independent from repeated subject OCR and remains parent-reviewable")
+
         let unreadableHeaderPage = SchoolHomeworkDiaryAnalyzer.analyze([
             homeworkOCR(50, "17.11.2026", x: 0.12, y: 0.58, width: 0.12),
             homeworkOCR(51, "Mittwoch", x: 0.72, y: 0.31, width: 0.10),
