@@ -65,7 +65,7 @@ nonisolated private func recognizeHomeworkDiaryCells(
     languageCorrection: Bool,
     idOffset: Int
 ) -> [HomeworkOCRLine] {
-    let weekday = #"(?:Mo|Montag|Di|Dienstag|Mi|Mittwoch|Do|Donnerstag|Fr|Freitag)\.?"
+    let weekday = #"(?:Mo|Montag|Di|Dienstag|Mi|Mittwoch|Do|Donnerstag|Fr|Freitag)\.?"#
     let datePattern = try? NSRegularExpression(pattern: #"^\s*(?:"# + weekday + #"\s+)?\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\s+"# + weekday + #")?\s*$"#, options: [.caseInsensitive])
     let dateHeaders = pageLines.filter { line in
         guard line.region.minX < 0.35,
