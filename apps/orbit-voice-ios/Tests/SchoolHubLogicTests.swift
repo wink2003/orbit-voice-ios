@@ -587,6 +587,17 @@ struct SchoolHubLogicTests {
         let cautiousHandwriting = SchoolHomeworkOCRCorroborator.merge([rawHandwriting], [disagreeingHandwriting])
         precondition(cautiousHandwriting.count == 1 && cautiousHandwriting[0].confidence <= 0.54, "disagreeing handwriting passes always require parent review")
         precondition(cautiousHandwriting[0].sourceText == "S.40/41 lesen" && cautiousHandwriting[0].alternateText == "S.40/41 leben", "the primary local OCR and alternate reading stay separate for parent review")
+        let pageMultiRow = homeworkOCR(100, "joined page observation", x: 0.17, y: 0.22, confidence: 0.82, width: 0.70, height: 0.10)
+        let focusedUpperRow = homeworkOCR(101, "first focused row", x: 0.19, y: 0.27, confidence: 0.80, width: 0.66, height: 0.018)
+        let focusedLowerRow = homeworkOCR(102, "second focused row", x: 0.19, y: 0.245, confidence: 0.78, width: 0.66, height: 0.018)
+        let preservedPage = SchoolHomeworkOCRReconciler.merge(pageLines: [pageMultiRow], cellLines: [focusedUpperRow, focusedLowerRow])
+        precondition(preservedPage.lines.contains(where: { $0.id == pageMultiRow.id }) && preservedPage.pageLinesPreserved == 1 && preservedPage.overlapPairsReconciled == 0, "overlapping row crops cannot discard a broad full-page observation")
+        let sameGeometryCell = homeworkOCR(103, "joined page observation", x: 0.17, y: 0.22, confidence: 0.9, width: 0.70, height: 0.10)
+        let corroboratedPage = SchoolHomeworkOCRReconciler.merge(pageLines: [pageMultiRow], cellLines: [sameGeometryCell])
+        precondition(corroboratedPage.lines.count == 1 && corroboratedPage.overlapPairsReconciled == 1 && corroboratedPage.lines[0].confidence == 0.9, "a same-geometry matching cell observation safely corroborates a page line")
+        let uncertainCell = homeworkOCR(104, "different reading", x: 0.17, y: 0.22, confidence: 0.95, width: 0.70, height: 0.10)
+        let differingPage = SchoolHomeworkOCRReconciler.merge(pageLines: [pageMultiRow], cellLines: [uncertainCell])
+        precondition(differingPage.lines.count == 1 && differingPage.lines[0].confidence <= 0.54 && differingPage.lines[0].sourceText == "joined page observation" && differingPage.lines[0].alternateText == "different reading", "overlapping OCR disagreement remains a parent-review alternative")
         let alternateTextPage = SchoolHomeworkDiaryAnalyzer.analyze([
             homeworkOCR(2, "18.11.2026", x: 0.12, y: 0.40, width: 0.12),
             homeworkOCR(3, "BI", x: 0.08, y: 0.30, width: 0.06),
@@ -688,6 +699,28 @@ struct SchoolHubLogicTests {
         precondition(rawBiology?.dueCueNeedsReview == true && rawBiology?.needsReview == true, "OCR correction and deadline stay parent-reviewable")
         precondition(rawBiology?.ocrAlternatives.contains("Можливе прочитання: lesen") == true, "German dictionary reading is suggested without replacing the raw text")
         precondition(rawBiology?.sourceLineIDs == [73, 75] && (rawBiology?.sourceRegion.minX ?? 1) < 0.1, "review crop includes both handwriting rows and the Fach column")
+
+        // When full-page Vision misses later date headers, focused row OCR must
+        // still surface the handwriting and subject without borrowing the only
+        // recognized date from a different physical block.
+        let incompleteHeaderPage = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(80, "16.11.2026", x: 0.12, y: 0.82, width: 0.12),
+            homeworkOCR(81, "M", x: 0.08, y: 0.74, width: 0.05),
+            homeworkOCR(82, "HA Wochenplan", x: 0.22, y: 0.74, width: 0.30),
+            homeworkOCR(83, "BI", x: 0.08, y: 0.30, width: 0.06),
+            homeworkOCR(84, "S.40/41 lesen", x: 0.22, y: 0.30, width: 0.30),
+            homeworkOCR(85, "BI", x: 0.08, y: 0.27, width: 0.06),
+            homeworkOCR(86, "bis 18.11.2026", x: 0.22, y: 0.27, width: 0.30)
+        ])
+        let incompleteHeaderBiology = incompleteHeaderPage.entries.first { $0.subject == "Biologie" }
+        precondition(incompleteHeaderBiology?.assignmentText == "S.40/41 lesen" && incompleteHeaderBiology?.sourceLineIDs.count == 2, "a later subject task and its continuation survive a missing day header as one candidate")
+        precondition(incompleteHeaderBiology?.lessonDate == nil && incompleteHeaderBiology?.dueDate == "2026-11-18" && incompleteHeaderBiology?.needsReview == true, "an uncertain day boundary does not misassign the only recognized date and stays reviewable")
+        let noDateHeaderPage = SchoolHomeworkDiaryAnalyzer.analyze([
+            homeworkOCR(87, "Fach", x: 0.05, y: 0.90, width: 0.06),
+            homeworkOCR(88, "BI", x: 0.08, y: 0.60, width: 0.06),
+            homeworkOCR(89, "S.40/41 lesen", x: 0.22, y: 0.60, width: 0.30)
+        ])
+        precondition(noDateHeaderPage.entries.first?.subject == "Biologie" && noDateHeaderPage.entries.first?.lessonDate == nil && noDateHeaderPage.entries.first?.needsReview == true, "when date headers are unreadable, Fach row geometry still yields an undated parent-review candidate")
 
         // Vision may return both physical handwriting rows as one tall box on
         // a full-page pass. Focused cell OCR should normally separate them;

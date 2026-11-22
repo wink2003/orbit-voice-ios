@@ -55,6 +55,61 @@ nonisolated struct SchoolHomeworkOCRLine: Identifiable, Equatable, Sendable {
     }
 }
 
+nonisolated struct SchoolHomeworkOCRReconciliation: Equatable, Sendable {
+    let lines: [SchoolHomeworkOCRLine]
+    let pageLinesPreserved: Int
+    let overlapPairsReconciled: Int
+}
+
+nonisolated enum SchoolHomeworkOCRReconciler {
+    /// Focused crops can replace a full-page observation only when they cover the
+    /// same physical line and agree on its text. A broad Vision box that merely
+    /// overlaps one row is retained as evidence for parent review.
+    static func merge(pageLines: [SchoolHomeworkOCRLine], cellLines: [SchoolHomeworkOCRLine]) -> SchoolHomeworkOCRReconciliation {
+        func normalized(_ value: String) -> String {
+            value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                .filter { $0.isLetter || $0.isNumber }
+        }
+        func area(_ region: SchoolHomeworkOCRRegion) -> Double { max(0, region.width) * max(0, region.height) }
+        func intersection(_ lhs: SchoolHomeworkOCRRegion, _ rhs: SchoolHomeworkOCRRegion) -> Double {
+            max(0, min(lhs.maxX, rhs.maxX) - max(lhs.minX, rhs.minX)) *
+                max(0, min(lhs.maxY, rhs.maxY) - max(lhs.minY, rhs.minY))
+        }
+        func samePhysicalLine(_ lhs: SchoolHomeworkOCRLine, _ rhs: SchoolHomeworkOCRLine) -> Bool {
+            let smallerArea = min(area(lhs.region), area(rhs.region))
+            guard smallerArea > 0, intersection(lhs.region, rhs.region) / smallerArea >= 0.8 else { return false }
+            let widthRatio = min(lhs.region.width, rhs.region.width) / max(lhs.region.width, rhs.region.width)
+            let heightRatio = min(lhs.region.height, rhs.region.height) / max(lhs.region.height, rhs.region.height)
+            return widthRatio >= 0.6 && heightRatio >= 0.6
+        }
+
+        var result = pageLines
+        var replaced = 0
+        for cell in cellLines {
+            guard let index = result.indices.max(by: { intersection(result[$0].region, cell.region) < intersection(result[$1].region, cell.region) }),
+                  samePhysicalLine(result[index], cell) else {
+                result.append(cell)
+                continue
+            }
+            let page = result[index]
+            replaced += 1
+            if normalized(page.text) == normalized(cell.text) {
+                if cell.confidence > page.confidence {
+                    result[index] = SchoolHomeworkOCRLine(id: page.id, text: cell.text, confidence: cell.confidence,
+                                                          region: page.region, sourceText: page.sourceText, alternateText: page.alternateText)
+                }
+            } else {
+                let chosen = cell.confidence > page.confidence ? cell : page
+                result[index] = SchoolHomeworkOCRLine(id: page.id, text: chosen.text, confidence: min(chosen.confidence, 0.54),
+                                                      region: page.region, sourceText: page.sourceText,
+                                                      alternateText: cell.text)
+            }
+        }
+        return SchoolHomeworkOCRReconciliation(lines: result, pageLinesPreserved: pageLines.count,
+                                               overlapPairsReconciled: replaced)
+    }
+}
+
 nonisolated enum SchoolHomeworkOCRCorroborator {
     /// Merge an original and a locally enhanced Vision pass. Text disagreement always drops
     /// confidence below the proposal auto-selection threshold; unmatched second-pass lines do too.
@@ -202,7 +257,11 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
             // in the preceding block can win over BI in the current block when handwriting
             // crosses a printed row line. Horizontal week layouts share subject rows instead.
             let rowsForDay: [SubjectRow]
-            if verticalDayBlocks, let dayBlock {
+            if headers.isEmpty {
+                // With unreadable dates, the row/subject geometry is still useful;
+                // only the date stays unknown and requires parent review.
+                rowsForDay = subjectRows
+            } else if verticalDayBlocks, let dayBlock {
                 rowsForDay = subjectRows.filter { headerIndex(for: $0.line, headers: headers) == dayBlock }
             } else {
                 rowsForDay = verticalDayBlocks ? [] : subjectRows
@@ -419,7 +478,12 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
         let eligible = headers.filter { $0.y > lineY }
         guard !eligible.isEmpty else { return nil }
         if verticalDayBlocks {
-            return eligible.min { abs($0.y - lineY) < abs($1.y - lineY) }?.dayKey
+            guard let nearest = eligible.min(by: { abs($0.y - lineY) < abs($1.y - lineY) }) else { return nil }
+            // A single recognized date cannot safely label the rest of a stacked
+            // page: Vision may have missed later day headers. Keep distant rows
+            // as undated review candidates instead of assigning them to that day.
+            if headers.filter({ $0.dayKey != nil }).count == 1, abs(nearest.y - lineY) > 0.20 { return nil }
+            return nearest.dayKey
         }
         let lineX = line.region.minX + line.region.width / 2
         return eligible.min { abs($0.x - lineX) < abs($1.x - lineX) }?.dayKey

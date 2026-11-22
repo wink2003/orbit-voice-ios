@@ -18,6 +18,26 @@ private func uprightCGImage(from image: UIImage) -> CGImage? {
 
 /// Vision OCR stays on-device. A second contrast-enhanced/German-corrected pass is used as
 /// corroboration; disagreement lowers confidence so it cannot become an auto-selected proposal.
+private struct HomeworkDiaryCellRecognition: Sendable {
+    let lines: [HomeworkOCRLine]
+    let dateHeaderCount: Int
+    let subjectRowCount: Int
+    let rowCropCount: Int
+}
+
+private struct HomeworkOCRStageCounts: Sendable {
+    var fullPageVision = 0
+    var dateHeaders = 0
+    var subjectRows = 0
+    var rowCrops = 0
+    var cellVision = 0
+    var pageLinesPreserved = 0
+    var overlapPairsReconciled = 0
+    var mergedObservations = 0
+    var diaryEntries = 0
+    var reviewCards = 0
+}
+
 nonisolated private func recognizeHomeworkLines(
     _ cgImage: CGImage,
     orientation: CGImagePropertyOrientation,
@@ -64,7 +84,7 @@ nonisolated private func recognizeHomeworkDiaryCells(
     pageLines: [HomeworkOCRLine],
     languageCorrection: Bool,
     idOffset: Int
-) -> [HomeworkOCRLine] {
+) -> HomeworkDiaryCellRecognition {
     let weekday = #"(?:Mo|Montag|Di|Dienstag|Mi|Mittwoch|Do|Donnerstag|Fr|Freitag)\.?"#
     let datePattern = try? NSRegularExpression(pattern: #"^\s*(?:"# + weekday + #"\s+)?\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\s+"# + weekday + #")?\s*$"#, options: [.caseInsensitive])
     let dateHeaders = pageLines.filter { line in
@@ -74,9 +94,15 @@ nonisolated private func recognizeHomeworkDiaryCells(
         else { return false }
         return true
     }.sorted { $0.region.midY > $1.region.midY }
-    guard dateHeaders.count >= 2,
-          let top = dateHeaders.map(\.region.midY).max(),
-          let bottom = dateHeaders.map(\.region.midY).min(), top - bottom > 0.08 else { return [] }
+    let fachHeading = pageLines.first { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare("Fach") == .orderedSame }
+    // One visible date is enough to scan physical subject rows. It is not enough
+    // to assign every row on a stacked page to that date; the analyzer leaves
+    // distant rows undated for parent review when later headers were missed.
+    // If dates are unreadable, a printed Fach header still lets us scan likely
+    // diary rows. Those candidates stay undated until a parent verifies them.
+    guard !dateHeaders.isEmpty || fachHeading != nil else {
+        return HomeworkDiaryCellRecognition(lines: [], dateHeaderCount: 0, subjectRowCount: 0, rowCropCount: 0)
+    }
 
     let width = CGFloat(cgImage.width), height = CGFloat(cgImage.height)
     func crop(_ region: CGRect) -> CGImage? {
@@ -96,19 +122,26 @@ nonisolated private func recognizeHomeworkDiaryCells(
                                       pageRegion: region, idOffset: id)
     }
     func isFachRow(_ value: String) -> Bool {
-        let token = value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+        let normalized = value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized != "fach" else { return false }
+        let token = normalized
             .filter { $0.isLetter }
         return (1...12).contains(token.count)
     }
 
     var focused: [HomeworkOCRLine] = []
     var nextID = idOffset
+    var subjectRowCount = 0
+    var rowCropCount = 0
     let headers = dateHeaders.sorted { $0.region.midY > $1.region.midY }
-    for (index, header) in headers.enumerated() {
-        let blockTop = index == 0 ? max(0.01, header.region.minY - 0.005) : (headers[index - 1].region.midY + header.region.midY) / 2
-        let blockBottom = index + 1 == headers.count ? 0.01 : (header.region.midY + headers[index + 1].region.midY) / 2
+    let scanHeaders = headers.isEmpty
+        ? [HomeworkOCRLine(id: Int.min, text: "", confidence: 0, region: HomeworkOCRRegion(minX: 0, minY: 0.99, width: 0, height: 0))]
+        : headers
+    for (index, header) in scanHeaders.enumerated() {
+        let blockTop = headers.count == 1 ? 0.99 : (index == 0 ? max(0.01, header.region.minY - 0.005) : (scanHeaders[index - 1].region.midY + header.region.midY) / 2)
+        let blockBottom = index + 1 == scanHeaders.count ? 0.01 : (header.region.midY + scanHeaders[index + 1].region.midY) / 2
         guard blockTop > blockBottom else { continue }
-        let fachHeading = pageLines.first { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare("Fach") == .orderedSame }
         let fachLeft = fachHeading?.region.minX ?? 0.035
         let fachRight = max(fachLeft + 0.04, min(header.region.minX, 0.24))
         let fachRegion = CGRect(x: fachLeft, y: blockBottom, width: fachRight - fachLeft, height: blockTop - blockBottom)
@@ -133,6 +166,7 @@ nonisolated private func recognizeHomeworkDiaryCells(
         }
         let subjectRows = fachLines.filter { isFachRow($0.text) }.sorted { $0.region.midY > $1.region.midY }
         guard !subjectRows.isEmpty else { continue }
+        subjectRowCount += subjectRows.count
         focused.append(contentsOf: fachLines)
 
         for (rowIndex, row) in subjectRows.enumerated() {
@@ -144,12 +178,14 @@ nonisolated private func recognizeHomeworkDiaryCells(
             // subject labels then provide structure for multi-row continuations.
             let rowStartX = max(fachRight + 0.005, 0.15)
             let rowRegion = CGRect(x: rowStartX, y: lower, width: max(0.2, 0.855 - rowStartX), height: max(0.008, upper - lower))
+            rowCropCount += 1
             let rowLines = pass(rowRegion, id: nextID)
             nextID += max(1, rowLines.count + 1)
             focused.append(contentsOf: rowLines)
         }
     }
-    return focused
+    return HomeworkDiaryCellRecognition(lines: focused, dateHeaderCount: dateHeaders.count,
+                                        subjectRowCount: subjectRowCount, rowCropCount: rowCropCount)
 }
 
 private struct HomeworkReviewCandidate: Identifiable, Equatable {
@@ -283,6 +319,7 @@ struct SchoolHomeworkView: View {
     @State private var manualRequestId = UUID().uuidString
     @State private var photoSnapshot: OrbitHomeworkSnapshot?
     @State private var diaryAnalysis = SchoolHomeworkDiaryAnalysis(schoolYear: nil, calendarWeek: nil, pageLabel: nil, entries: [])
+    @State private var ocrStageCounts: HomeworkOCRStageCounts?
     @State private var reviewEntries: [HomeworkReviewCandidate] = []
     @State private var subject = ""
     @State private var assignment = ""
@@ -837,6 +874,22 @@ struct SchoolHomeworkView: View {
                     if reviewEntries.isEmpty {
                         ContentUnavailableView("Записів не розпізнано", systemImage: "text.viewfinder", description: Text("Можна зробити чіткіше фото або додати завдання вручну."))
                     }
+                    #if DEBUG
+                    if let counts = ocrStageCounts {
+                        DisclosureGroup("Локальна OCR-діагностика · лише лічильники") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Vision: сторінка \(counts.fullPageVision), клітинки \(counts.cellVision)")
+                                Text("Сегментація: дати \(counts.dateHeaders), Fach-рядки \(counts.subjectRows), crop-и \(counts.rowCrops)")
+                                Text("Рядків сторінки збережено \(counts.pageLinesPreserved), overlap-пар звірено \(counts.overlapPairsReconciled)")
+                                Text("Об’єднано спостережень \(counts.mergedObservations) → записи \(counts.diaryEntries) → картки \(counts.reviewCards)")
+                            }
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6)
+                        }
+                    }
+                    #endif
                     ForEach(reviewEntries) { entry in reviewEntryCard(entry) }
                     HStack(spacing: 10) {
                         TextField("Навчальний рік", text: $diarySchoolYear).textFieldStyle(.roundedBorder)
@@ -1041,7 +1094,7 @@ struct SchoolHomeworkView: View {
     }
 
     private func preparePhoto(_ data: Data, contentType: String) async {
-        photoData = data; photoContentType = contentType; photoSnapshot = nil; uprightPhotoImage = nil; photoUploadRequestId = UUID().uuidString; reviewEntries = []
+        photoData = data; photoContentType = contentType; photoSnapshot = nil; uprightPhotoImage = nil; photoUploadRequestId = UUID().uuidString; reviewEntries = []; ocrStageCounts = nil
         guard let image = UIImage(data: data), let cgImage = uprightCGImage(from: image) else { return }
         uprightPhotoImage = UIImage(cgImage: cgImage, scale: image.scale, orientation: .up)
         let orientation = CGImagePropertyOrientation.up
@@ -1053,24 +1106,36 @@ struct SchoolHomeworkView: View {
                 kCIInputContrastKey: 1.22,
                 kCIInputBrightnessKey: 0.01
             ])
-            guard let enhancedCG = CIContext(options: [.cacheIntermediates: false]).createCGImage(adjusted, from: adjusted.extent) else { return originalPage + originalCells }
+            guard let enhancedCG = CIContext(options: [.cacheIntermediates: false]).createCGImage(adjusted, from: adjusted.extent) else {
+                let reconciliation = SchoolHomeworkOCRReconciler.merge(pageLines: originalPage, cellLines: originalCells.lines)
+                var counts = HomeworkOCRStageCounts()
+                counts.fullPageVision = originalPage.count
+                counts.dateHeaders = originalCells.dateHeaderCount
+                counts.subjectRows = originalCells.subjectRowCount
+                counts.rowCrops = originalCells.rowCropCount
+                counts.cellVision = originalCells.lines.count
+                counts.pageLinesPreserved = reconciliation.pageLinesPreserved
+                counts.overlapPairsReconciled = reconciliation.overlapPairsReconciled
+                counts.mergedObservations = reconciliation.lines.count
+                return (reconciliation.lines, counts)
+            }
             let correctedPage = recognizeHomeworkLines(enhancedCG, orientation: orientation, languageCorrection: true)
             let correctedCells = recognizeHomeworkDiaryCells(enhancedCG, orientation: orientation, pageLines: correctedPage, languageCorrection: true, idOffset: 20_000)
             let pageLines = SchoolHomeworkOCRCorroborator.merge(originalPage, correctedPage)
-            let cellLines = SchoolHomeworkOCRCorroborator.merge(originalCells, correctedCells)
-            // A focused cell result supersedes an overlapping full-page observation;
-            // otherwise Vision's merged multi-row box would reintroduce the split.
-            let focusedPageLines = pageLines.filter { pageLine in
-                guard pageLine.region.minX >= 0.15 else { return true }
-                return !cellLines.contains { cellLine in
-                    let overlapX = max(0, min(pageLine.region.maxX, cellLine.region.maxX) - max(pageLine.region.minX, cellLine.region.minX))
-                    let overlapY = max(0, min(pageLine.region.maxY, cellLine.region.maxY) - max(pageLine.region.minY, cellLine.region.minY))
-                    return overlapX * overlapY >= min(pageLine.region.width * pageLine.region.height, cellLine.region.width * cellLine.region.height) * 0.35
-                }
-            }
-            return SchoolHomeworkOCRCorroborator.merge(focusedPageLines, cellLines)
+            let cellLines = SchoolHomeworkOCRCorroborator.merge(originalCells.lines, correctedCells.lines)
+            let reconciliation = SchoolHomeworkOCRReconciler.merge(pageLines: pageLines, cellLines: cellLines)
+            var counts = HomeworkOCRStageCounts()
+            counts.fullPageVision = originalPage.count + correctedPage.count
+            counts.dateHeaders = max(originalCells.dateHeaderCount, correctedCells.dateHeaderCount)
+            counts.subjectRows = originalCells.subjectRowCount + correctedCells.subjectRowCount
+            counts.rowCrops = originalCells.rowCropCount + correctedCells.rowCropCount
+            counts.cellVision = originalCells.lines.count + correctedCells.lines.count
+            counts.pageLinesPreserved = reconciliation.pageLinesPreserved
+            counts.overlapPairsReconciled = reconciliation.overlapPairsReconciled
+            counts.mergedObservations = reconciliation.lines.count
+            return (reconciliation.lines, counts)
         }.value
-        diaryAnalysis = SchoolHomeworkDiaryAnalyzer.analyze(recognized)
+        diaryAnalysis = SchoolHomeworkDiaryAnalyzer.analyze(recognized.0)
         diarySchoolYear = diaryAnalysis.schoolYear ?? ""
         diaryWeek = diaryAnalysis.calendarWeek.map(String.init) ?? ""
         diaryPageLabel = diaryAnalysis.pageLabel ?? ""
@@ -1103,10 +1168,14 @@ struct SchoolHomeworkView: View {
                 clientRequestId: UUID().uuidString
             )
         }
+        var stageCounts = recognized.1
+        stageCounts.diaryEntries = diaryAnalysis.entries.count
+        stageCounts.reviewCards = reviewEntries.count
+        ocrStageCounts = stageCounts
     }
 
     private func clearPhotoDraft() {
-        photoData = nil; photoSnapshot = nil; uprightPhotoImage = nil; reviewEntries = []; selectedPhoto = nil
+        photoData = nil; photoSnapshot = nil; uprightPhotoImage = nil; reviewEntries = []; ocrStageCounts = nil; selectedPhoto = nil
         diaryAnalysis = SchoolHomeworkDiaryAnalysis(schoolYear: nil, calendarWeek: nil, pageLabel: nil, entries: [])
         photoUploadRequestId = UUID().uuidString
     }
@@ -1128,7 +1197,7 @@ struct SchoolHomeworkView: View {
                 let region = String(format: "vision-unit-rect:%.4f,%.4f,%.4f,%.4f", entry.sourceRegion.minX, entry.sourceRegion.minY, entry.sourceRegion.width, entry.sourceRegion.height)
                 try await store.propose(snapshot: photoSnapshot, subject: cleanSubject, text: cleanText, lessonDate: entry.lessonDate, dueDate: entry.dueDate, changeKind: entry.changeKind, matchedTaskId: matched?.id, expectedRevision: matched?.revision, sourceRegion: region, confidence: entry.confidence, clientRequestId: entry.clientRequestId)
             }
-            self.photoData = nil; self.photoSnapshot = nil; self.uprightPhotoImage = nil; reviewEntries = []; selectedPhoto = nil; showReviewForm = false
+            self.photoData = nil; self.photoSnapshot = nil; self.uprightPhotoImage = nil; reviewEntries = []; ocrStageCounts = nil; selectedPhoto = nil; showReviewForm = false
             photoUploadRequestId = UUID().uuidString
             await store.load()
         } catch { store.error = "Фото збережене, але не всі записи вдалося надіслати. Оновіть список і перевірте пропозиції." }
