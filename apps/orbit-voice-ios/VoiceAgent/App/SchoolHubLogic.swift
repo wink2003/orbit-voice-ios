@@ -42,6 +42,17 @@ nonisolated struct SchoolHomeworkOCRLine: Identifiable, Equatable, Sendable {
     let text: String
     let confidence: Double
     let region: SchoolHomeworkOCRRegion
+    let sourceText: String
+    let alternateText: String?
+
+    init(id: Int, text: String, confidence: Double, region: SchoolHomeworkOCRRegion, sourceText: String? = nil, alternateText: String? = nil) {
+        self.id = id
+        self.text = text
+        self.confidence = confidence
+        self.region = region
+        self.sourceText = sourceText ?? text
+        self.alternateText = alternateText
+    }
 }
 
 nonisolated enum SchoolHomeworkOCRCorroborator {
@@ -65,18 +76,18 @@ nonisolated enum SchoolHomeworkOCRCorroborator {
         for alternate in secondary {
             guard let index = result.indices.max(by: { overlap(result[$0].region, alternate.region) < overlap(result[$1].region, alternate.region) }),
                   overlap(result[index].region, alternate.region) >= 0.35 else {
-                result.append(SchoolHomeworkOCRLine(id: nextID, text: alternate.text, confidence: min(alternate.confidence, 0.54), region: alternate.region))
+                result.append(SchoolHomeworkOCRLine(id: nextID, text: alternate.text, confidence: min(alternate.confidence, 0.54), region: alternate.region, sourceText: alternate.sourceText, alternateText: alternate.alternateText))
                 nextID += 1
                 continue
             }
             let original = result[index]
             if normalized(original.text) == normalized(alternate.text) {
                 if alternate.confidence > original.confidence {
-                    result[index] = SchoolHomeworkOCRLine(id: original.id, text: alternate.text, confidence: alternate.confidence, region: original.region)
+                    result[index] = SchoolHomeworkOCRLine(id: original.id, text: alternate.text, confidence: alternate.confidence, region: original.region, sourceText: original.sourceText, alternateText: original.alternateText)
                 }
             } else {
                 let chosen = alternate.confidence > original.confidence ? alternate : original
-                result[index] = SchoolHomeworkOCRLine(id: original.id, text: chosen.text, confidence: min(chosen.confidence, 0.54), region: original.region)
+                result[index] = SchoolHomeworkOCRLine(id: original.id, text: chosen.text, confidence: min(chosen.confidence, 0.54), region: original.region, sourceText: original.sourceText, alternateText: alternate.text)
             }
         }
         return result
@@ -94,6 +105,25 @@ nonisolated struct SchoolHomeworkDiaryEntry: Identifiable, Equatable, Sendable {
     let confidence: [String: Double]
     let needsReview: Bool
     let reviewReason: String?
+    let dueCueNeedsReview: Bool
+    let originalOCRText: String
+    let ocrAlternatives: [String]
+
+    init(id: Int, subject: String?, assignmentText: String, lessonDate: String?, dueDate: String?, sourceLineIDs: [Int], sourceRegion: SchoolHomeworkOCRRegion, confidence: [String: Double], needsReview: Bool, reviewReason: String?, dueCueNeedsReview: Bool = false, originalOCRText: String = "", ocrAlternatives: [String] = []) {
+        self.id = id
+        self.subject = subject
+        self.assignmentText = assignmentText
+        self.lessonDate = lessonDate
+        self.dueDate = dueDate
+        self.sourceLineIDs = sourceLineIDs
+        self.sourceRegion = sourceRegion
+        self.confidence = confidence
+        self.needsReview = needsReview
+        self.reviewReason = reviewReason
+        self.dueCueNeedsReview = dueCueNeedsReview
+        self.originalOCRText = originalOCRText
+        self.ocrAlternatives = ocrAlternatives
+    }
 }
 
 nonisolated struct SchoolHomeworkDiaryAnalysis: Equatable, Sendable {
@@ -137,9 +167,12 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
     private struct ContentLine {
         let line: SchoolHomeworkOCRLine
         let dayKey: String?
+        let dayBlockIndex: Int?
         let subjectRow: SubjectRow?
         let explicitDueDate: String?
+        let correctedDueCue: Bool
         let text: String
+        let sourceText: String
     }
 
     static func analyze(_ lines: [SchoolHomeworkOCRLine]) -> SchoolHomeworkDiaryAnalysis {
@@ -164,11 +197,23 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
             // The first column is narrow. Header dates and subject labels have already been removed.
             guard line.region.minX >= 0.16, text.count > 1 else { return nil }
             let day = headerKey(for: line, headers: headers, verticalDayBlocks: verticalDayBlocks)
-            let nearest = subjectRows.min { abs($0.y - line.region.midY) < abs($1.y - line.region.midY) }
-            let row = nearest.flatMap { abs($0.y - line.region.midY) <= 0.075 ? $0 : nil }
+            let dayBlock = verticalDayBlocks ? headerIndex(for: line, headers: headers) : nil
+            // Subject labels are scoped to this physical day. Without this, a nearby D/Deutsch
+            // in the preceding block can win over BI in the current block when handwriting
+            // crosses a printed row line. Horizontal week layouts share subject rows instead.
+            let rowsForDay: [SubjectRow]
+            if verticalDayBlocks, let dayBlock {
+                rowsForDay = subjectRows.filter { headerIndex(for: $0.line, headers: headers) == dayBlock }
+            } else {
+                rowsForDay = verticalDayBlocks ? [] : subjectRows
+            }
+            let nearest = rowsForDay.min { abs($0.y - line.region.midY) < abs($1.y - line.region.midY) }
+            let tolerance = subjectRowTolerance(rowsForDay)
+            let row = nearest.flatMap { abs($0.y - line.region.midY) <= tolerance ? $0 : nil }
             let due = explicitDueDate(in: text)
             let assignment = removingExplicitDuePhrase(text)
-            return ContentLine(line: line, dayKey: day, subjectRow: row, explicitDueDate: due, text: assignment)
+            let correctedDueCue = normalize(text).range(of: #"\b3ib\b"#, options: .regularExpression) != nil && due != nil
+            return ContentLine(line: line, dayKey: day, dayBlockIndex: dayBlock, subjectRow: row, explicitDueDate: due, correctedDueCue: correctedDueCue, text: assignment, sourceText: line.sourceText)
         }
 
         // A line containing only an explicit “bis …” date belongs with the nearest task
@@ -189,14 +234,19 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
             var confidence: [String: Double] = ["assignmentText": assignmentConfidence]
             if let subjectConfidence { confidence["subject"] = subjectConfidence }
             if let dateConfidence { confidence["lessonDate"] = dateConfidence }
-            let minX = ordered.map { $0.line.region.minX }.min() ?? 0
-            let minY = ordered.map { $0.line.region.minY }.min() ?? 0
-            let maxX = ordered.map { $0.line.region.maxX }.max() ?? minX
-            let maxY = ordered.map { $0.line.region.maxY }.max() ?? minY
+            if let dueLine = ordered.first(where: { $0.explicitDueDate != nil }) { confidence["dueDate"] = dueLine.line.confidence }
+            // Include the subject column and every linked handwriting line in the review crop.
+            let sourceRegions = ordered.map { $0.line.region } + ordered.compactMap { $0.subjectRow?.line.region }
+            let minX = sourceRegions.map(\.minX).min() ?? 0
+            let minY = sourceRegions.map(\.minY).min() ?? 0
+            let maxX = sourceRegions.map(\.maxX).max() ?? minX
+            let maxY = sourceRegions.map(\.maxY).max() ?? minY
             let explicitDue = ordered.compactMap(\.explicitDueDate).first
+            let dueCueNeedsReview = ordered.contains(where: \.correctedDueCue)
             let needsReview = assignmentConfidence < 0.55 || subjectRow == nil || dateHeader == nil
             let reason: String?
             if assignmentConfidence < 0.55 { reason = "Нечіткий текст" }
+            else if dueCueNeedsReview { reason = "Перевірте локальне прочитання дедлайну" }
             else if subjectRow == nil { reason = "Не вдалося надійно визначити предмет" }
             else if dateHeader == nil { reason = "Не вдалося надійно визначити дату уроку" }
             else { reason = nil }
@@ -210,7 +260,10 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
                 sourceRegion: SchoolHomeworkOCRRegion(minX: minX, minY: minY, width: max(0, maxX - minX), height: max(0, maxY - minY)),
                 confidence: confidence,
                 needsReview: needsReview,
-                reviewReason: reason
+                reviewReason: reason,
+                dueCueNeedsReview: dueCueNeedsReview,
+                originalOCRText: ordered.map(\.sourceText).joined(separator: " "),
+                ocrAlternatives: Array(Set(ordered.compactMap { $0.line.alternateText }.filter { !$0.isEmpty })).sorted()
             )
         }
         entries.sort {
@@ -258,7 +311,7 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
     }
 
     private static func subjectRow(for line: SchoolHomeworkOCRLine) -> SubjectRow? {
-        guard line.region.minX < 0.30 else { return nil }
+        guard line.region.minX < 0.30, line.region.minX + line.region.width / 2 < 0.34 else { return nil }
         let value = normalize(line.text).trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         guard !value.isEmpty, value.count <= 12 else { return nil }
         guard let subject = subjectName(value) else { return nil }
@@ -318,7 +371,8 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
     }
 
     private static func explicitDate(in text: String) -> String? {
-        guard let match = firstMatch(#"(?<!\d)(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?(?!\d)"#, in: text),
+        let dateOCR = text.replacingOccurrences(of: #"(?<=\d):(?=\d)"#, with: ".", options: .regularExpression)
+        guard let match = firstMatch(#"(?<!\d)(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?(?!\d)"#, in: dateOCR),
               match.count >= 3,
               let day = Int(match[1]), let month = Int(match[2]), match.count >= 4, !match[3].isEmpty else { return nil }
         var year = Int(match[3]) ?? 0
@@ -332,12 +386,13 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
     }
 
     private static func explicitDueDate(in text: String) -> String? {
-        guard normalize(text).range(of: #"\b(bis|abgabe\s+bis|abgeben\s+bis|fallig\s+am)\b"#, options: .regularExpression) != nil else { return nil }
+        let cueText = normalize(text).replacingOccurrences(of: #"\b3ib\b"#, with: "bis", options: .regularExpression)
+        guard cueText.range(of: #"\b(bis|abgabe\s+bis|abgeben\s+bis|fallig\s+am)\b"#, options: .regularExpression) != nil else { return nil }
         return explicitDate(in: text)
     }
 
     private static func removingExplicitDuePhrase(_ text: String) -> String {
-        guard let range = text.range(of: #"(?i)\b(bis|abgabe\s+bis|abgeben\s+bis|fällig\s+am)\s+(?:den\s+)?\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?"#, options: .regularExpression) else { return text }
+        guard let range = text.range(of: #"(?i)\b(bis|3ib|abgabe\s+bis|abgeben\s+bis|fällig\s+am)\s+(?:den\s+)?\d{1,2}[./:]\d{1,2}(?:[./:]\d{2,4})?"#, options: .regularExpression) else { return text }
         return (String(text[..<range.lowerBound]) + " " + String(text[range.upperBound...]))
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -360,11 +415,25 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
         return eligible.min { abs($0.x - lineX) < abs($1.x - lineX) }?.dayKey
     }
 
+    private static func headerIndex(for line: SchoolHomeworkOCRLine, headers: [DayHeader]) -> Int? {
+        let eligible = headers.enumerated().filter { $0.element.y > line.region.midY }
+        return eligible.min { abs($0.element.y - line.region.midY) < abs($1.element.y - line.region.midY) }?.offset
+    }
+
+    private static func subjectRowTolerance(_ rows: [SubjectRow]) -> Double {
+        let centers = Array(Set(rows.map(\.y))).sorted(by: >)
+        let gaps = zip(centers, centers.dropFirst()).map { $0.0 - $0.1 }.filter { $0 > 0.002 }.sorted()
+        guard !gaps.isEmpty else { return 0.035 }
+        let median = gaps[gaps.count / 2]
+        return min(0.075, max(0.012, median * 0.62))
+    }
+
     private static func groupingKey(for item: ContentLine, among content: [ContentLine]) -> String {
         let ownRowID = item.subjectRow?.line.id
         if item.text.isEmpty, item.explicitDueDate != nil, let subject = item.subjectRow?.label,
            let parent = content.filter({ candidate in
                !candidate.text.isEmpty && candidate.dayKey == item.dayKey &&
+               candidate.dayBlockIndex == item.dayBlockIndex &&
                candidate.subjectRow?.label == subject && candidate.subjectRow?.line.id != ownRowID &&
                abs(candidate.line.region.midY - item.line.region.midY) <= 0.075
            }).min(by: { abs($0.line.region.midY - item.line.region.midY) < abs($1.line.region.midY - item.line.region.midY) }) {
