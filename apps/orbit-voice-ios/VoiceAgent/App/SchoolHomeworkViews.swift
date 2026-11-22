@@ -21,7 +21,9 @@ private func uprightCGImage(from image: UIImage) -> CGImage? {
 nonisolated private func recognizeHomeworkLines(
     _ cgImage: CGImage,
     orientation: CGImagePropertyOrientation,
-    languageCorrection: Bool
+    languageCorrection: Bool,
+    pageRegion: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
+    idOffset: Int = 0
 ) -> [HomeworkOCRLine] {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
@@ -33,17 +35,121 @@ nonisolated private func recognizeHomeworkLines(
         return (request.results ?? []).enumerated().compactMap { index, observation in
             guard let candidate = observation.topCandidates(1).first else { return nil }
             let box = observation.boundingBox
+            let pageBox = CGRect(
+                x: pageRegion.minX + box.minX * pageRegion.width,
+                y: pageRegion.minY + box.minY * pageRegion.height,
+                width: box.width * pageRegion.width,
+                height: box.height * pageRegion.height
+            )
             return HomeworkOCRLine(
-                id: index,
+                id: idOffset + index,
                 text: candidate.string,
                 confidence: Double(candidate.confidence),
-                region: HomeworkOCRRegion(minX: Double(box.minX), minY: Double(box.minY), width: Double(box.width), height: Double(box.height)),
+                region: HomeworkOCRRegion(minX: Double(pageBox.minX), minY: Double(pageBox.minY), width: Double(pageBox.width), height: Double(pageBox.height)),
                 sourceText: candidate.string
             )
         }
     } catch {
         return []
     }
+}
+
+/// First pass reads only the printed day headers. Then each physical day is
+/// split into its narrow Fach column and individual ruled rows before focused
+/// local Vision OCR. Full-page OCR remains the fallback for column-style and
+/// non-diary layouts. Coordinates stay normalized to the original photo.
+nonisolated private func recognizeHomeworkDiaryCells(
+    _ cgImage: CGImage,
+    orientation: CGImagePropertyOrientation,
+    pageLines: [HomeworkOCRLine],
+    languageCorrection: Bool,
+    idOffset: Int
+) -> [HomeworkOCRLine] {
+    let weekday = #"(?:Mo|Montag|Di|Dienstag|Mi|Mittwoch|Do|Donnerstag|Fr|Freitag)\.?"#
+    let datePattern = try? NSRegularExpression(pattern: #"^\s*(?:"# + weekday + #"\s+)?\d{1,2}[./]\d{1,2}[./]\d{2,4}(?:\s+"# + weekday + #")?\s*$"#, options: [.caseInsensitive])
+    let dateHeaders = pageLines.filter { line in
+        guard line.region.minX < 0.35,
+              let datePattern,
+              datePattern.firstMatch(in: line.text, range: NSRange(line.text.startIndex..., in: line.text)) != nil
+        else { return false }
+        return true
+    }.sorted { $0.region.midY > $1.region.midY }
+    guard dateHeaders.count >= 2,
+          let top = dateHeaders.map(\.region.midY).max(),
+          let bottom = dateHeaders.map(\.region.midY).min(), top - bottom > 0.08 else { return [] }
+
+    let width = CGFloat(cgImage.width), height = CGFloat(cgImage.height)
+    func crop(_ region: CGRect) -> CGImage? {
+        let clamped = CGRect(x: max(0, region.minX), y: max(0, region.minY),
+                             width: min(1, region.maxX) - max(0, region.minX),
+                             height: min(1, region.maxY) - max(0, region.minY))
+        guard clamped.width > 0.01, clamped.height > 0.005 else { return nil }
+        let pixels = CGRect(x: clamped.minX * width,
+                            y: (1 - clamped.maxY) * height,
+                            width: clamped.width * width,
+                            height: clamped.height * height).integral
+        return cgImage.cropping(to: pixels)
+    }
+    func pass(_ region: CGRect, id: Int) -> [HomeworkOCRLine] {
+        guard let image = crop(region) else { return [] }
+        return recognizeHomeworkLines(image, orientation: orientation, languageCorrection: languageCorrection,
+                                      pageRegion: region, idOffset: id)
+    }
+    func isFachRow(_ value: String) -> Bool {
+        let token = value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+            .filter { $0.isLetter }
+        return (1...12).contains(token.count)
+    }
+
+    var focused: [HomeworkOCRLine] = []
+    var nextID = idOffset
+    let headers = dateHeaders.sorted { $0.region.midY > $1.region.midY }
+    for (index, header) in headers.enumerated() {
+        let blockTop = index == 0 ? max(0.01, header.region.minY - 0.005) : (headers[index - 1].region.midY + header.region.midY) / 2
+        let blockBottom = index + 1 == headers.count ? 0.01 : (header.region.midY + headers[index + 1].region.midY) / 2
+        guard blockTop > blockBottom else { continue }
+        let fachHeading = pageLines.first { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare("Fach") == .orderedSame }
+        let fachLeft = fachHeading?.region.minX ?? 0.035
+        let fachRight = max(fachLeft + 0.04, min(header.region.minX, 0.24))
+        let fachRegion = CGRect(x: fachLeft, y: blockBottom, width: fachRight - fachLeft, height: blockTop - blockBottom)
+        let fachObservations = pass(fachRegion, id: nextID)
+        nextID += max(1, fachObservations.count + 1)
+        var fachLines: [HomeworkOCRLine] = []
+        for observation in fachObservations {
+            let visualRows = observation.text.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            guard visualRows.count > 1 else { fachLines.append(observation); continue }
+            let rowHeight = observation.region.height / Double(visualRows.count)
+            for (index, text) in visualRows.enumerated() {
+                let bottomIndex = visualRows.count - index - 1
+                fachLines.append(HomeworkOCRLine(
+                    id: nextID, text: text, confidence: observation.confidence,
+                    region: HomeworkOCRRegion(minX: observation.region.minX,
+                                              minY: observation.region.minY + Double(bottomIndex) * rowHeight,
+                                              width: observation.region.width, height: rowHeight),
+                    sourceText: observation.sourceText
+                ))
+                nextID += 1
+            }
+        }
+        let subjectRows = fachLines.filter { isFachRow($0.text) }.sorted { $0.region.midY > $1.region.midY }
+        guard !subjectRows.isEmpty else { continue }
+        focused.append(contentsOf: fachLines)
+
+        for (rowIndex, row) in subjectRows.enumerated() {
+            let upper = rowIndex == 0 ? (subjectRows.count == 1 ? blockTop : min(blockTop, row.region.midY + (row.region.midY - subjectRows[1].region.midY) / 2)) :
+                (subjectRows[rowIndex - 1].region.midY + row.region.midY) / 2
+            let lower = rowIndex + 1 == subjectRows.count ? (subjectRows.count == 1 ? blockBottom : max(blockBottom, row.region.midY - (row.region.midY - subjectRows[rowIndex - 1].region.midY) / 2)) :
+                (row.region.midY + subjectRows[rowIndex + 1].region.midY) / 2
+            // Keep each OCR request inside one physical subject row. Repeated
+            // subject labels then provide structure for multi-row continuations.
+            let rowStartX = max(fachRight + 0.005, 0.15)
+            let rowRegion = CGRect(x: rowStartX, y: lower, width: max(0.2, 0.855 - rowStartX), height: max(0.008, upper - lower))
+            let rowLines = pass(rowRegion, id: nextID)
+            nextID += max(1, rowLines.count + 1)
+            focused.append(contentsOf: rowLines)
+        }
+    }
+    return focused
 }
 
 private struct HomeworkReviewCandidate: Identifiable, Equatable {
@@ -591,7 +697,7 @@ struct SchoolHomeworkView: View {
         let days = dates.count
         let entries = reviewEntries.count
         return entries == 0 ? "Не вдалося скласти записи. Можна додати вручну або сфотографувати сторінку ще раз." :
-            "Знайдено \(entries) \(entries == 1 ? "запис" : "записи") за \(days) \(days == 1 ? "датою" : "датами"). Перевірте картки поруч з фото."
+            "Розпізнано записів: \(entries) · дат: \(days). Перевірте картки поруч з фото."
     }
 
     private func homeworkProposalCard(_ proposal: OrbitHomeworkProposal) -> some View {
@@ -940,15 +1046,29 @@ struct SchoolHomeworkView: View {
         uprightPhotoImage = UIImage(cgImage: cgImage, scale: image.scale, orientation: .up)
         let orientation = CGImagePropertyOrientation.up
         let recognized = await Task.detached(priority: .userInitiated) {
-            let original = recognizeHomeworkLines(cgImage, orientation: orientation, languageCorrection: false)
+            let originalPage = recognizeHomeworkLines(cgImage, orientation: orientation, languageCorrection: false)
+            let originalCells = recognizeHomeworkDiaryCells(cgImage, orientation: orientation, pageLines: originalPage, languageCorrection: false, idOffset: 10_000)
             let adjusted = CIImage(cgImage: cgImage).applyingFilter("CIColorControls", parameters: [
                 kCIInputSaturationKey: 0.0,
                 kCIInputContrastKey: 1.22,
                 kCIInputBrightnessKey: 0.01
             ])
-            guard let enhancedCG = CIContext(options: [.cacheIntermediates: false]).createCGImage(adjusted, from: adjusted.extent) else { return original }
-            let corrected = recognizeHomeworkLines(enhancedCG, orientation: orientation, languageCorrection: true)
-            return SchoolHomeworkOCRCorroborator.merge(original, corrected)
+            guard let enhancedCG = CIContext(options: [.cacheIntermediates: false]).createCGImage(adjusted, from: adjusted.extent) else { return originalPage + originalCells }
+            let correctedPage = recognizeHomeworkLines(enhancedCG, orientation: orientation, languageCorrection: true)
+            let correctedCells = recognizeHomeworkDiaryCells(enhancedCG, orientation: orientation, pageLines: correctedPage, languageCorrection: true, idOffset: 20_000)
+            let pageLines = SchoolHomeworkOCRCorroborator.merge(originalPage, correctedPage)
+            let cellLines = SchoolHomeworkOCRCorroborator.merge(originalCells, correctedCells)
+            // A focused cell result supersedes an overlapping full-page observation;
+            // otherwise Vision's merged multi-row box would reintroduce the split.
+            let focusedPageLines = pageLines.filter { pageLine in
+                guard pageLine.region.minX >= 0.15 else { return true }
+                return !cellLines.contains { cellLine in
+                    let overlapX = max(0, min(pageLine.region.maxX, cellLine.region.maxX) - max(pageLine.region.minX, cellLine.region.minX))
+                    let overlapY = max(0, min(pageLine.region.maxY, cellLine.region.maxY) - max(pageLine.region.minY, cellLine.region.minY))
+                    return overlapX * overlapY >= min(pageLine.region.width * pageLine.region.height, cellLine.region.width * cellLine.region.height) * 0.35
+                }
+            }
+            return SchoolHomeworkOCRCorroborator.merge(focusedPageLines, cellLines)
         }.value
         diaryAnalysis = SchoolHomeworkDiaryAnalyzer.analyze(recognized)
         diarySchoolYear = diaryAnalysis.schoolYear ?? ""

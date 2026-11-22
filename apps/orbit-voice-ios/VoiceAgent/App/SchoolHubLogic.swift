@@ -243,7 +243,8 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
             let maxY = sourceRegions.map(\.maxY).max() ?? minY
             let explicitDue = ordered.compactMap(\.explicitDueDate).first
             let dueCueNeedsReview = ordered.contains(where: \.correctedDueCue)
-            let needsReview = assignmentConfidence < 0.55 || subjectRow == nil || dateHeader == nil
+            let unresolvedContinuation = ordered.count > 1 && ordered.contains { $0.subjectRow == nil }
+            let needsReview = assignmentConfidence < 0.55 || subjectRow == nil || dateHeader == nil || unresolvedContinuation
             let reason: String?
             if assignmentConfidence < 0.55 { reason = "Нечіткий текст" }
             else if dueCueNeedsReview { reason = "Перевірте локальне прочитання дедлайну" }
@@ -438,22 +439,21 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
     }
 
     private static func groupingKey(for item: ContentLine, among content: [ContentLine]) -> String {
-        let ownRowID = item.subjectRow?.line.id
-        // Resolve physical continuation before interpreting OCR content. Repeated
-        // same-subject slots within one day can be crossed by a handwritten entry.
-        if let subject = item.subjectRow?.label,
-           let parent = content.filter({ candidate in
+        // Resolve physical continuation before interpreting OCR content. A task
+        // may occupy one cell or spill into the next same-day row; do not require
+        // the repeated Fach abbreviation or a successfully read "Bis" cue.
+        if let parent = content.filter({ candidate in
                candidate.line.id != item.line.id && candidate.dayKey == item.dayKey &&
                candidate.dayBlockIndex == item.dayBlockIndex &&
-               candidate.subjectRow?.label == subject && candidate.subjectRow?.line.id != ownRowID &&
+               (candidate.subjectRow?.label == item.subjectRow?.label || candidate.subjectRow == nil || item.subjectRow == nil) &&
                abs(candidate.line.region.midY - item.line.region.midY) <= 0.075 &&
                abs((candidate.subjectRow?.y ?? candidate.line.region.midY) - (item.subjectRow?.y ?? item.line.region.midY)) <= 0.075
            }).min(by: { abs($0.line.region.midY - item.line.region.midY) < abs($1.line.region.midY - item.line.region.midY) }) {
             let physicalRows = [item.subjectRow, parent.subjectRow].compactMap { $0 }
-            let stableRowID = physicalRows.min { $0.y > $1.y }?.line.id
-            return "\(item.dayKey ?? "undated")|\(stableRowID?.description ?? "unmatched-\(parent.line.id)")"
+            let stableRowID = physicalRows.min { $0.y > $1.y }?.line.id ?? min(item.line.id, parent.line.id)
+            return "\(item.dayKey ?? "undated")|\(stableRowID)"
         }
-        return "\(item.dayKey ?? "undated")|\(ownRowID?.description ?? "unmatched-\(item.line.id)")"
+        return "\(item.dayKey ?? "undated")|\(item.subjectRow?.line.id ?? item.line.id)"
     }
 
     private static func isPageMetadata(_ text: String) -> Bool {
