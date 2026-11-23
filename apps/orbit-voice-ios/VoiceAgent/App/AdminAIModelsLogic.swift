@@ -13,8 +13,10 @@ struct AIModelRef: Decodable, Equatable {
 struct AIModelUsage: Decodable, Equatable {
     let calls: Int
     let ok: Int
+    /// Always an ESTIMATE (tokens x list price). `costKind` tells what that means: "free_tier" = the owner verified a free plan, the real charge is $0.
     let cost: Double
     let p95: Int?
+    var costKind: String? = nil
 }
 
 struct AIModelTask: Decodable, Equatable, Identifiable {
@@ -131,10 +133,19 @@ enum AdminAIModelsLogic {
         return main + " → " + fallbacks.map { $0.model ?? $0.name ?? "—" }.joined(separator: " → ")
     }
 
+    /// Fact vs estimate: the figure is never presented as an invoice. Older servers send no `costKind`: unchanged text.
+    static func costText(_ usage: AIModelUsage) -> String {
+        switch usage.costKind {
+        case "free_tier": return "free tier · за прайсом ≈\(money(usage.cost))"
+        case "estimate": return "≈\(money(usage.cost)) (оцінка)"
+        default: return money(usage.cost)
+        }
+    }
+
     static func usageText(_ usage: AIModelUsage) -> String {
         guard usage.calls > 0 else { return "за 7 днів викликів не було" }
         let percent = Int((Double(usage.ok) / Double(usage.calls) * 100).rounded())
-        var parts = ["\(usage.calls) викликів", "\(percent)% успішно", money(usage.cost)]
+        var parts = ["\(usage.calls) викликів", "\(percent)% успішно", costText(usage)]
         if let p95 = usage.p95 { parts.append("p95 \(p95 / 1000) с") }
         return parts.joined(separator: " · ")
     }
