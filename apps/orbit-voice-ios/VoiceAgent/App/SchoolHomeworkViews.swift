@@ -325,6 +325,7 @@ struct SchoolHomeworkView: View {
     @State private var visionSuggestions: [Int: String] = [:]
     @State private var visionRequests: Set<Int> = []
     @State private var visionErrors: [Int: String] = [:]
+    @State private var visionConsentEntry: Int?
     @State private var subject = ""
     @State private var assignment = ""
     @State private var lessonDate = ""
@@ -911,6 +912,16 @@ struct SchoolHomeworkView: View {
             .navigationTitle("Перевірка щоденника")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Готово") { showReviewForm = false } } }
+            .confirmationDialog("Передати handwriting crop у Cloudflare AI?", isPresented: Binding(get: { visionConsentEntry != nil }, set: { if !$0 { visionConsentEntry = nil } }), titleVisibility: .visible) {
+                Button("Надіслати фрагмент") {
+                    guard let id = visionConsentEntry, let entry = reviewEntries.first(where: { $0.id == id }) else { return }
+                    visionConsentEntry = nil
+                    Task { await requestHomeworkTranscription(for: entry) }
+                }
+                Button("Скасувати", role: .cancel) { visionConsentEntry = nil }
+            } message: {
+                Text("Надсилається лише обрізаний рукописний рядок, без сторінки, дати, Fach чи локального OCR. Перевірте оригінал: якщо тут є ім’я, пароль або інші особисті дані, скасуйте. Результат буде лише чернеткою для батьківської перевірки.")
+            }
         }.presentationDetents([.large])
     }
 
@@ -960,7 +971,7 @@ struct SchoolHomeworkView: View {
                 }.padding(10).background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
             } else {
                 Button {
-                    Task { await requestHomeworkTranscription(for: entry) }
+                    visionConsentEntry = entry.id
                 } label: {
                     if visionRequests.contains(entry.id) { ProgressView().frame(maxWidth: .infinity) }
                     else { Label("Надіслати фрагмент почерку в Cloudflare AI", systemImage: "hand.raised") }
@@ -1051,6 +1062,10 @@ struct SchoolHomeworkView: View {
     }
 
     private func requestHomeworkTranscription(for entry: HomeworkReviewCandidate) async {
+        guard !SchoolHomeworkVisionCrop.containsCredentialLikeText(entry.originalOCRText) else {
+            visionErrors[entry.id] = "Фрагмент не надіслано: локальний OCR помітив згадку логіна, пароля або коду доступу."
+            return
+        }
         guard let crop = handwritingCrop(for: entry), let jpeg = crop.jpegData(compressionQuality: 0.82), jpeg.count <= 512 * 1024 else {
             visionErrors[entry.id] = "Не вдалося безпечно підготувати фрагмент. Скористайтеся локальним OCR або відредагуйте вручну."
             return

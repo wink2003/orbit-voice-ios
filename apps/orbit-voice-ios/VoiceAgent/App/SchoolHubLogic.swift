@@ -46,6 +46,10 @@ nonisolated enum SchoolHomeworkVisionCrop {
         guard minX < source.maxX, source.minY < source.maxY else { return nil }
         return SchoolHomeworkOCRRegion(minX: minX, minY: source.minY, width: source.maxX - minX, height: source.height)
     }
+
+    static func containsCredentialLikeText(_ text: String) -> Bool {
+        text.range(of: #"\b(password|passwort|kennwort|benutzername|username|zugangscode|access\s*code|login[- ]?code|pin)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
 }
 
 nonisolated struct SchoolHomeworkOCRLine: Identifiable, Equatable, Sendable {

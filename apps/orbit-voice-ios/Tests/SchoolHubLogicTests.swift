@@ -583,6 +583,8 @@ struct SchoolHubLogicTests {
         )
         precondition(remoteCrop.map { abs($0.minX - 0.18) < 0.0001 && abs($0.maxX - 0.86) < 0.0001 && abs($0.minY - 0.41) < 0.0001 && abs($0.maxY - 0.47) < 0.0001 } == true, "Vision crop excludes the date and Fach columns and stays within the segmented entry bounds")
         precondition(SchoolHomeworkVisionCrop.region(for: SchoolHomeworkOCRRegion(minX: 0.08, minY: 0.41, width: 0.07, height: 0.06), writingColumnMinX: 0.18) == nil, "a subject-column-only region is never sent for transcription")
+        precondition(SchoolHomeworkVisionCrop.containsCredentialLikeText("UCS Benutzername und Passwort"), "locally recognized credential-related rows are held back from the external provider")
+        precondition(!SchoolHomeworkVisionCrop.containsCredentialLikeText("HA: Wochenplan, Nr. 2–4"), "ordinary homework remains eligible for explicit crop transcription")
         precondition(SchoolHomeworkTextMatcher.similarity("", "Mathematik") == 0, "empty OCR never matches")
 
         let handwritingRegion = SchoolHomeworkOCRRegion(minX: 0.2, minY: 0.3, width: 0.4, height: 0.03)
