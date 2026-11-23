@@ -681,6 +681,7 @@ struct SchoolHubLogicTests {
         precondition(diaryRegression?.assignmentText.contains("18.11") == false && diaryRegression?.originalOCRText.contains("3ib 18.11:2026") == true, "clean task text and source OCR remain distinguishable")
         precondition(diaryRegression?.dueCueNeedsReview == true && diaryRegression?.needsReview == false, "corrected deadline cue is proposed separately and held for parent review without disabling duplicate matching")
         precondition((diaryRegression?.sourceRegion.minX ?? 1) < 0.1, "the review source region includes the subject column with both handwriting rows")
+        precondition((diaryRegression?.assignmentRegion.minX ?? 0) >= 0.16 && (diaryRegression?.assignmentRegion.maxY ?? 0) - (diaryRegression?.assignmentRegion.minY ?? 1) > 0.02, "remote transcription geometry covers the two linked handwriting rows while excluding Fach")
         precondition(photographedPage.entries.filter { $0.subject == "Biologie" }.count == 1, "repeated BI row label does not create a duplicate task")
         let nearbyDeutsch = photographedPage.entries.first { $0.assignmentText.contains("next chapter") }
         precondition(nearbyDeutsch?.subject == "Deutsch" && nearbyDeutsch?.lessonDate == "2026-11-18", "a distinct adjacent subject row keeps its own assignment")
