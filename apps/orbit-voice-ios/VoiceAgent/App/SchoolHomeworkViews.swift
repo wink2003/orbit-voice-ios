@@ -16,8 +16,8 @@ private func uprightCGImage(from image: UIImage) -> CGImage? {
     return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: image.size)) }.cgImage
 }
 
-/// Vision OCR stays on-device. A second contrast-enhanced/German-corrected pass is used as
-/// corroboration; disagreement lowers confidence so it cannot become an auto-selected proposal.
+/// Date/subject segmentation and fallback OCR stay on-device. Remote transcription is
+/// separately user-triggered for a handwriting-only crop and always requires review.
 private struct HomeworkDiaryCellRecognition: Sendable {
     let lines: [HomeworkOCRLine]
     let dateHeaderCount: Int
@@ -198,6 +198,7 @@ private struct HomeworkReviewCandidate: Identifiable, Equatable {
     var dueDate: String?
     var sourceLineIDs: [Int]
     var sourceRegion: HomeworkOCRRegion
+    var assignmentRegion: HomeworkOCRRegion
     var confidence: [String: Double]
     var needsReview: Bool
     var reviewReason: String?
@@ -321,6 +322,9 @@ struct SchoolHomeworkView: View {
     @State private var diaryAnalysis = SchoolHomeworkDiaryAnalysis(schoolYear: nil, calendarWeek: nil, pageLabel: nil, entries: [])
     @State private var ocrStageCounts: HomeworkOCRStageCounts?
     @State private var reviewEntries: [HomeworkReviewCandidate] = []
+    @State private var visionSuggestions: [Int: String] = [:]
+    @State private var visionRequests: Set<Int> = []
+    @State private var visionErrors: [Int: String] = [:]
     @State private var subject = ""
     @State private var assignment = ""
     @State private var lessonDate = ""
@@ -936,6 +940,36 @@ struct SchoolHomeworkView: View {
                         .font(.caption).foregroundStyle(.orange)
                 }
             }
+            if let suggestion = visionSuggestions[entry.id] {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Cloudflare Vision AI · пропозиція транскрипції", systemImage: "sparkles")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(suggestion.isEmpty ? "Модель не змогла прочитати текст." : suggestion)
+                        .font(.subheadline).textSelection(.enabled)
+                    Button("Використати як чернетку для перевірки") {
+                        updateReviewEntry(entry.id) {
+                            $0.assignmentText = suggestion
+                            $0.needsReview = true
+                            $0.reviewReason = "Перевірте транскрипцію за оригіналом"
+                            $0.changeKind = "uncertain"
+                            $0.selected = false
+                        }
+                    }.disabled(suggestion.isEmpty)
+                    Text("Предмет, дата й дедлайн залишаються локальними; завдання не підтверджується автоматично.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(10).background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+            } else {
+                Button {
+                    Task { await requestHomeworkTranscription(for: entry) }
+                } label: {
+                    if visionRequests.contains(entry.id) { ProgressView().frame(maxWidth: .infinity) }
+                    else { Label("Надіслати фрагмент почерку в Cloudflare AI", systemImage: "hand.raised") }
+                }
+                .buttonStyle(.bordered).disabled(store.isChild || visionRequests.contains(entry.id) || SchoolHomeworkVisionCrop.region(for: entry.assignmentRegion, writingColumnMinX: 0.16) == nil)
+                Text("З пристрою піде лише JPEG-фрагмент рукописного завдання; сторінка, Fach, дата й локальний OCR не передаються. Перевірте результат за фото.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                if let error = visionErrors[entry.id] { Text(error).font(.caption).foregroundStyle(.orange) }
+            }
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Запропонований предмет", text: reviewBinding(entry.id, \.subject))
@@ -1003,6 +1037,32 @@ struct SchoolHomeworkView: View {
             .integral.intersection(CGRect(x: 0, y: 0, width: width, height: height))
         guard rect.width > 1, rect.height > 1, let crop = cgImage.cropping(to: rect) else { return nil }
         return UIImage(cgImage: crop, scale: image.scale, orientation: image.imageOrientation)
+    }
+
+    private func handwritingCrop(for entry: HomeworkReviewCandidate) -> UIImage? {
+        guard let image = uprightPhotoImage, let cgImage = image.cgImage,
+              let region = SchoolHomeworkVisionCrop.region(for: entry.assignmentRegion, writingColumnMinX: 0.16) else { return nil }
+        let width = CGFloat(cgImage.width), height = CGFloat(cgImage.height)
+        let rect = CGRect(x: region.minX * width, y: (1 - region.maxY) * height,
+                          width: region.width * width, height: region.height * height)
+            .integral.intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        guard rect.width > 1, rect.height > 1, let crop = cgImage.cropping(to: rect) else { return nil }
+        return UIImage(cgImage: crop, scale: image.scale, orientation: .up)
+    }
+
+    private func requestHomeworkTranscription(for entry: HomeworkReviewCandidate) async {
+        guard let crop = handwritingCrop(for: entry), let jpeg = crop.jpegData(compressionQuality: 0.82), jpeg.count <= 512 * 1024 else {
+            visionErrors[entry.id] = "Не вдалося безпечно підготувати фрагмент. Скористайтеся локальним OCR або відредагуйте вручну."
+            return
+        }
+        visionRequests.insert(entry.id); visionErrors[entry.id] = nil
+        defer { visionRequests.remove(entry.id) }
+        do {
+            let result = try await MainProductAPI.shared.transcribeHomeworkCrop(jpeg)
+            visionSuggestions[entry.id] = result.transcription
+        } catch {
+            visionErrors[entry.id] = "Vision AI недоступна. Залишився локальний OCR та ручне редагування."
+        }
     }
 
     private func updateReviewEntry(_ id: Int, _ update: (inout HomeworkReviewCandidate) -> Void) {
@@ -1094,7 +1154,7 @@ struct SchoolHomeworkView: View {
     }
 
     private func preparePhoto(_ data: Data, contentType: String) async {
-        photoData = data; photoContentType = contentType; photoSnapshot = nil; uprightPhotoImage = nil; photoUploadRequestId = UUID().uuidString; reviewEntries = []; ocrStageCounts = nil
+        photoData = data; photoContentType = contentType; photoSnapshot = nil; uprightPhotoImage = nil; photoUploadRequestId = UUID().uuidString; reviewEntries = []; visionSuggestions = [:]; visionRequests = []; visionErrors = [:]; ocrStageCounts = nil
         guard let image = UIImage(data: data), let cgImage = uprightCGImage(from: image) else { return }
         uprightPhotoImage = UIImage(cgImage: cgImage, scale: image.scale, orientation: .up)
         let orientation = CGImagePropertyOrientation.up
@@ -1161,7 +1221,7 @@ struct SchoolHomeworkView: View {
                 id: entry.id, subject: entry.subject ?? "", assignmentText: entry.assignmentText,
                 originalOCRText: entry.originalOCRText, ocrAlternatives: entry.ocrAlternatives,
                 lessonDate: entry.lessonDate, dueDate: entry.dueDate, sourceLineIDs: entry.sourceLineIDs,
-                sourceRegion: entry.sourceRegion, confidence: entry.confidence, needsReview: entry.needsReview || entry.dueCueNeedsReview || match.kind == .uncertain,
+                sourceRegion: entry.sourceRegion, assignmentRegion: entry.assignmentRegion, confidence: entry.confidence, needsReview: entry.needsReview || entry.dueCueNeedsReview || match.kind == .uncertain,
                 reviewReason: entry.reviewReason ?? (match.kind == .uncertain ? "Збіг неоднозначний" : nil),
                 changeKind: match.kind.rawValue, matchedTaskId: pendingDuplicate ? nil : match.matchedRecordID, matchScore: match.score,
                 pendingDuplicate: pendingDuplicate, selected: match.kind != .uncertain && !entry.needsReview && !entry.dueCueNeedsReview && !pendingDuplicate,

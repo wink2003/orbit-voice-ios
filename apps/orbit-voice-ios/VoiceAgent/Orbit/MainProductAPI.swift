@@ -774,6 +774,7 @@ private struct CalendarSourceResponse: Decodable { let source: OrbitCalendarSour
 private struct CalendarConnectionResultResponse: Decodable { let connection: OrbitCalendarConnection; let calendars: Int }
 private struct MessageResponse: Decodable { let message: OrbitFamilyMessage }
 private struct EventResponse: Decodable { let event: OrbitCalendarEvent }
+struct OrbitHomeworkTranscriptionResponse: Decodable { let transcription: String; let needsReview: Bool }
 
 @MainActor
 final class MainProductAPI {
@@ -843,6 +844,23 @@ final class MainProductAPI {
             throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
         }
         return try decoder.decode(OrbitHomeworkSnapshotResponse.self, from: responseData)
+    }
+    func transcribeHomeworkCrop(_ jpegCrop: Data) async throws -> OrbitHomeworkTranscriptionResponse {
+        guard !jpegCrop.isEmpty, jpegCrop.count <= 512 * 1024,
+              let token = KeychainStore.readMainBearerToken(),
+              let url = URL(string: "/api/school/homework/transcribe", relativeTo: baseURL) else { throw OrbitChatAPIError.notPaired }
+        var request = URLRequest(url: url); request.httpMethod = "POST"; request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.httpBody = jpegCrop
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw OrbitChatAPIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let code = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
+            throw OrbitChatAPIError.requestFailed(Self.userFacingError(code))
+        }
+        return try decoder.decode(OrbitHomeworkTranscriptionResponse.self, from: data)
     }
     func createHomeworkProposal(childPersonId: String, snapshotId: String, changeKind: String, matchedHomeworkId: String? = nil, candidate: [String: Any], clientRequestId: String) async throws {
         let body: [String: Any] = ["childPersonId": childPersonId, "snapshotId": snapshotId, "changeKind": changeKind, "matchedHomeworkId": matchedHomeworkId as Any? ?? NSNull(), "candidate": candidate, "clientRequestId": clientRequestId]
