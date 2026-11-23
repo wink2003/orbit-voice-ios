@@ -37,6 +37,21 @@ nonisolated struct SchoolHomeworkOCRRegion: Equatable, Sendable {
     var midY: Double { minY + height / 2 }
 }
 
+nonisolated enum SchoolHomeworkVisionCrop {
+    /// The remote transcription crop is restricted to the handwriting column and
+    /// the already segmented entry bounds. It cannot include the date/Fach columns
+    /// or extend into a neighboring diary day.
+    static func region(for source: SchoolHomeworkOCRRegion, writingColumnMinX: Double) -> SchoolHomeworkOCRRegion? {
+        let minX = max(source.minX, writingColumnMinX)
+        guard minX < source.maxX, source.minY < source.maxY else { return nil }
+        return SchoolHomeworkOCRRegion(minX: minX, minY: source.minY, width: source.maxX - minX, height: source.height)
+    }
+
+    static func containsCredentialLikeText(_ text: String) -> Bool {
+        text.range(of: #"\b(password|passwort|kennwort|benutzername|username|zugangscode|access\s*code|login[- ]?code|pin)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+}
+
 nonisolated struct SchoolHomeworkOCRLine: Identifiable, Equatable, Sendable {
     let id: Int
     let text: String
@@ -157,6 +172,7 @@ nonisolated struct SchoolHomeworkDiaryEntry: Identifiable, Equatable, Sendable {
     let dueDate: String?
     let sourceLineIDs: [Int]
     let sourceRegion: SchoolHomeworkOCRRegion
+    let assignmentRegion: SchoolHomeworkOCRRegion
     let confidence: [String: Double]
     let needsReview: Bool
     let reviewReason: String?
@@ -164,7 +180,7 @@ nonisolated struct SchoolHomeworkDiaryEntry: Identifiable, Equatable, Sendable {
     let originalOCRText: String
     let ocrAlternatives: [String]
 
-    init(id: Int, subject: String?, assignmentText: String, lessonDate: String?, dueDate: String?, sourceLineIDs: [Int], sourceRegion: SchoolHomeworkOCRRegion, confidence: [String: Double], needsReview: Bool, reviewReason: String?, dueCueNeedsReview: Bool = false, originalOCRText: String = "", ocrAlternatives: [String] = []) {
+    init(id: Int, subject: String?, assignmentText: String, lessonDate: String?, dueDate: String?, sourceLineIDs: [Int], sourceRegion: SchoolHomeworkOCRRegion, assignmentRegion: SchoolHomeworkOCRRegion? = nil, confidence: [String: Double], needsReview: Bool, reviewReason: String?, dueCueNeedsReview: Bool = false, originalOCRText: String = "", ocrAlternatives: [String] = []) {
         self.id = id
         self.subject = subject
         self.assignmentText = assignmentText
@@ -172,6 +188,7 @@ nonisolated struct SchoolHomeworkDiaryEntry: Identifiable, Equatable, Sendable {
         self.dueDate = dueDate
         self.sourceLineIDs = sourceLineIDs
         self.sourceRegion = sourceRegion
+        self.assignmentRegion = assignmentRegion ?? sourceRegion
         self.confidence = confidence
         self.needsReview = needsReview
         self.reviewReason = reviewReason
@@ -296,10 +313,15 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
             if let dueLine = ordered.first(where: { $0.explicitDueDate != nil }) { confidence["dueDate"] = dueLine.line.confidence }
             // Include the subject column and every linked handwriting line in the review crop.
             let sourceRegions = ordered.map { $0.line.region } + ordered.compactMap { $0.subjectRow?.line.region }
+            let assignmentRegions = ordered.map { $0.line.region }
             let minX = sourceRegions.map(\.minX).min() ?? 0
             let minY = sourceRegions.map(\.minY).min() ?? 0
             let maxX = sourceRegions.map(\.maxX).max() ?? minX
             let maxY = sourceRegions.map(\.maxY).max() ?? minY
+            let assignmentMinX = assignmentRegions.map(\.minX).min() ?? minX
+            let assignmentMinY = assignmentRegions.map(\.minY).min() ?? minY
+            let assignmentMaxX = assignmentRegions.map(\.maxX).max() ?? assignmentMinX
+            let assignmentMaxY = assignmentRegions.map(\.maxY).max() ?? assignmentMinY
             let explicitDue = ordered.compactMap(\.explicitDueDate).first
             let dueCueNeedsReview = ordered.contains(where: \.correctedDueCue)
             let unresolvedContinuation = ordered.count > 1 && ordered.contains { $0.subjectRow == nil }
@@ -318,6 +340,7 @@ nonisolated enum SchoolHomeworkDiaryAnalyzer {
                 dueDate: explicitDue,
                 sourceLineIDs: ordered.map { $0.line.id },
                 sourceRegion: SchoolHomeworkOCRRegion(minX: minX, minY: minY, width: max(0, maxX - minX), height: max(0, maxY - minY)),
+                assignmentRegion: SchoolHomeworkOCRRegion(minX: assignmentMinX, minY: assignmentMinY, width: max(0, assignmentMaxX - assignmentMinX), height: max(0, assignmentMaxY - assignmentMinY)),
                 confidence: confidence,
                 needsReview: needsReview,
                 reviewReason: reason,

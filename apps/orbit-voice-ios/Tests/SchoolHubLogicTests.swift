@@ -576,6 +576,15 @@ struct SchoolHubLogicTests {
         precondition(SchoolHomeworkTextMatcher.similarity("Mathematik: Bücher S. 10", "mathematik bucher s 10") == 1, "case and diacritics normalize")
         precondition(SchoolHomeworkTextMatcher.similarity("Mathe Buch Seite 10", "Seite 10 · Mathe Buch") == 1, "word order and punctuation do not change identity")
         precondition(SchoolHomeworkTextMatcher.similarity("Vokabeln lernen", "Mathematik Aufgaben rechnen") == 0, "unrelated homework does not match")
+
+        let remoteCrop = SchoolHomeworkVisionCrop.region(
+            for: SchoolHomeworkOCRRegion(minX: 0.08, minY: 0.41, width: 0.78, height: 0.06),
+            writingColumnMinX: 0.18
+        )
+        precondition(remoteCrop.map { abs($0.minX - 0.18) < 0.0001 && abs($0.maxX - 0.86) < 0.0001 && abs($0.minY - 0.41) < 0.0001 && abs($0.maxY - 0.47) < 0.0001 } == true, "Vision crop excludes the date and Fach columns and stays within the segmented entry bounds")
+        precondition(SchoolHomeworkVisionCrop.region(for: SchoolHomeworkOCRRegion(minX: 0.08, minY: 0.41, width: 0.07, height: 0.06), writingColumnMinX: 0.18) == nil, "a subject-column-only region is never sent for transcription")
+        precondition(SchoolHomeworkVisionCrop.containsCredentialLikeText("UCS Benutzername und Passwort"), "locally recognized credential-related rows are held back from the external provider")
+        precondition(!SchoolHomeworkVisionCrop.containsCredentialLikeText("HA: Wochenplan, Nr. 2–4"), "ordinary homework remains eligible for explicit crop transcription")
         precondition(SchoolHomeworkTextMatcher.similarity("", "Mathematik") == 0, "empty OCR never matches")
 
         let handwritingRegion = SchoolHomeworkOCRRegion(minX: 0.2, minY: 0.3, width: 0.4, height: 0.03)
@@ -674,6 +683,7 @@ struct SchoolHubLogicTests {
         precondition(diaryRegression?.assignmentText.contains("18.11") == false && diaryRegression?.originalOCRText.contains("3ib 18.11:2026") == true, "clean task text and source OCR remain distinguishable")
         precondition(diaryRegression?.dueCueNeedsReview == true && diaryRegression?.needsReview == false, "corrected deadline cue is proposed separately and held for parent review without disabling duplicate matching")
         precondition((diaryRegression?.sourceRegion.minX ?? 1) < 0.1, "the review source region includes the subject column with both handwriting rows")
+        precondition((diaryRegression?.assignmentRegion.minX ?? 0) >= 0.16 && (diaryRegression?.assignmentRegion.maxY ?? 0) - (diaryRegression?.assignmentRegion.minY ?? 1) > 0.02, "remote transcription geometry covers the two linked handwriting rows while excluding Fach")
         precondition(photographedPage.entries.filter { $0.subject == "Biologie" }.count == 1, "repeated BI row label does not create a duplicate task")
         let nearbyDeutsch = photographedPage.entries.first { $0.assignmentText.contains("next chapter") }
         precondition(nearbyDeutsch?.subject == "Deutsch" && nearbyDeutsch?.lessonDate == "2026-11-18", "a distinct adjacent subject row keeps its own assignment")
